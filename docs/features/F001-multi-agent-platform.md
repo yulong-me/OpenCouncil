@@ -48,8 +48,8 @@ updated: 2026-04-09
 ### Agent 角色（3 个）
 
 - **主持人**：不调查，只编排。system prompt 包含状态机逻辑、用户引导话术、结论分发策略
-- **Agent A**：专业领域调查 + 辩论，可被主持人调度
-- **Agent B**：专业领域调查 + 辩论，可被主持人调度
+- **Agent A**：用户自定义领域（如历史/经济/技术），被主持人调度调查 + 辩论，可调用 MCP 工具
+- **Agent B**：用户自定义领域，与 A 互补，被主持人调度调查 + 辩论，可调用 MCP 工具
 
 所有 Agent 均通过 `claude -p` 非交互模式调用（child_process）。
 
@@ -71,9 +71,10 @@ updated: 2026-04-09
 | 后端 | Express (port 3004) | 状态机 + Agent 调度 |
 | Agent 调用 | Claude Code CLI (`claude -p`) | child_process，每 Agent 独立进程 |
 | Agent 数量 | 3 个 | 主持人 + Agent A + Agent B |
-| 状态机位置 | Express 后端 | 主持人调用时传入当前状态 |
-| 消息流方式 | 轮询 2s | MVP，SSE 后续加 |
-| 报告格式 | 结构化 Markdown | 主持人生成，前端展示 |
+| 领域角色 | 用户自定义 | 用户选择领域（历史/经济/技术/...） |
+| RESEARCH 工具 | MCP 工具（搜索等） | Agent 可调用 MCP server 做真实调查 |
+| 报告保存 | 下载 Markdown 文件 | DONE 阶段生成报告，用户下载 |
+| 状态机 | 完整 5 状态 | 不跳过 CONVERGING |
 
 ## Acceptance Criteria
 
@@ -95,7 +96,7 @@ updated: 2026-04-09
 
 ## Open Questions
 
-- [ ] Q1: Agent A/B 的领域角色是固定（Architect/Reviewer）还是用户自定义？
-- [ ] Q2: RESEARCH 阶段 Agent 调用 MCP 工具（搜索等）还是纯 LLM 推理？
-- [ ] Q3: 报告保存方式（下载 / localStorage / 不保存）？
-- [ ] Q4: MVP 是否跳过 CONVERGING（DEBATE 后直接 DONE）？
+- [x] Q1: 领域角色固定还是自定义？→ **用户自定义**（历史/经济/技术...）
+- [x] Q2: RESEARCH 阶段工具？→ **MCP 工具**（搜索等），需要 MCP server
+- [x] Q3: 报告保存方式？→ **下载 Markdown 文件**
+- [x] Q4: 是否跳过 CONVERGING？→ **不跳过，完整 5 状态**
