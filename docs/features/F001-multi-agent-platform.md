@@ -61,20 +61,40 @@ created: 2026-04-09
 - [ ] AC-6: 讨论过程可追溯，每个观点标注来源 Agent
 - [ ] AC-7: Web App 可在本地运行（localhost）
 
+## Design Gate
+
+**设计稿**：`designs/F001-multi-agent-platform.pen`（@gemini25 设计）
+
+**确认内容**：
+- 两栏布局：左侧配置栏（Topic + 2 Agent + Start） + 右侧辩论流
+- Agent 颜色区分：Architect（蓝 #DBEAFE）/ Reviewer（紫 #FDF4FF）
+- 消息气泡带角色标签（"Architect" / "Reviewer"），可追溯
+- 辩论状态标签（"In Progress"）
+- 输入区固定底部
+
+**架构决策**（铲屎官拍板）：
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 前端 | Next.js (port 3003) | 全栈一体，SSR + API routes |
+| 后端 | Express (port 3004) | 轻量 API 层，前后端分离 |
+| Agent 调用 | Claude Code CLI (`-p` 非交互) | child_process 驱动，每 Agent 独立进程 |
+| MVP Agent 数量 | 2 个 | Architect + Reviewer |
+| 讨论轮数 | 1 轮 | MVP 最简 |
+| 结论生成 | 嵌入消息流 | B 发言结束后，最后一条为综合结论 |
+| 消息流方式 | 轮询 2s | MVP 最简，SSE 后续加 |
+| Agent B 角色 | 反驳 A | "I disagree..." 风格 |
+
 ## Dependencies
-- 前端：待定技术栈（建议 Next.js 或 React SPA）
-- 后端：待定（可选轻量后端或纯前端 + API 模拟）
-- Agent 调用：待定（Claude API / OpenAI / 其他）
+- 前端：Next.js (App Router, port 3003)
+- 后端：Express (port 3004)
+- Agent 调用：Claude Code CLI (`claude -p` 非交互模式)
+- 环境：Node.js, pnpm
 
 ## Risk
 - Agent 辩论的质量依赖 prompt 工程，需要迭代调优
-- 多 Agent 并发讨论的时序和状态管理可能复杂
-
-## Open Questions
-- [ ] Q1: 技术栈选型？（Next.js / React / 其他）
-- [ ] Q2: 后端是否需要？（纯前端够用吗，还是需要状态持久化？）
-- [ ] Q3: Agent 调用方案？（直接 API / 中间层 / 模拟）
-- [ ] Q4: MVP 的 Agent 数量？（2 个够用还是需要更多？）
+- Claude Code CLI 的 prompt 长度和输出格式控制需要测试
+- MVP 无持久化（内存，重启丢失）
 
 ## 需求点 Checklist
 
