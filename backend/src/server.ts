@@ -8,6 +8,6 @@ app.use(express.json());
 
 app.use('/api/rooms', roomsRouter);
 
-app.listen(3004, () => {
-  console.log('Backend running on http://localhost:3004');
+app.listen(3005, () => {
+  console.log('Backend running on http://localhost:3005');
 });

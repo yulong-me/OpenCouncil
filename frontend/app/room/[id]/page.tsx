@@ -73,7 +73,7 @@ export default function RoomPage() {
 
   // Load room list
   useEffect(() => {
-    fetch('http://localhost:3004/api/rooms')
+    fetch('http://localhost:3005/api/rooms')
       .then(r => r.json())
       .then((data: { id: string; topic: string; createdAt: number }[]) => setRooms(data))
       .catch(() => {})
@@ -83,7 +83,7 @@ export default function RoomPage() {
   useEffect(() => {
     const poll = async () => {
       try {
-        const res = await fetch(`http://localhost:3004/api/rooms/${id}/messages`)
+        const res = await fetch(`http://localhost:3005/api/rooms/${id}/messages`)
         const data = await res.json()
         setState(data.state)
         setMessages(data.messages || [])
@@ -92,7 +92,7 @@ export default function RoomPage() {
         if (data.state === 'INIT' && !started) {
           // Auto-start INIT phase
           setStarted(true)
-          await fetch(`http://localhost:3004/api/rooms/${id}/start`, { method: 'POST' })
+          await fetch(`http://localhost:3005/api/rooms/${id}/start`, { method: 'POST' })
         }
       } catch {}
     }
@@ -104,7 +104,7 @@ export default function RoomPage() {
   const handleAdvance = async (choice?: string) => {
     setAdvancing(true)
     try {
-      await fetch(`http://localhost:3004/api/rooms/${id}/advance`, {
+      await fetch(`http://localhost:3005/api/rooms/${id}/advance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userChoice: choice }),

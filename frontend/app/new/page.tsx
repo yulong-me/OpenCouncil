@@ -13,7 +13,7 @@ export default function NewRoomPage() {
   const handleSubmit = async () => {
     if (!topic.trim() || !agentA.trim() || !agentB.trim()) return
     setLoading(true)
-    const res = await fetch('http://localhost:3004/api/rooms', {
+    const res = await fetch('http://localhost:3005/api/rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ topic, agentADomain: agentA, agentBDomain: agentB }),
