@@ -1,9 +1,10 @@
 ---
 feature_ids: [F001]
 related_features: []
-topics: [multi-agent, collaboration, platform, 智囊团]
+topics: [multi-agent, collaboration, platform, 智囊团, 状态机]
 doc_kind: spec
 created: 2026-04-09
+updated: 2026-04-09
 ---
 
 # F001: Multi-Agent Collaboration Platform（AI 智囊团）
@@ -14,95 +15,87 @@ created: 2026-04-09
 
 现在的 AI 助手都是"单打独斗"——用户问一个问题，AI 给一个答案，没有真正的多视角碰撞。复杂的审稿分析、方案决策、架构设计，全靠用户自己想。
 
-**我们想做一个"AI 智囊团"**：用户开一个讨论室，选一个场景，几个 Agent 各执己见、互相辩论，最终给出更全面的结论。三个臭皮匠，顶个诸葛亮。
+**我们想做一个"AI 智囊团"**：用户开一个讨论室，一个主持人 Agent 引导，多个专业 Agent 调查事实、辩论观点、收敛结论，最终交付结构化文档。三个臭皮匠，顶个诸葛亮。
 
 ## What
 
-一个智能讨论空间，让多个 AI Agent 从不同角度各抒己见、互相辩论，最终由用户做决策。核心原则：
+一个智能讨论空间，以**状态机**驱动，主持人 Agent 编排，多个专业 Agent 协作，最终产出结构化报告。
 
-1. **多视角 > 单视角**：单一 AI 受限于训练，碰撞才能发现盲点
-2. **各执己见，不是和稀泥**：Agent 坚守立场，用户做最终决策
-3. **场景驱动，不是聊天驱动**：用户选"要做什么"，系统组织讨论流程
-4. **结果可追溯**：每个观点有记录，用户知道结论怎么来的
+## 状态机设计
 
-### 核心功能
+```
+┌─────────┐  用户确认  ┌──────────┐  用户确认  ┌────────┐  用户确认  ┌────────────┐  用户确认  ┌────┐
+│  INIT   │ ─────────> │ RESEARCH  │ ─────────> │ DEBATE │ ─────────> │ CONVERGING │ ─────────> │DONE│
+└─────────┘            └──────────┘            └────────┘            └────────────┘            └────┘
+                         ↑                                                        │
+                         └────────────── 用户选择继续调查 ────────────────────────┘
+                         ↑                                                        │
+                         └────────────── 用户选择继续辩论 ────────────────────────┘
+```
 
-#### 讨论室（Discussion Room）
-- 用户创建讨论室，选择场景
-- 系统凑齐相关 Agent，制定讨论计划
-- Agent 们各执己见、互相辩论
-- 最终综合多视角结论，用户决策
+**禁止**：任何状态不允许回到 INIT。
 
-#### 场景系统（Scenario System）
-- 场景 1：审稿意见分析（研究价值 + 可行性 + 创新性）
-- 场景 2：开发方案讨论（架构 + 风险 + 更好思路）
-- 场景 3：工作流编排（自动凑 Agent + 制定计划）
-- 场景 4：**自定义讨论（用户定义场景 + 邀请 Agent + 定制流程）** ← MVP
+### 状态说明
 
-#### Agent 角色定义
-- **Architect**：架构视角，擅长系统设计和长远规划
-- **Reviewer**：可行性视角，擅长风险评估和细节审查
-- **Designer**：创新性视角，擅长打破常规和寻找更好思路
-- **Custom**：用户自定义角色和立场
+| 状态 | 参与方 | 主持人做什么 | 用户能做什么 |
+|------|--------|-------------|--------------|
+| INIT | 主持人 + 用户 | 分析问题意图，拆解调查议题，展示给用户确认 | 确认 / 修改议题 |
+| RESEARCH | 主持人 + 被调度 Agent | 并行调度 Agent 调查，收集结论，展示摘要 | 确认进入辩论 / 继续调查 |
+| DEBATE | 主持人 + 全量 Agent | 分发调查结论，发起辩论，旁听总结立场 | 确认进入收敛 / 继续辩论 / 回调查 |
+| CONVERGING | 主持人 + 用户 | 展示共识与分歧，提出收敛建议 | 确认收敛 / 继续辩论 / 继续调查 |
+| DONE | 主持人 | 生成结构化报告，通知所有 Agent，重置状态 | — |
 
-### MVP 范围（Phase 1）
-- 场景 4（自定义讨论）优先实现
-- 最小可用流程：创建讨论室 → 添加 Agent → 发起讨论 → 查看结论
-- Web App 前端
-- 基础讨论记录和追溯
+### Agent 角色（3 个）
 
-## Acceptance Criteria
+- **主持人**：不调查，只编排。system prompt 包含状态机逻辑、用户引导话术、结论分发策略
+- **Agent A**：专业领域调查 + 辩论，可被主持人调度
+- **Agent B**：专业领域调查 + 辩论，可被主持人调度
 
-- [ ] AC-1: 用户可以创建讨论室，填写标题和描述
-- [ ] AC-2: 用户可以选择邀请哪些 Agent（至少 Architect / Reviewer / Designer / Custom）
-- [ ] AC-3: 用户可以为每个 Agent 定义立场/角色描述
-- [ ] AC-4: Agent 们按顺序各抒己见，可以互相引用和辩论
-- [ ] AC-5: 最终结论页面清晰展示各 Agent 观点和整体结论
-- [ ] AC-6: 讨论过程可追溯，每个观点标注来源 Agent
-- [ ] AC-7: Web App 可在本地运行（localhost）
+所有 Agent 均通过 `claude -p` 非交互模式调用（child_process）。
 
-## Design Gate
+### 讨论流程（时序）
 
-**设计稿**：`designs/F001-multi-agent-platform.pen`（@gemini25 设计）
+```
+用户 ─> 主持人(INIT): 分析问题，拆解议题 ─> 用户确认
+用户 ─> 主持人(RESEARCH): 并行调度 A、B 调查 ─> 收集结论 ─> 展示摘要 ─> 用户确认
+用户 ─> 主持人(DEBATE): 分发结论，发起辩论 ─> A、B 自由辩论 ─> 旁听总结 ─> 用户确认
+用户 ─> 主持人(CONVERGING): 展示共识/分歧 ─> 用户判断 ─> 确认收敛
+主持人(DONE): 生成结构化报告 ─> 用户
+```
 
-**确认内容**：
-- 两栏布局：左侧配置栏（Topic + 2 Agent + Start） + 右侧辩论流
-- Agent 颜色区分：Architect（蓝 #DBEAFE）/ Reviewer（紫 #FDF4FF）
-- 消息气泡带角色标签（"Architect" / "Reviewer"），可追溯
-- 辩论状态标签（"In Progress"）
-- 输入区固定底部
-
-**架构决策**（铲屎官拍板）：
+## 架构决策
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
-| 前端 | Next.js (port 3003) | 全栈一体，SSR + API routes |
-| 后端 | Express (port 3004) | 轻量 API 层，前后端分离 |
-| Agent 调用 | Claude Code CLI (`-p` 非交互) | child_process 驱动，每 Agent 独立进程 |
-| MVP Agent 数量 | 2 个 | Architect + Reviewer |
-| 讨论轮数 | 1 轮 | MVP 最简 |
-| 结论生成 | 嵌入消息流 | B 发言结束后，最后一条为综合结论 |
-| 消息流方式 | 轮询 2s | MVP 最简，SSE 后续加 |
-| Agent B 角色 | 反驳 A | "I disagree..." 风格 |
+| 前端 | Next.js (port 3003) | 全栈一体 |
+| 后端 | Express (port 3004) | 状态机 + Agent 调度 |
+| Agent 调用 | Claude Code CLI (`claude -p`) | child_process，每 Agent 独立进程 |
+| Agent 数量 | 3 个 | 主持人 + Agent A + Agent B |
+| 状态机位置 | Express 后端 | 主持人调用时传入当前状态 |
+| 消息流方式 | 轮询 2s | MVP，SSE 后续加 |
+| 报告格式 | 结构化 Markdown | 主持人生成，前端展示 |
+
+## Acceptance Criteria
+
+- [ ] AC-1: 状态机完整运行 INIT → RESEARCH → DEBATE → CONVERGING → DONE
+- [ ] AC-2: 主持人 Agent 正确编排流程（不自己调查，只调度和引导）
+- [ ] AC-3: RESEARCH 阶段 A、B 并行调查，结论汇总给主持人
+- [ ] AC-4: DEBATE 阶段 A、B 基于调查结论自由辩论，主持人旁听总结
+- [ ] AC-5: CONVERGING 阶段清晰展示共识与分歧，用户拍板收敛
+- [ ] AC-6: DONE 阶段生成结构化报告（背景、调查结论、分歧、建议）
+- [ ] AC-7: 用户可在 RESEARCH/DEBATE/CONVERGING 阶段选择下一步
+- [ ] AC-8: Web App 本地可运行（localhost）
 
 ## Dependencies
+
 - 前端：Next.js (App Router, port 3003)
 - 后端：Express (port 3004)
 - Agent 调用：Claude Code CLI (`claude -p` 非交互模式)
 - 环境：Node.js, pnpm
 
-## Risk
-- Agent 辩论的质量依赖 prompt 工程，需要迭代调优
-- Claude Code CLI 的 prompt 长度和输出格式控制需要测试
-- MVP 无持久化（内存，重启丢失）
+## Open Questions
 
-## 需求点 Checklist
-
-- [ ] 用户可创建讨论室
-- [ ] 用户可选择 Agent 角色
-- [ ] 用户可自定义 Agent 立场描述
-- [ ] Agent 顺序发言机制
-- [ ] Agent 间互相引用/辩论机制
-- [ ] 结论汇总展示
-- [ ] 讨论历史可追溯
-- [ ] Web App 本地可运行
+- [ ] Q1: Agent A/B 的领域角色是固定（Architect/Reviewer）还是用户自定义？
+- [ ] Q2: RESEARCH 阶段 Agent 调用 MCP 工具（搜索等）还是纯 LLM 推理？
+- [ ] Q3: 报告保存方式（下载 / localStorage / 不保存）？
+- [ ] Q4: MVP 是否跳过 CONVERGING（DEBATE 后直接 DONE）？
