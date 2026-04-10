@@ -8,36 +8,97 @@ import remarkBreaks from 'remark-breaks'
 import { io, type Socket } from 'socket.io-client'
 import CreateRoomModal from '@/components/CreateRoomModal'
 
-// ── ThinkingBlock: expandable thinking/reasoning section ────────────────────
-function ThinkingBlock({ content, agentColor }: { content: string; agentColor: string }) {
+// ── BubbleSection: a single collapsible section within a message bubble ───────
+// States: collapsed (1 line) | expanded (full)
+// Props: label, icon, content, isStreaming, agentColor
+function BubbleSection({
+  label,
+  icon,          // 'brain' | 'output'
+  content,
+  isStreaming,
+  agentColor,
+}: {
+  label: string
+  icon: 'brain' | 'output'
+  content: string
+  isStreaming: boolean
+  agentColor: string
+}) {
   const [expanded, setExpanded] = useState(false)
+  const lineCount = content.split('\n').length
+  const isEmpty = !content.trim()
 
-  if (!content) return null
+  const iconEl = icon === 'brain' ? (
+    // Brain / lightbulb icon
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+      <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+    </svg>
+  ) : (
+    // Chat bubble icon
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+      <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+    </svg>
+  )
+
+  const expandIcon = (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
+    >
+      <path fillRule="evenodd" d="M4.646 1.646a.5.5 0 01.708 0l6 6a.5.5 0 010 .708l-6 6a.5.5 0 01-.708-.708L10.293 8 4.646 2.354a.5.5 0 010-.708z" clipRule="evenodd" />
+    </svg>
+  )
+
+  const statusText = isEmpty
+    ? '等待输出...'
+    : isStreaming
+    ? `${lineCount} 行 · 输出中...`
+    : `${lineCount} 行`
+
+  const streamingCursor = isStreaming ? (
+    <span className="inline-block w-1 h-3 bg-current animate-pulse ml-1 rounded-sm opacity-60 align-middle" />
+  ) : null
+
+  if (isEmpty && !isStreaming) return null
 
   return (
-    <div className="mb-2">
+    <div className={icon === 'brain' ? 'mb-2' : ''}>
+      {/* Section header — always visible */}
       <button
         onClick={() => setExpanded(e => !e)}
-        className="flex items-center gap-1.5 text-xs font-medium transition-colors"
+        className="flex items-center gap-1.5 text-xs font-medium w-full group/section"
         style={{ color: agentColor }}
-        aria-label={expanded ? '收起推理过程' : '展开推理过程'}
+        aria-label={`${expanded ? '收起' : '展开'}${label}`}
       >
-        {/* Expand/collapse icon — top-left of bubble */}
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 16 16"
-          fill="currentColor"
-          className={`w-3.5 h-3.5 transition-transform duration-200 ${expanded ? 'rotate-0' : '-rotate-90'}`}
-        >
-          <path fillRule="evenodd" d="M4.646 1.646a.5.5 0 01.708 0l6 6a.5.5 0 010 .708l-6 6a.5.5 0 01-.708-.708L10.293 8 4.646 2.354a.5.5 0 010-.708z" clipRule="evenodd" />
-        </svg>
-        <span className="opacity-70">{expanded ? '收起' : '推理过程'}</span>
+        {iconEl}
+        <span className="opacity-80">{label}</span>
+        <span className="text-xs opacity-50 ml-0.5">{statusText}</span>
+        {streamingCursor}
+        <span className="ml-auto opacity-40 group-hover/section:opacity-80">
+          {expandIcon}
+        </span>
       </button>
+
+      {/* Section body */}
       {expanded && (
-        <div className="mt-1.5 ml-1 pl-3 border-l-2 rounded text-xs text-apple-secondary bg-gray-50 py-2 pr-2 italic font-mono leading-relaxed"
+        <div
+          className={`mt-1.5 ml-1 pl-3 border-l-2 rounded text-sm leading-relaxed ${
+            icon === 'brain'
+              ? 'text-xs italic font-mono text-apple-secondary bg-gray-50 py-2 pr-2'
+              : 'text-apple-text'
+          }`}
           style={{ borderColor: `${agentColor}40` }}
         >
-          {content}
+          {icon === 'output' ? (
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkBreaks]}
+              components={mdComponents}
+            >{content}</ReactMarkdown>
+          ) : (
+            <span className="whitespace-pre-wrap">{content}</span>
+          )}
         </div>
       )}
     </div>
@@ -45,6 +106,8 @@ function ThinkingBlock({ content, agentColor }: { content: string; agentColor: s
 }
 
 // ── ExpandableText: icon button to expand / collapse long content ──────────────
+// (kept for compatibility — not used in the new two-section bubble design)
+// ── Markdown components matching cat-cafe style ──────────────────────────────
 function ExpandableText({
   text,
   clampClass = 'line-clamp-3',
@@ -582,7 +645,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
             }
 
             // Agent message — left aligned
-            const needsExpand = !isStreaming && (msg.content.length > 300 || msg.content.split('\n').length > 5)
             return (
               <div key={msg.id} className="group flex gap-2 mb-4 items-start">
                 <div
@@ -600,36 +662,30 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                     {isStreaming && (
                       <span className="text-xs text-green-600 animate-pulse">
                         ● 回答中
-                        {/* Typing cursor like cat-cafe */}
                         <span className="inline-block w-1 h-3.5 bg-green-600 animate-pulse ml-0.5 rounded-sm opacity-60" />
                       </span>
                     )}
                     {!isStreaming && msg.duration_ms && (
                       <span className="text-xs text-apple-secondary">· {(msg.duration_ms / 1000).toFixed(1)}s</span>
                     )}
-                    {/* Expand/collapse icon — top-left of bubble */}
-                    {needsExpand && (
-                      <ExpandableText text={msg.content} clampClass="line-clamp-3" className="text-xs ml-auto" />
-                    )}
                   </div>
                   <div className="rounded-2xl rounded-tl-sm px-4 py-3 bg-white shadow-sm border border-apple-border">
-                    {/* Thinking block — shown above content if available */}
-                    {msg.thinking && (
-                      <ThinkingBlock
-                        content={msg.thinking ?? ''}
-                        agentColor={agentColor}
-                      />
-                    )}
-                    <div className="prose prose-sm max-w-none break-words text-apple-text">
-                      {!needsExpand ? (
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm, remarkBreaks]}
-                          components={mdComponents}
-                        >{msg.content}</ReactMarkdown>
-                      ) : (
-                        <ExpandableText text={msg.content} clampClass="line-clamp-3" className="text-sm" />
-                      )}
-                    </div>
+                    {/* Section 1: Thinking — collapsible, brain icon */}
+                    <BubbleSection
+                      label="推理过程"
+                      icon="brain"
+                      content={msg.thinking ?? ''}
+                      isStreaming={isStreaming}
+                      agentColor={agentColor}
+                    />
+                    {/* Section 2: Output — collapsible, bubble icon */}
+                    <BubbleSection
+                      label="最终输出"
+                      icon="output"
+                      content={msg.content}
+                      isStreaming={isStreaming}
+                      agentColor={agentColor}
+                    />
                   </div>
                   {!isStreaming && msg.duration_ms && state === 'DONE' && (
                     <div className="mt-1 px-2 py-1 bg-gray-50 rounded-lg text-xs text-gray-500 flex flex-wrap gap-3">
