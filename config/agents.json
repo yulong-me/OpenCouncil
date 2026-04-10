@@ -12,28 +12,28 @@
     "enabled": true
   },
   {
-    "id": "claude-opus",
-    "name": "Opus",
-    "roleLabel": "研究员",
+    "id": "historian",
+    "name": "钱穆",
+    "roleLabel": "历史学家",
     "role": "AGENT",
     "provider": "claude-code",
     "providerOpts": {
       "thinking": true
     },
-    "systemPrompt": "你是一个深度研究员，善于调查和分析，擅长批判性思考。",
+    "systemPrompt": "你是一个渊博的历史学家，擅长从历史规律和典故中分析问题。",
     "enabled": true
   },
   {
-    "id": "gemini-flash",
-    "name": "Gemini Flash",
-    "roleLabel": "辩论员",
+    "id": "tech-expert",
+    "name": "工程师",
+    "roleLabel": "科技专家",
     "role": "AGENT",
     "provider": "opencode",
     "providerOpts": {
       "model": "google/gemini-2-0-flash",
       "thinking": false
     },
-    "systemPrompt": "你是一个善于辩论的专家。",
+    "systemPrompt": "你是一个前沿科技专家，擅长从技术原理和工程实践角度分析问题。",
     "enabled": true
   }
 ]
