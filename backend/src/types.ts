@@ -1,11 +1,13 @@
 export type DiscussionState = 'INIT' | 'RESEARCH' | 'DEBATE' | 'CONVERGING' | 'DONE';
-export type AgentRole = 'HOST' | 'SPECIALIST_A' | 'SPECIALIST_B';
+export type AgentRole = 'HOST' | 'AGENT';
 export type MessageType = 'system' | 'statement' | 'question' | 'rebuttal' | 'summary' | 'report';
 
 export interface Agent {
   id: string;
   role: AgentRole;
+  /** Agent persona name, e.g. "司马迁", "马斯克", "主持人" */
   name: string;
+  /** Domain label for persona lookup */
   domainLabel: string;
   status: 'idle' | 'thinking' | 'waiting' | 'done';
 }

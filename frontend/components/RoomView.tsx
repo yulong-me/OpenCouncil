@@ -16,7 +16,7 @@ function telemetry(event: string, meta?: Record<string, unknown>) {
 }
 
 type DiscussionState = 'INIT' | 'RESEARCH' | 'DEBATE' | 'CONVERGING' | 'DONE'
-type AgentRole = 'HOST' | 'SPECIALIST_A' | 'SPECIALIST_B'
+type AgentRole = 'HOST' | 'AGENT'
 
 interface Agent {
   id: string
@@ -43,11 +43,21 @@ const STATE_LABELS: Record<DiscussionState, string> = {
   DONE: '已完成',
 }
 
-const AGENT_COLORS: Record<AgentRole, { bg: string; text: string }> = {
-  HOST: { bg: '#0071E3', text: '#FFFFFF' },
-  SPECIALIST_A: { bg: '#34C759', text: '#FFFFFF' },
-  SPECIALIST_B: { bg: '#FF9500', text: '#FFFFFF' },
+const AGENT_COLORS: Record<string, { bg: string; text: string }> = {
+  主持人: { bg: '#0071E3', text: '#FFFFFF' },
+  司马迁: { bg: '#8B4513', text: '#FFFFFF' },
+  诸葛亮: { bg: '#2E8B57', text: '#FFFFFF' },
+  李世民: { bg: '#B8860B', text: '#FFFFFF' },
+  孔子: { bg: '#556B2F', text: '#FFFFFF' },
+  曹操: { bg: '#8B0000', text: '#FFFFFF' },
+  马斯克: { bg: '#007AFF', text: '#FFFFFF' },
+  乔布斯: { bg: '#5856D6', text: '#FFFFFF' },
+  爱因斯坦: { bg: '#1E90FF', text: '#FFFFFF' },
+  图灵: { bg: '#4169E1', text: '#FFFFFF' },
+  马云: { bg: '#FF9500', text: '#FFFFFF' },
 }
+
+const DEFAULT_AGENT_COLOR = { bg: '#34C759', text: '#FFFFFF' }
 
 const STATE_BUTTONS: Partial<Record<DiscussionState, { label: string; choice?: string }[]>> = {
   INIT: [{ label: '确认议题方向', choice: 'confirm' }],
@@ -223,7 +233,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           {messages.map(msg => {
             const colors = msg.agentRole === 'USER'
               ? { bg: '#86868B' }
-              : AGENT_COLORS[msg.agentRole as AgentRole]
+              : (AGENT_COLORS[msg.agentName] || DEFAULT_AGENT_COLOR)
             return (
               <div key={msg.id} className="flex gap-3">
                 <div
@@ -283,8 +293,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {agents.map(agent => {
-            const colors = AGENT_COLORS[agent.role]
-            const statusLabels = { idle: '待命', thinking: '思考中...', waiting: '等待发言', done: '已完成' }
+            const colors = AGENT_COLORS[agent.name] || DEFAULT_AGENT_COLOR
+            const statusLabels: Record<string, string> = { idle: '待命', thinking: '思考中...', waiting: '等待发言', done: '已完成' }
             return (
               <div key={agent.id} className="bg-apple-bg rounded-2xl p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -292,8 +302,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                     {agent.name.slice(0, 1)}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold" style={{ color: colors.bg }}>{agent.domainLabel}</p>
-                    <p className="text-xs text-apple-secondary">{agent.role === 'HOST' ? '主持人' : `Agent ${agent.role === 'SPECIALIST_A' ? 'A' : 'B'}`}</p>
+                    <p className="text-sm font-semibold" style={{ color: colors.bg }}>{agent.name}</p>
+                    <p className="text-xs text-apple-secondary">{agent.role === 'HOST' ? '主持人' : agent.domainLabel}</p>
                   </div>
                 </div>
                 <p className="text-xs text-apple-secondary">

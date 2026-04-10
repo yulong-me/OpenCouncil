@@ -12,23 +12,17 @@ export const HOST_PROMPTS = {
 
 请直接输出一段引导性文字，让用户确认是否进入调查阶段。`,
 
-  RESEARCH: (topic: string, findingsA: string, findingsB: string) => `你是一个专业的主持人（Host）。
+  RESEARCH: (topic: string, findings: string) => `你是一个专业的主持人（Host）。
 
 议题：${topic}
 
-【Agent A 调查结论】
-${findingsA}
+【各方调查结论】
+${findings}
 
-【Agent B 调查结论】
-${findingsB}
-
-请总结两方的调查结论，用简洁的摘要展示给用户，并引导进入辩论阶段。
+请总结所有调查结论，用简洁的摘要展示给用户，并引导进入辩论阶段。
 格式：
 ## 调查摘要
-### Agent A
-...
-### Agent B
-...
+[各方调查结论摘要...]
 
 请询问用户：是否进入辩论阶段？`,
 

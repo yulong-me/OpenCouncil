@@ -95,8 +95,7 @@ export default function CreateRoomModal({ isOpen, onClose }: CreateRoomModalProp
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic,
-          agentADomain: selected[0].name,
-          agentBDomain: selected[1].name,
+          agents: selected.map(a => a.name),
         }),
       })
       if (!res.ok) {

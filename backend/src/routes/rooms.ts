@@ -13,9 +13,9 @@ roomsRouter.get('/', (_req, res) => {
 
 // POST /api/rooms — 创建讨论室
 roomsRouter.post('/', (req, res) => {
-  const { topic, agentADomain, agentBDomain } = req.body as { topic: string; agentADomain: string; agentBDomain: string };
-  if (!topic || !agentADomain || !agentBDomain) {
-    return res.status(400).json({ error: 'topic, agentADomain, agentBDomain required' });
+  const { topic, agents: agentNames } = req.body as { topic: string; agents: string[] };
+  if (!topic || !agentNames || agentNames.length < 2) {
+    return res.status(400).json({ error: 'topic and at least 2 agents required' });
   }
   const room: DiscussionRoom = {
     id: uuid(),
@@ -23,8 +23,7 @@ roomsRouter.post('/', (req, res) => {
     state: 'INIT',
     agents: [
       { id: uuid(), role: 'HOST', name: '主持人', domainLabel: '主持人', status: 'idle' },
-      { id: uuid(), role: 'SPECIALIST_A', name: 'Agent A', domainLabel: agentADomain, status: 'idle' },
-      { id: uuid(), role: 'SPECIALIST_B', name: 'Agent B', domainLabel: agentBDomain, status: 'idle' },
+      ...agentNames.map(name => ({ id: uuid(), role: 'AGENT' as const, name, domainLabel: name, status: 'idle' as const })),
     ],
     messages: [],
     createdAt: Date.now(),
@@ -67,13 +66,12 @@ roomsRouter.post('/:id/advance', async (req, res) => {
   const { userChoice } = req.body as { userChoice?: string };
 
   try {
+    const specialistAgents = room.agents.filter(a => a.role === 'AGENT');
+
     if (room.state === 'INIT') {
       store.update(req.params.id, { state: 'RESEARCH' });
-      // 并行调度 A、B 调查
-      await Promise.all([
-        agentInvestigate(req.params.id, 'SPECIALIST_A'),
-        agentInvestigate(req.params.id, 'SPECIALIST_B'),
-      ]);
+      // 并行调度所有 specialist agents 调查
+      await Promise.all(specialistAgents.map(agent => agentInvestigate(req.params.id, agent)));
       await hostReply(req.params.id, 'RESEARCH');
     } else if (room.state === 'RESEARCH') {
       store.update(req.params.id, { state: 'DEBATE' });
@@ -94,10 +92,7 @@ roomsRouter.post('/:id/advance', async (req, res) => {
         await hostReply(req.params.id, 'DEBATE');
       } else if (userChoice === 'research') {
         store.update(req.params.id, { state: 'RESEARCH' });
-        await Promise.all([
-          agentInvestigate(req.params.id, 'SPECIALIST_A'),
-          agentInvestigate(req.params.id, 'SPECIALIST_B'),
-        ]);
+        await Promise.all(specialistAgents.map(agent => agentInvestigate(req.params.id, agent)));
         await hostReply(req.params.id, 'RESEARCH');
       }
     }
