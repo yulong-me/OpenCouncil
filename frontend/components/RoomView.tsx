@@ -319,7 +319,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {agents.map(agent => {
             const colors = AGENT_COLORS[agent.name] || DEFAULT_AGENT_COLOR
-            const statusLabels: Record<string, string> = { idle: '待命', thinking: '思考中...', waiting: '等待发言', done: '已完成' }
             return (
               <div key={agent.id} className="bg-apple-bg rounded-2xl p-4">
                 <div className="flex items-center gap-2 mb-2">

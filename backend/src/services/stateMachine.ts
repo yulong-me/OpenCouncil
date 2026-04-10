@@ -49,9 +49,19 @@ export async function hostReply(roomId: string, state: DiscussionState, context?
       prompt = HOST_PROMPTS.RESEARCH(room.topic, statements);
       break;
     }
-    case 'DEBATE':
-      prompt = HOST_PROMPTS.DEBATE();
+    case 'DEBATE': {
+      const specialistAgents = room.agents.filter(a => a.role === 'AGENT');
+      const agentNames = specialistAgents.map(a => a.name).join('、');
+      const statements = specialistAgents
+        .map(agent => {
+          const stmt = room.messages.find(m => m.agentName === agent.name && m.type === 'statement');
+          return stmt ? `${agent.name}：${stmt.content}` : '';
+        })
+        .filter(Boolean)
+        .join('\n\n');
+      prompt = HOST_PROMPTS.DEBATE(agentNames, statements);
       break;
+    }
     case 'CONVERGING': {
       const debateSummaries = room.messages.filter(m => m.type === 'summary' && m.agentRole === 'HOST');
       const latestSummary = debateSummaries[debateSummaries.length - 1]?.content || '';
@@ -92,4 +102,22 @@ export async function agentInvestigate(roomId: string, agent: Agent): Promise<st
   updateAgentStatus(roomId, agent.id, 'done');
   telemetry('state:exit', { roomId, state: 'RESEARCH', agent: agent.name, agentId: agent.id, findingsLength: findings.length });
   return findings;
+}
+
+/** Let each specialist agent give their debate perspective on the topic */
+export async function agentDebate(roomId: string, agent: Agent, debateContext: string): Promise<string> {
+  const room = store.get(roomId);
+  if (!room) throw new Error('Room not found');
+
+  telemetry('state:enter', { roomId, state: 'DEBATE', agent: agent.name, agentId: agent.id });
+  updateAgentStatus(roomId, agent.id, 'thinking');
+  const statement = await callAgent({
+    domainLabel: agent.domainLabel,
+    systemPrompt: `专业${agent.domainLabel}，擅长批判性分析和辩论`,
+    userMessage: `议题：${room.topic}\n\n辩论背景：\n${debateContext}\n\n请从你的专业视角，对以上辩论背景发表你的核心观点和论据。格式：\n【${agent.name}观点】\n[你的立场和论据...]`
+  });
+  addMessage(roomId, { agentRole: 'AGENT', agentName: agent.name, content: statement, type: 'statement' });
+  updateAgentStatus(roomId, agent.id, 'idle');
+  telemetry('state:exit', { roomId, state: 'DEBATE', agent: agent.name, agentId: agent.id, statementLength: statement.length });
+  return statement;
 }

@@ -26,11 +26,19 @@ ${findings}
 
 请询问用户：是否进入辩论阶段？`,
 
-  DEBATE: () => `你是一个专业的主持人（Host）。
+  DEBATE: (agents: string, findings: string) => `你是一个专业的主持人（Host）。
 
-辩论阶段开始。请分发调查结论给 Agent A 和 Agent B，发起辩论议题。
-同时，旁听 Agent A 和 Agent B 的辩论，每轮结束时总结各方立场。
-辩论结束后，询问用户：是否进入收敛阶段？`,
+议题相关背景 — 各方调查结论：
+${findings}
+
+参与辩论的 Agent：
+${agents}
+
+主持辩论：
+1. 请根据以上调查结论，提炼出 2-3 个核心辩论议题
+2. 请依次请各方 Agent 就每个议题发表观点（用【Agent名】格式）
+3. 指出各方观点的共识与分歧
+4. 总结本轮辩论要点，询问用户：进入收敛阶段，还是继续辩论？`,
 
   CONVERGING: (topic: string, debateSummary: string) => `你是一个专业的主持人（Host）。
 

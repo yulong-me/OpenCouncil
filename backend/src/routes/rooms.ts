@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { store } from '../store.js';
 import { DiscussionRoom } from '../types.js';
-import { hostReply, agentInvestigate } from '../services/stateMachine.js';
+import { hostReply, agentInvestigate, agentDebate } from '../services/stateMachine.js';
 
 export const roomsRouter = Router();
 
@@ -79,9 +79,17 @@ roomsRouter.post('/:id/advance', async (req, res) => {
       await hostReply(req.params.id, 'RESEARCH');
     } else if (room.state === 'RESEARCH') {
       store.update(req.params.id, { state: 'DEBATE' });
+      // Agents give debate perspectives in parallel, then host summarizes
+      await Promise.all(specialistAgents.map(agent =>
+        agentDebate(req.params.id, agent, '各方已提交调查结论，请发表你的辩论观点。')
+      ));
       await hostReply(req.params.id, 'DEBATE');
     } else if (room.state === 'DEBATE') {
       if (userChoice === 'continue') {
+        // Another round of agent debate
+        await Promise.all(specialistAgents.map(agent =>
+          agentDebate(req.params.id, agent, '请继续深化你的辩论观点。')
+        ));
         await hostReply(req.params.id, 'DEBATE');
       } else {
         store.update(req.params.id, { state: 'CONVERGING' });
@@ -93,6 +101,9 @@ roomsRouter.post('/:id/advance', async (req, res) => {
         await hostReply(req.params.id, 'DONE');
       } else if (userChoice === 'debate') {
         store.update(req.params.id, { state: 'DEBATE' });
+        await Promise.all(specialistAgents.map(agent =>
+          agentDebate(req.params.id, agent, '请发表你的辩论观点。')
+        ));
         await hostReply(req.params.id, 'DEBATE');
       } else if (userChoice === 'research') {
         store.update(req.params.id, { state: 'RESEARCH' });
