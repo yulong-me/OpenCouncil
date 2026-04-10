@@ -1,0 +1,347 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+
+const API = 'http://localhost:7001'
+
+type ProviderName = 'claude-code' | 'opencode'
+
+interface AgentConfig {
+  id: string
+  name: string
+  roleLabel: string
+  role: 'HOST' | 'AGENT'
+  provider: ProviderName
+  providerOpts: {
+    model?: string
+    thinking?: boolean
+    [key: string]: unknown
+  }
+  systemPrompt: string
+  enabled: boolean
+}
+
+const PROVIDER_LABELS: Record<ProviderName, string> = {
+  'claude-code': 'Claude Code (claude -p)',
+  'opencode': 'OpenCode',
+}
+
+const DEFAULT_AGENT: Omit<AgentConfig, 'id' | 'name'> = {
+  roleLabel: '',
+  role: 'AGENT',
+  provider: 'claude-code',
+  providerOpts: { model: '', thinking: true },
+  systemPrompt: '',
+  enabled: true,
+}
+
+// ── AgentCard ───────────────────────────────────────────────────────────────
+
+function AgentCard({
+  agent,
+  onSave,
+  onDelete,
+  saving,
+}: {
+  agent: AgentConfig
+  onSave: (updated: AgentConfig) => void
+  onDelete: (id: string) => void
+  saving: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState<AgentConfig>(agent)
+  const [saved, setSaved] = useState(false)
+
+  // Sync when agent prop changes (e.g. after delete)
+  useEffect(() => {
+    if (!editing) setForm(agent)
+  }, [agent])
+
+  function field<K extends keyof AgentConfig>(key: K, value: AgentConfig[K]) {
+    setForm(f => ({ ...f, [key]: value }))
+  }
+
+  function opt(key: string, value: unknown) {
+    setForm(f => ({ ...f, providerOpts: { ...f.providerOpts, [key]: value } }))
+  }
+
+  function handleSave() {
+    onSave(form)
+    setEditing(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const isHost = agent.role === 'HOST'
+  const providerColor = agent.provider === 'claude-code' ? 'text-blue-600' : 'text-purple-600'
+  const providerBg = agent.provider === 'claude-code' ? 'bg-blue-50 border-blue-200' : 'bg-purple-50 border-purple-200'
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-apple-border overflow-hidden">
+      {/* Card header */}
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-apple-border">
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+          style={{ backgroundColor: isHost ? '#FF9500' : '#0071E3' }}
+        >
+          {agent.name.slice(0, 1)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-apple-text">{agent.name}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${isHost ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-blue-50 border-blue-200 text-blue-600'}`}>
+              {isHost ? '主持人' : agent.roleLabel || 'Agent'}
+            </span>
+          </div>
+          <span className={`text-xs font-mono ${providerColor}`}>
+            {PROVIDER_LABELS[agent.provider]}
+            {agent.providerOpts.model ? ` · ${agent.providerOpts.model}` : ''}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          {saved && <span className="text-xs text-apple-green">已保存</span>}
+          {!isHost && !editing && (
+            <>
+              <button onClick={() => setEditing(true)} className="text-xs text-apple-primary hover:underline">编辑</button>
+              <button onClick={() => onDelete(agent.id)} className="text-xs text-red-500 hover:underline">删除</button>
+            </>
+          )}
+          {isHost && (
+            <span className="text-xs text-apple-secondary italic">不可删除</span>
+          )}
+        </div>
+      </div>
+
+      {/* Card body */}
+      {editing ? (
+        <div className="px-5 py-4 space-y-4">
+          {/* Provider */}
+          <div>
+            <label className="block text-xs font-medium text-apple-secondary mb-1.5">Provider</label>
+            <div className="flex gap-3">
+              {(Object.keys(PROVIDER_LABELS) as ProviderName[]).map(p => (
+                <label key={p} className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name={`provider-${agent.id}`}
+                    value={p}
+                    checked={form.provider === p}
+                    onChange={() => field('provider', p)}
+                    className="accent-apple-primary"
+                  />
+                  <span className="text-sm">{PROVIDER_LABELS[p]}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Model */}
+          <div>
+            <label className="block text-xs font-medium text-apple-secondary mb-1.5">
+              模型 {form.provider === 'opencode' ? '(provider/model，例如 google/gemini-2-0-flash)' : '(可选)'}
+            </label>
+            <input
+              type="text"
+              value={form.providerOpts.model ?? ''}
+              onChange={e => opt('model', e.target.value)}
+              placeholder={form.provider === 'opencode' ? 'google/gemini-2-0-flash' : ''}
+              className="w-full border border-apple-border rounded-lg px-3 py-2 text-sm text-apple-text focus:outline-none focus:ring-2 focus:ring-apple-primary/30 focus:border-apple-primary"
+            />
+          </div>
+
+          {/* Thinking toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => opt('thinking', !form.providerOpts.thinking)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.providerOpts.thinking ? 'bg-apple-primary' : 'bg-gray-300'}`}
+            >
+              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${form.providerOpts.thinking ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+            </button>
+            <label className="text-sm text-apple-text cursor-pointer" onClick={() => opt('thinking', !form.providerOpts.thinking)}>
+              显示推理过程
+            </label>
+          </div>
+
+          {/* System prompt */}
+          <div>
+            <label className="block text-xs font-medium text-apple-secondary mb-1.5">System Prompt</label>
+            <textarea
+              value={form.systemPrompt}
+              onChange={e => field('systemPrompt', e.target.value)}
+              rows={3}
+              className="w-full border border-apple-border rounded-lg px-3 py-2 text-sm text-apple-text focus:outline-none focus:ring-2 focus:ring-apple-primary/30 focus:border-apple-primary resize-none font-mono"
+              placeholder="你是一个专业的..."
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 justify-end pt-1">
+            <button
+              onClick={() => { setEditing(false); setForm(agent); }}
+              className="px-4 py-2 text-sm text-apple-secondary hover:text-apple-text transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-4 py-2 text-sm bg-apple-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {saving ? '保存中...' : '保存'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="px-5 py-4 space-y-2">
+          {agent.systemPrompt && (
+            <p className="text-xs text-apple-secondary italic font-mono line-clamp-2">
+              {agent.systemPrompt}
+            </p>
+          )}
+          <div className="flex items-center gap-4 text-xs text-apple-secondary">
+            <span className={`px-2 py-0.5 rounded border ${providerBg} ${providerColor} border-current font-medium`}>
+              {agent.provider}
+            </span>
+            {agent.providerOpts.thinking !== false && (
+              <span>🧠 推理过程</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Add new agent form ───────────────────────────────────────────────────────
+
+function AddAgentForm({ onAdded }: { onAdded: () => void }) {
+  const [form, setForm] = useState({ id: '', name: '', roleLabel: '', provider: 'claude-code' as ProviderName, systemPrompt: '' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  function handleAdd() {
+    if (!form.id || !form.name) { setError('ID 和名称必填'); return }
+    setSaving(true)
+    setError('')
+    fetch(`${API}/api/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, role: 'AGENT', providerOpts: { thinking: true }, enabled: true }),
+    }).then(r => r.json()).then(data => {
+      if (!r.ok) { setError(data.error ?? '创建失败'); setSaving(false); return }
+      setForm({ id: '', name: '', roleLabel: '', provider: 'claude-code', systemPrompt: '' })
+      setSaving(false)
+      onAdded()
+    }).catch(e => { setError(String(e)); setSaving(false) })
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-dashed border-apple-border p-5 space-y-3">
+      <p className="text-sm font-semibold text-apple-text">新增 Agent</p>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-apple-secondary mb-1">ID（英文唯一标识）</label>
+          <input value={form.id} onChange={e => setForm(f => ({ ...f, id: e.target.value }))}
+            className="w-full border border-apple-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-apple-primary/30 focus:border-apple-primary" placeholder="my-agent" />
+        </div>
+        <div>
+          <label className="block text-xs text-apple-secondary mb-1">名称</label>
+          <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            className="w-full border border-apple-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-apple-primary/30 focus:border-apple-primary" placeholder="小明" />
+        </div>
+        <div>
+          <label className="block text-xs text-apple-secondary mb-1">角色标签</label>
+          <input value={form.roleLabel} onChange={e => setForm(f => ({ ...f, roleLabel: e.target.value }))}
+            className="w-full border border-apple-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-apple-primary/30 focus:border-apple-primary" placeholder="研究员" />
+        </div>
+        <div>
+          <label className="block text-xs text-apple-secondary mb-1">Provider</label>
+          <select value={form.provider} onChange={e => setForm(f => ({ ...f, provider: e.target.value as ProviderName }))}
+            className="w-full border border-apple-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-apple-primary/30 focus:border-apple-primary bg-white">
+            {(Object.keys(PROVIDER_LABELS) as ProviderName[]).map(p => (
+              <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-apple-secondary mb-1">System Prompt</label>
+        <textarea value={form.systemPrompt} onChange={e => setForm(f => ({ ...f, systemPrompt: e.target.value }))}
+          rows={2} className="w-full border border-apple-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-apple-primary/30 focus:border-apple-primary resize-none font-mono" placeholder="你是一个专业的..." />
+      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
+      <div className="flex justify-end">
+        <button onClick={handleAdd} disabled={saving}
+          className="px-4 py-2 text-sm bg-apple-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity">
+          {saving ? '创建中...' : '创建 Agent'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
+export default function AgentsPage() {
+  const [agents, setAgents] = useState<AgentConfig[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const router = useRouter()
+
+  function load() {
+    setLoading(true)
+    fetch(`${API}/api/agents`)
+      .then(r => r.json())
+      .then((data: AgentConfig[]) => { setAgents(data); setLoading(false) })
+      .catch(e => { console.error(e); setLoading(false) })
+  }
+
+  useEffect(() => { load() }, [])
+
+  function handleSave(updated: AgentConfig) {
+    setSaving(true)
+    fetch(`${API}/api/agents/${updated.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    }).then(r => r.json()).then((data: AgentConfig) => {
+      setAgents(prev => prev.map(a => a.id === data.id ? data : a))
+      setSaving(false)
+    }).catch(e => { console.error(e); setSaving(false) })
+  }
+
+  function handleDelete(id: string) {
+    if (!confirm('确认删除该 Agent？')) return
+    fetch(`${API}/api/agents/${id}`, { method: 'DELETE' })
+      .then(r => { if (r.ok) { setAgents(prev => prev.filter(a => a.id !== id)); router.refresh() } })
+      .catch(e => console.error(e))
+  }
+
+  return (
+    <>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-apple-text mb-1">Agent 配置</h1>
+        <p className="text-sm text-apple-secondary">管理系统中所有 Agent 的底层 provider 和模型参数</p>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-12 text-apple-secondary text-sm">加载中...</div>
+      ) : (
+        <div className="space-y-4">
+          {agents.map(agent => (
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              onSave={handleSave}
+              onDelete={handleDelete}
+              saving={saving}
+            />
+          ))}
+
+          <AddAgentForm onAdded={load} />
+        </div>
+      )}
+    </>
+  )
+}

@@ -3,6 +3,7 @@ import cors from 'cors';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { roomsRouter } from './routes/rooms.js';
+import { agentsRouter } from './routes/agents.js';
 import { store } from './store.js';
 import { log } from './log.js';
 
@@ -30,6 +31,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/rooms', roomsRouter);
+app.use('/api/agents', agentsRouter);
 
 // ── Debug endpoint ──────────────────────────────────────────────────────────
 app.get('/api/debug', (_req, res) => {

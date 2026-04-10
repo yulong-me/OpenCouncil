@@ -1,5 +1,7 @@
 import { store } from '../store.js';
-import { callAgentWithStreaming } from './agentCaller.js';
+import { getAgent } from '../config/agentConfig.js';
+import { getProvider } from './providers/index.js';
+import type { ClaudeEvent } from './providers/index.js';
 import { emitStreamStart, emitStreamEnd, emitAgentStatus, emitStreamDelta, emitThinkingDelta } from './socketEmitter.js';
 import { HOST_PROMPTS } from '../prompts/host.js';
 import { Message, DiscussionState, AgentRole, Agent, MessageType } from '../types.js';
@@ -143,20 +145,29 @@ export async function agentDebate(roomId: string, agent: Agent, debateContext: s
   return statement;
 }
 
-/** Wraps callAgentWithStreaming, emits Socket.IO events and updates the message in store */
+/** Wraps the provider stream, emits Socket.IO events and updates the message in store */
 async function streamingCallAgent(
-  ctx: Parameters<typeof callAgentWithStreaming>[0],
+  ctx: { domainLabel: string; systemPrompt: string; userMessage: string },
   roomId: string,
   agentId: string,
   agentName: string,
   msgType: MessageType = 'summary',
   agentRole: AgentRole = 'HOST',
 ): Promise<string> {
+  // Look up agent config for provider routing
+  const agentConfig = getAgent(agentId);
+  const providerName = agentConfig?.provider ?? 'claude-code';
+  const providerOpts = agentConfig?.providerOpts ?? {};
+  // agentConfig.systemPrompt takes precedence over ctx.systemPrompt
+  const systemPrompt = agentConfig?.systemPrompt ?? ctx.systemPrompt;
+  const prompt = `【角色】${ctx.domainLabel}（${systemPrompt}）
+
+${ctx.userMessage}`;
+
   const tempMsgId = uuid();
   // Create placeholder message in store
   const msg = addMessage(roomId, { agentRole, agentName, content: '', type: msgType });
   if (msg) {
-    // Update with tempMsgId so frontend can match
     const room = store.get(roomId);
     if (room) {
       store.update(roomId, {
@@ -168,14 +179,34 @@ async function streamingCallAgent(
 
   let accumulated = '';
   let accumulatedThinking = '';
+  let duration_ms = 0;
+  let total_cost_usd = 0;
+  let input_tokens = 0;
+  let output_tokens = 0;
 
-  const result = await callAgentWithStreaming(ctx, agentId, (text) => {
-    accumulated += text;
-    emitStreamDelta(roomId, agentId, text);
-  }, (thinking) => {
-    accumulatedThinking += thinking;
-    emitThinkingDelta(roomId, agentId, thinking);
-  });
+  const provider = getProvider(providerName);
+  try {
+    for await (const event of provider(prompt, agentId, providerOpts)) {
+      if (event.type === 'delta') {
+        accumulated += event.text;
+        emitStreamDelta(roomId, agentId, event.text);
+      } else if (event.type === 'thinking_delta') {
+        accumulatedThinking += event.thinking;
+        emitThinkingDelta(roomId, agentId, event.thinking);
+      } else if (event.type === 'end') {
+        duration_ms = event.duration_ms;
+        total_cost_usd = event.total_cost_usd;
+        input_tokens = event.input_tokens;
+        output_tokens = event.output_tokens;
+      } else if (event.type === 'error') {
+        throw new Error(event.message);
+      }
+    }
+  } catch (err) {
+    const ts = new Date().toISOString();
+    console.error(`[${ts}] [ERROR] streamingCallAgent provider=${providerName} agentId=${agentId}`, err);
+    throw err;
+  }
 
   // Update message content and stats in store
   if (msg) {
@@ -186,21 +217,16 @@ async function streamingCallAgent(
           ...m,
           content: accumulated,
           thinking: accumulatedThinking,
-          duration_ms: result.duration_ms,
-          total_cost_usd: result.total_cost_usd,
-          input_tokens: result.input_tokens,
-          output_tokens: result.output_tokens,
+          duration_ms,
+          total_cost_usd,
+          input_tokens,
+          output_tokens,
         } : m),
       });
     }
   }
 
-  emitStreamEnd(roomId, agentId, tempMsgId, {
-    duration_ms: result.duration_ms,
-    total_cost_usd: result.total_cost_usd,
-    input_tokens: result.input_tokens,
-    output_tokens: result.output_tokens,
-  });
+  emitStreamEnd(roomId, agentId, tempMsgId, { duration_ms, total_cost_usd, input_tokens, output_tokens });
 
-  return result.text;
+  return accumulated;
 }
