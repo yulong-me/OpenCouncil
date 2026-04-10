@@ -228,8 +228,9 @@ function AddAgentForm({ onAdded }: { onAdded: () => void }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form, role: 'AGENT', providerOpts: { thinking: true }, enabled: true }),
-    }).then(r => r.json()).then(data => {
-      if (!r.ok) { setError(data.error ?? '创建失败'); setSaving(false); return }
+    }).then(async r => {
+      const data = await r.json()
+      if (!r.ok) { setError((data as { error?: string }).error ?? '创建失败'); setSaving(false); return }
       setForm({ id: '', name: '', roleLabel: '', provider: 'claude-code', systemPrompt: '' })
       setSaving(false)
       onAdded()
