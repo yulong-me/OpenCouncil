@@ -23,6 +23,43 @@ F001 当前只支持 `claude -p` 作为 Agent 调用源，每个 Agent 绑定同
 - 新增 `streamOpenCode()`，与 `streamClaudeCode()` 共用 `ClaudeEvent` 类型
 - 统一 Provider 抽象接口（`Provider.stream()`），新增 provider 无需修改调用方
 - `backend/src/config/agents.ts` 集中管理每个 Agent 的 provider + providerOpts
+- **系统级 Agent 配置页面**：前端独立路由 `/settings/agents`，集中管理所有 Agent 的 provider 和模型参数
+
+## Agent 配置页面
+
+### 路由与布局
+
+```
+/settings/agents
+├── AgentCard (每个 Agent 一张卡片)
+│   ├── Agent 名称 + 角色 Badge
+│   ├── Provider 选择器 (claude-code | opencode)
+│   ├── 模型输入框 (providerOpts.model)
+│   ├── Thinking 开关
+│   └── 保存按钮
+└── + 新增 Agent 按钮
+```
+
+### 后端 API
+
+```
+GET  /api/agents          → 返回 AGENT_CONFIGS 列表
+PUT  /api/agents/:id      → 更新指定 Agent 配置
+POST /api/agents          → 新增 Agent
+DELETE /api/agents/:id    → 删除 Agent（仅限非 HOST 角色）
+```
+
+### 数据流
+
+```
+前端 /settings/agents
+  → GET /api/agents
+  → AgentConfig[] (后端从 agents.ts 读写，持久化为 JSON 文件)
+
+讨论室创建时:
+  前端 GET /api/agents → 展示 Agent 列表（带 provider badge）
+  后端 streamingCallAgent → 读取 agentConfig.provider → 路由到对应 Provider
+```
 
 ## OpenCode CLI 输出格式
 
@@ -174,6 +211,8 @@ for await (const event of gen) { /* 统一处理 */ }
 - [ ] AC-4: 错误事件（non-zero exit、stderr）正确抛出为异常
 - [ ] AC-5: 每个 Agent 可在配置中独立指定 provider 和 providerOpts
 - [ ] AC-6: 新增 Provider 只需实现 `stream()` 接口，无需修改调用方
+- [ ] AC-7: `/settings/agents` 页面可查看、编辑、保存、新增、删除 Agent 配置
+- [ ] AC-8: 配置变更实时生效（后端重新读取配置）
 
 ## Dependencies
 
@@ -190,6 +229,7 @@ for await (const event of gen) { /* 统一处理 */ }
 
 1. ~~是否需要 session 复用（方案 B）？还是每次 spawn 独立进程？~~ 选方案 A（每次 spawn）
 2. tool_use / tool_result 事件是否需要转发到前端渲染？暂不实现，后续按需扩展
-3. 前端是否需要暴露模型选择器？还是固定后端配置？→ **固定后端配置，暂不暴露前端**
+3. ~~前端是否需要暴露模型选择器？~~ 改为系统级配置页面 `/settings/agents`
 4. OpenCode 的 cost 字段单位是否与 claude 一致？→ 需实测后确认
-5. 配置用 `.ts` 还是 `.json`？→ TS 支持类型检查，优先 TS
+5. 配置用 `.ts` 还是 `.json`？→ **JSON 文件**，后端启动时加载，支持运行时热修改
+6. 配置持久化：JSON 文件存储在 `backend/config/agents.json`，由后端 API 读写
