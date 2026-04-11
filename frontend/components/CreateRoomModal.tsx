@@ -28,6 +28,15 @@ const PROVIDER_LABELS: Record<string, string> = {
   'opencode': 'OpenCode',
 }
 
+const DOMAIN_TAGS = ['历史', '科技', '财经', '哲学']
+
+const DOMAIN_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  '历史': { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' },
+  '科技': { bg: '#DBEAFE', text: '#1E40AF', border: '#93C5FD' },
+  '财经': { bg: '#D1FAE5', text: '#065F46', border: '#6EE7B7' },
+  '哲学': { bg: '#EDE9FE', text: '#5B21B6', border: '#C4B5FD' },
+}
+
 const AGENT_COLORS = [
   '#D97706', '#059669', '#DC2626', '#4D7C0F', '#9F1239',
   '#2563EB', '#7C3AED', '#0284C7', '#0D9488', '#EA580C',
@@ -49,6 +58,7 @@ export default function CreateRoomModal({
   const [loadingAgents, setLoadingAgents] = useState(true)
   const [topic, setTopic] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [activeTag, setActiveTag] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
@@ -68,6 +78,7 @@ export default function CreateRoomModal({
     if (!isOpen) {
       setTopic('')
       setSelected(new Set())
+      setActiveTag(null)
       setError('')
     }
   }, [isOpen])
@@ -119,6 +130,7 @@ export default function CreateRoomModal({
     }
   }
 
+  const filteredAgents = activeTag ? agents.filter(a => a.tags.includes(activeTag)) : agents
   const selectedAgents = agents.filter(a => selected.has(a.id))
 
   return (
@@ -140,63 +152,103 @@ export default function CreateRoomModal({
         <div className="bg-bg rounded-3xl shadow-2xl p-6 md:p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-line custom-scrollbar pointer-events-auto">
 
           {/* Header */}
-          <div className="flex items-start justify-between mb-6">
+          <div className="flex items-start justify-between mb-5">
             <div>
               <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
                 <BrainCircuit className="w-6 h-6 text-accent" aria-hidden/> 发起新讨论
               </h1>
-              <p className="text-ink-soft mt-1.5 text-[14px]">选择 Agent，开启多智能体协作讨论</p>
+              <p className="text-ink-soft mt-1 text-[14px]">选择 Agent，开启多智能体协作讨论</p>
             </div>
             <button onClick={onClose} aria-label="关闭" className="p-2 text-ink-soft hover:text-ink hover:bg-surface rounded-full transition-colors">
               <X className="w-5 h-5" aria-hidden/>
             </button>
           </div>
 
+          {/* Tag Filter Bar */}
+          {!loadingAgents && agents.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-5" role="group" aria-label="按领域筛选">
+              <button
+                type="button"
+                onClick={() => setActiveTag(null)}
+                className={`px-4 py-1.5 rounded-full text-[12px] font-bold border transition-all ${
+                  activeTag === null
+                    ? 'bg-ink text-bg border-ink shadow-sm'
+                    : 'bg-surface text-ink-soft border-line hover:border-ink/40'
+                }`}
+              >
+                全部
+              </button>
+              {DOMAIN_TAGS.map(tag => {
+                const dc = DOMAIN_COLORS[tag]
+                const isActive = activeTag === tag
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setActiveTag(isActive ? null : tag)}
+                    className={`px-4 py-1.5 rounded-full text-[12px] font-bold border transition-all ${
+                      isActive
+                        ? 'shadow-sm'
+                        : 'bg-surface text-ink-soft border-line hover:border-ink/40'
+                    }`}
+                    style={isActive ? { backgroundColor: dc.bg, color: dc.text, borderColor: dc.border } : {}}
+                    aria-pressed={isActive}
+                  >
+                    {tag}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
         {/* Agent Grid */}
         {loadingAgents ? (
           <div className="text-center py-10 text-ink-soft text-sm">加载 Agent 配置...</div>
-        ) : agents.length === 0 ? (
+        ) : filteredAgents.length === 0 ? (
           <div className="text-center py-10">
-            <p className="text-ink-soft text-sm mb-3">还没有可用的 Agent</p>
-            <a href="/settings/agents" className="text-accent text-sm underline underline-offset-2">去配置 Agent →</a>
+            <p className="text-ink-soft text-sm mb-3">该领域暂无 Agent</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
-            {agents.map(ag => {
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
+            {filteredAgents.map(ag => {
               const isSelected = selected.has(ag.id)
               const color = agentColor(ag.name)
+              const domainTag = ag.tags[0] // first tag is the domain
+              const domainStyle = DOMAIN_COLORS[domainTag]
               return (
                 <button
                   key={ag.id}
+                  type="button"
                   onClick={() => toggleAgent(ag.id)}
                   className={`flex flex-col items-center p-4 rounded-2xl border-2 transition-all text-left ${
                     isSelected
                       ? 'border-accent bg-accent/5 shadow-sm'
                       : 'border-line bg-surface hover:border-accent/40'
                   }`}
+                  aria-pressed={isSelected}
                 >
-                  <div
-                    className="w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold mb-3 shadow-sm"
-                    style={{ backgroundColor: color }}
-                  >
-                    {ag.name.slice(0, 1)}
+                  <div className="relative">
+                    <div
+                      className="w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold mb-2 shadow-sm"
+                      style={{ backgroundColor: color }}
+                    >
+                      {ag.name.slice(0, 1)}
+                    </div>
+                    {isSelected && (
+                      <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-accent rounded-full flex items-center justify-center shadow">
+                        <CheckIcon />
+                      </div>
+                    )}
                   </div>
                   <p className="text-[14px] font-bold text-ink">{ag.name}</p>
                   <p className="text-[11px] text-ink-soft mt-0.5">{ag.roleLabel}</p>
-                  <span
-                    className="mt-2 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider"
-                    style={{ backgroundColor: PROVIDER_COLORS[ag.provider] + '20', color: PROVIDER_COLORS[ag.provider] }}
-                  >
-                    {PROVIDER_LABELS[ag.provider]}
-                  </span>
-                  {ag.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 justify-center mt-2">
-                      {ag.tags.slice(0, 2).map(tag => (
-                        <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-surface-muted border border-line text-ink-soft">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
+                  {domainStyle && (
+                    <span
+                      className="mt-2 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider"
+                      style={{ backgroundColor: domainStyle.bg, color: domainStyle.text }}
+                    >
+                      {domainTag}
+                    </span>
                   )}
                 </button>
               )
@@ -205,7 +257,7 @@ export default function CreateRoomModal({
         )}
 
         {/* Selected */}
-        <div className="mb-6 bg-surface p-4 rounded-2xl border border-line">
+        <div className="mb-5 bg-surface p-4 rounded-2xl border border-line">
           <p className="text-[13px] font-bold text-ink mb-3 uppercase tracking-wide">
             已选 {selected.size} 位 Agent{selected.size < 1 ? '（至少选 1 位）' : ''}
           </p>
@@ -233,9 +285,10 @@ export default function CreateRoomModal({
         </div>
 
         {/* Topic */}
-        <div className="mb-6">
-          <label className="block text-[13px] font-bold text-ink mb-2 uppercase tracking-wide">讨论议题</label>
+        <div className="mb-5">
+          <label htmlFor="discussion-topic" className="block text-[13px] font-bold text-ink mb-2 uppercase tracking-wide">讨论议题</label>
           <textarea
+            id="discussion-topic"
             className="w-full bg-surface border border-line rounded-xl px-4 py-3 text-[14px] text-ink placeholder:text-ink-soft/60 resize-none focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all"
             rows={3}
             placeholder="例如：折叠屏手机是否是未来趋势？"
@@ -258,5 +311,13 @@ export default function CreateRoomModal({
       </div>
       </div>
     </>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+      <path d="M2 5L4.5 7.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
   )
 }
