@@ -7,6 +7,9 @@ import { agentsRouter } from './routes/agents.js';
 import providersRouter from './routes/providers.js';
 import { store } from './store.js';
 import { log } from './log.js';
+import { initDB } from './db/index.js';
+
+initDB();
 
 const app = express();
 const httpServer = createServer(app);

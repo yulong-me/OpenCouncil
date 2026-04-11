@@ -1,15 +1,17 @@
 import { store } from '../store.js';
 import { getAgentByName } from '../config/agentConfig.js';
-import { getProvider } from './providers/index.js';
+import { getProvider } from '../config/providerConfig.js';
 import type { ClaudeEvent } from './providers/index.js';
 import { emitStreamStart, emitStreamEnd, emitAgentStatus, emitStreamDelta, emitThinkingDelta } from './socketEmitter.js';
 import { HOST_PROMPTS } from '../prompts/host.js';
 import { Message, DiscussionState, AgentRole, Agent, MessageType } from '../types.js';
 import { v4 as uuid } from 'uuid';
+import { roomsRepo, messagesRepo } from '../db/index.js';
+import { sessionsRepo } from '../db/index.js';
+import { auditRepo } from '../db/index.js';
 
 function telemetry(event: string, meta: Record<string, unknown>) {
-  const ts = new Date().toISOString();
-  console.log(`[${ts}] [TELEMETRY] ${event} ${JSON.stringify(meta)}`);
+  auditRepo.log(event, undefined, undefined, meta);
 }
 
 function addMessage(roomId: string, msg: Omit<Message, 'id' | 'timestamp'>): Message | undefined {
@@ -17,6 +19,7 @@ function addMessage(roomId: string, msg: Omit<Message, 'id' | 'timestamp'>): Mes
   if (!room) return undefined;
   const message: Message = { ...msg, id: uuid(), timestamp: Date.now() };
   store.update(roomId, { messages: [...room.messages, message] });
+  messagesRepo.insert(roomId, message);
   return message;
 }
 
@@ -28,11 +31,15 @@ export function addUserMessage(roomId: string, content: string): Message | undef
 function appendMessageContent(roomId: string, messageId: string, extra: string) {
   const room = store.get(roomId);
   if (!room) return;
-  store.update(roomId, {
-    messages: room.messages.map(m =>
-      m.id === messageId ? { ...m, content: m.content + extra } : m
-    ),
-  });
+  const updatedMessages = room.messages.map(m =>
+    m.id === messageId ? { ...m, content: m.content + extra } : m
+  );
+  store.update(roomId, { messages: updatedMessages });
+  // Persist incremental content
+  const msg = room.messages.find(m => m.id === messageId);
+  if (msg) {
+    messagesRepo.updateContent(messageId, msg.content + extra);
+  }
 }
 
 function updateAgentStatus(roomId: string, agentId: string, status: 'idle' | 'thinking' | 'waiting' | 'done') {
@@ -95,6 +102,7 @@ export async function hostReply(roomId: string, state: DiscussionState, context?
         userMessage: prompt,
       }, roomId, room.agents.find(a => a.role === 'HOST')!.id, '主持人', 'report');
       store.update(roomId, { report: reply });
+      roomsRepo.update(roomId, { report: reply });
       telemetry('state:done', { roomId, state: 'DONE', agent: 'HOST', reportLength: reply.length });
       return reply;
   }
@@ -154,16 +162,13 @@ async function streamingCallAgent(
   msgType: MessageType = 'summary',
   agentRole: AgentRole = 'HOST',
 ): Promise<string> {
-  // Look up agent config by name (room agents use UUIDs, config uses names)
   const agentConfig = getAgentByName(agentName);
   const providerName = agentConfig?.provider ?? 'claude-code';
-  // agentConfig.systemPrompt takes precedence over ctx.systemPrompt
   const systemPrompt = agentConfig?.systemPrompt ?? ctx.systemPrompt;
   const prompt = `【角色】${ctx.domainLabel}（${systemPrompt}）
 
 ${ctx.userMessage}`;
 
-  // Build provider opts — include sessionId for resume/continue
   const room = store.get(roomId);
   const existingSessionId = room?.sessionIds[agentName];
   const providerOpts: Record<string, unknown> = {
@@ -172,7 +177,6 @@ ${ctx.userMessage}`;
   };
 
   const tempMsgId = uuid();
-  // Create placeholder message in store
   const msg = addMessage(roomId, { agentRole, agentName, content: '', type: msgType });
   if (msg) {
     const r = store.get(roomId);
@@ -197,6 +201,7 @@ ${ctx.userMessage}`;
     for await (const event of provider(prompt, agentId, providerOpts)) {
       if (event.type === 'delta') {
         accumulated += event.text;
+        appendMessageContent(roomId, msg?.id ?? '', event.text);
         emitStreamDelta(roomId, agentId, event.text);
       } else if (event.type === 'thinking_delta') {
         accumulatedThinking += event.thinking;
@@ -206,7 +211,6 @@ ${ctx.userMessage}`;
         total_cost_usd = event.total_cost_usd;
         input_tokens = event.input_tokens;
         output_tokens = event.output_tokens;
-        // Capture and persist session ID for future resume
         if (event.sessionId) {
           returnedSessionId = event.sessionId;
         }
@@ -220,15 +224,14 @@ ${ctx.userMessage}`;
     throw err;
   }
 
-  // Persist session ID so next call for this agent continues the conversation
   if (returnedSessionId) {
     const r = store.get(roomId);
     if (r) {
       store.update(roomId, { sessionIds: { ...r.sessionIds, [agentName]: returnedSessionId } });
+      sessionsRepo.upsert(agentName, roomId, returnedSessionId);
     }
   }
 
-  // Update message content and stats in store
   if (msg) {
     const r = store.get(roomId);
     if (r) {
@@ -242,6 +245,13 @@ ${ctx.userMessage}`;
           input_tokens,
           output_tokens,
         } : m),
+      });
+      messagesRepo.updateContent(msg.id, accumulated, {
+        thinking: accumulatedThinking,
+        duration_ms,
+        total_cost_usd,
+        input_tokens,
+        output_tokens,
       });
     }
   }

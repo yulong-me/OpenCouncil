@@ -1,6 +1,4 @@
-import fs from 'fs';
-import path from 'path';
-
+// ⚠️ api_key stored in plaintext in DB; production should use KMS or env-var injection
 export interface ProviderConfig {
   name: string
   label: string
@@ -16,53 +14,26 @@ export interface ProviderConfig {
 
 export type ProvidersConfig = Record<string, ProviderConfig>
 
-const CONFIG_PATH = path.resolve(process.cwd(), 'config/providers.json')
-
-function loadConfig(): ProvidersConfig {
-  try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'))
-  } catch {
-    return {}
-  }
-}
-
-function saveConfig(config: ProvidersConfig): void {
-  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true })
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
-}
+import { providersRepo } from '../db/repositories/providers.js';
 
 export function getAllProviders(): ProvidersConfig {
-  return loadConfig()
+  return providersRepo.list();
 }
 
 export function getProvider(name: string): ProviderConfig | undefined {
-  return loadConfig()[name]
+  return providersRepo.get(name);
 }
 
 export function upsertProvider(name: string, data: Omit<ProviderConfig, 'name' | 'lastTested' | 'lastTestResult'>): ProvidersConfig {
-  const config = loadConfig()
-  config[name] = {
-    ...data,
-    name,
-    lastTested: config[name]?.lastTested ?? null,
-    lastTestResult: config[name]?.lastTestResult ?? null,
-  }
-  saveConfig(config)
-  return config
+  providersRepo.upsert(name, data);
+  return providersRepo.list();
 }
 
 export function deleteProvider(name: string): ProvidersConfig {
-  const config = loadConfig()
-  delete config[name]
-  saveConfig(config)
-  return config
+  providersRepo.delete(name);
+  return providersRepo.list();
 }
 
 export function updateTestResult(name: string, result: ProviderConfig['lastTestResult']): void {
-  const config = loadConfig()
-  if (config[name]) {
-    config[name].lastTested = Date.now()
-    config[name].lastTestResult = result
-    saveConfig(config)
-  }
+  providersRepo.updateTestResult(name, result);
 }

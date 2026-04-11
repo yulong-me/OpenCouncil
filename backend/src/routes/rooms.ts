@@ -3,6 +3,8 @@ import { v4 as uuid } from 'uuid';
 import { store } from '../store.js';
 import { DiscussionRoom } from '../types.js';
 import { hostReply, agentInvestigate, agentDebate, addUserMessage } from '../services/stateMachine.js';
+import { roomsRepo } from '../db/index.js';
+import { auditRepo } from '../db/index.js';
 
 export const roomsRouter = Router();
 
@@ -30,7 +32,10 @@ roomsRouter.post('/', (req, res) => {
     updatedAt: Date.now(),
     sessionIds: {},
   };
-  res.json(store.create(room));
+  store.create(room);
+  roomsRepo.create(room);
+  auditRepo.log('room:create', room.topic, undefined, { roomId: room.id, agentCount: room.agents.length });
+  res.json(room);
 });
 
 // GET /api/rooms/:id — 获取讨论室
@@ -52,12 +57,12 @@ roomsRouter.post('/:id/start', async (req, res) => {
   const room = store.get(req.params.id);
   if (!room) return res.status(404).json({ error: 'Room not found' });
   if (room.state !== 'INIT') {
-    // 幂等：不是 INIT 说明已经处理过了，直接返回
     return res.json({ status: 'ok', state: room.state, idempotent: true });
   }
   try {
     await hostReply(req.params.id, 'INIT');
     const updated = store.get(req.params.id);
+    if (updated) roomsRepo.update(req.params.id, { state: updated.state });
     res.json({ status: 'ok', state: updated?.state });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -70,7 +75,6 @@ roomsRouter.post('/:id/advance', async (req, res) => {
   if (!room) return res.status(404).json({ error: 'Room not found' });
   const { userChoice } = req.body as { userChoice?: string };
 
-  // Record user's choice as a message
   if (userChoice) {
     const choiceLabels: Record<string, string> = {
       confirm: '确认议题方向',
@@ -88,39 +92,42 @@ roomsRouter.post('/:id/advance', async (req, res) => {
 
     if (room.state === 'INIT') {
       store.update(req.params.id, { state: 'RESEARCH' });
-      // 并行调度所有 specialist agents 调查
+      roomsRepo.update(req.params.id, { state: 'RESEARCH' });
       await Promise.all(specialistAgents.map(agent => agentInvestigate(req.params.id, agent)));
       await hostReply(req.params.id, 'RESEARCH');
     } else if (room.state === 'RESEARCH') {
       store.update(req.params.id, { state: 'DEBATE' });
-      // Agents give debate perspectives in parallel, then host summarizes
+      roomsRepo.update(req.params.id, { state: 'DEBATE' });
       await Promise.all(specialistAgents.map(agent =>
         agentDebate(req.params.id, agent, '各方已提交调查结论，请发表你的辩论观点。')
       ));
       await hostReply(req.params.id, 'DEBATE');
     } else if (room.state === 'DEBATE') {
       if (userChoice === 'continue') {
-        // Another round of agent debate
         await Promise.all(specialistAgents.map(agent =>
           agentDebate(req.params.id, agent, '请继续深化你的辩论观点。')
         ));
         await hostReply(req.params.id, 'DEBATE');
       } else {
         store.update(req.params.id, { state: 'CONVERGING' });
+        roomsRepo.update(req.params.id, { state: 'CONVERGING' });
         await hostReply(req.params.id, 'CONVERGING');
       }
     } else if (room.state === 'CONVERGING') {
       if (userChoice === 'converge') {
         store.update(req.params.id, { state: 'DONE' });
+        roomsRepo.update(req.params.id, { state: 'DONE' });
         await hostReply(req.params.id, 'DONE');
       } else if (userChoice === 'debate') {
         store.update(req.params.id, { state: 'DEBATE' });
+        roomsRepo.update(req.params.id, { state: 'DEBATE' });
         await Promise.all(specialistAgents.map(agent =>
           agentDebate(req.params.id, agent, '请发表你的辩论观点。')
         ));
         await hostReply(req.params.id, 'DEBATE');
       } else if (userChoice === 'research') {
         store.update(req.params.id, { state: 'RESEARCH' });
+        roomsRepo.update(req.params.id, { state: 'RESEARCH' });
         await Promise.all(specialistAgents.map(agent => agentInvestigate(req.params.id, agent)));
         await hostReply(req.params.id, 'RESEARCH');
       }

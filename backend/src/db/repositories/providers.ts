@@ -1,0 +1,78 @@
+import { db } from '../db.js';
+import type { ProviderConfig } from '../../config/providerConfig.js';
+
+export const providersRepo = {
+  list(): Record<string, ProviderConfig> {
+    const rows = db.prepare('SELECT * FROM providers').all() as Record<string, unknown>[];
+    const result: Record<string, ProviderConfig> = {};
+    for (const r of rows) {
+      result[r.name as string] = {
+        name: r.name as string,
+        label: r.label as string,
+        cliPath: r.cli_path as string,
+        defaultModel: r.default_model as string,
+        apiKey: r.api_key as string,
+        baseUrl: r.base_url as string,
+        timeout: r.timeout as number,
+        thinking: Boolean(r.thinking),
+        lastTested: r.last_tested as number | null,
+        lastTestResult: r.last_test_result
+          ? JSON.parse(r.last_test_result as string)
+          : null,
+      };
+    }
+    return result;
+  },
+
+  get(name: string): ProviderConfig | undefined {
+    const r = db.prepare('SELECT * FROM providers WHERE name = ?').get(name) as Record<string, unknown> | undefined;
+    if (!r) return undefined;
+    return {
+      name: r.name as string,
+      label: r.label as string,
+      cliPath: r.cli_path as string,
+      defaultModel: r.default_model as string,
+      apiKey: r.api_key as string,
+      baseUrl: r.base_url as string,
+      timeout: r.timeout as number,
+      thinking: Boolean(r.thinking),
+      lastTested: r.last_tested as number | null,
+      lastTestResult: r.last_test_result
+        ? JSON.parse(r.last_test_result as string)
+        : null,
+    };
+  },
+
+  upsert(name: string, data: Omit<ProviderConfig, 'name' | 'lastTested' | 'lastTestResult'>): void {
+    const existing = this.get(name);
+    db.prepare(`
+      INSERT OR REPLACE INTO providers (name, label, cli_path, default_model, api_key, base_url, timeout, thinking, last_tested, last_test_result)
+      VALUES (@name, @label, @cliPath, @defaultModel, @apiKey, @baseUrl, @timeout, @thinking, @lastTested, @lastTestResult)
+    `).run({
+      name,
+      label: data.label ?? name,
+      cliPath: data.cliPath,
+      defaultModel: data.defaultModel,
+      apiKey: data.apiKey,
+      baseUrl: data.baseUrl,
+      timeout: data.timeout,
+      thinking: data.thinking ? 1 : 0,
+      lastTested: existing?.lastTested ?? null,
+      lastTestResult: existing?.lastTestResult ? JSON.stringify(existing.lastTestResult) : null,
+    });
+  },
+
+  delete(name: string): void {
+    db.prepare('DELETE FROM providers WHERE name = ?').run(name);
+  },
+
+  updateTestResult(name: string, result: ProviderConfig['lastTestResult']): void {
+    db.prepare(`
+      UPDATE providers SET last_tested = @lastTested, last_test_result = @lastTestResult WHERE name = @name
+    `).run({
+      name,
+      lastTested: Date.now(),
+      lastTestResult: result ? JSON.stringify(result) : null,
+    });
+  },
+};
