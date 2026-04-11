@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS messages (
   id              TEXT PRIMARY KEY,
   room_id         TEXT NOT NULL,
   agent_role      TEXT NOT NULL
-                  CHECK (agent_role IN ('HOST','AGENT','USER')),
+                  CHECK (agent_role IN ('MANAGER','WORKER','USER')),
   agent_name      TEXT NOT NULL,
   content         TEXT NOT NULL,
   timestamp       INTEGER NOT NULL,

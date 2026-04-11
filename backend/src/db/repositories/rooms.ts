@@ -31,6 +31,8 @@ export const roomsRepo = {
       agents: [],
       messages: messagesRepo.listByRoom(row.id as string),
       sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
     };
   },
 

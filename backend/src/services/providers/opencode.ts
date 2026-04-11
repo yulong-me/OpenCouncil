@@ -42,7 +42,10 @@ export async function* streamOpenCodeProvider(
   args.push('--format', 'json');
   args.push('--', prompt);
 
-  const proc = spawn(cliPath, args, { timeout, env, cwd: '/tmp', stdio: ['ignore', 'pipe', 'pipe'] });
+  // Workspace support — 每个 Room 有独立工作目录
+  const workspace = opts.workspace as string | undefined;
+
+  const proc = spawn(cliPath, args, { timeout, env, cwd: workspace ?? '/tmp', stdio: ['ignore', 'pipe', 'pipe'] });
 
   let stderrBuffer = '';
   proc.stderr?.on('data', (d: Buffer) => { stderrBuffer += d.toString(); });

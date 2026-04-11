@@ -31,6 +31,12 @@ export async function* streamClaudeCodeProvider(
   const args = ['-p', prompt, '--verbose', '--output-format=stream-json', '--include-partial-messages'];
   if (sessionId) args.splice(1, 0, '--resume', sessionId);
 
+  // Workspace support — 每个 Room 有独立工作目录
+  const workspace = opts.workspace as string | undefined;
+  if (workspace) {
+    args.push('--workspace', workspace);
+  }
+
   const proc = spawn(cliPath, args, { timeout, env, stdio: ['ignore', 'pipe', 'pipe'] });
 
   let stderrBuffer = '';

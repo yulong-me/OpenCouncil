@@ -31,7 +31,7 @@ agentsRouter.post('/', (req: Request, res: Response) => {
     id: body.id,
     name: body.name,
     roleLabel: body.roleLabel ?? body.name,
-    role: body.role ?? 'AGENT',
+    role: body.role ?? 'WORKER',
     provider: body.provider,
     providerOpts: body.providerOpts ?? {},
     systemPrompt: body.systemPrompt ?? '',
@@ -61,8 +61,8 @@ agentsRouter.delete('/:id', (req: Request, res: Response) => {
   const agents = getAgents();
   const agent = agents.find(a => a.id === req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
-  if (agent.role === 'HOST') {
-    return res.status(403).json({ error: 'Cannot delete HOST agent' });
+  if (agent.role === 'MANAGER') {
+    return res.status(403).json({ error: 'Cannot delete MANAGER agent' });
   }
 
   saveAgents(agents.filter(a => a.id !== req.params.id));

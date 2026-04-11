@@ -5,6 +5,7 @@ import { DiscussionRoom } from '../types.js';
 import { hostReply, agentInvestigate, agentDebate, addUserMessage } from '../services/stateMachine.js';
 import { roomsRepo } from '../db/index.js';
 import { auditRepo } from '../db/index.js';
+import { getAgent } from '../config/agentConfig.js';
 
 export const roomsRouter = Router();
 
@@ -15,22 +16,44 @@ roomsRouter.get('/', (_req, res) => {
 
 // POST /api/rooms — 创建讨论室
 roomsRouter.post('/', (req, res) => {
-  const { topic, agents: agentNames } = req.body as { topic: string; agents: string[] };
-  if (!topic || !agentNames || agentNames.length < 2) {
-    return res.status(400).json({ error: 'topic and at least 2 agents required' });
+  const { topic, agents: agentIds } = req.body as { topic: string; agents: string[] };
+  if (!topic || !agentIds || agentIds.length < 1) {
+    return res.status(400).json({ error: 'topic and at least 1 agent required' });
   }
+
+  // Resolve agent configs by id (id-based routing — avoids name collision risk)
+  const agentEntries = agentIds.map(id => {
+    const cfg = getAgent(id);
+    if (!cfg) {
+      res.status(400).json({ error: `Agent not found: ${id}` });
+      return null;
+    }
+    return {
+      id: uuid(),
+      role: cfg.role,
+      name: cfg.name,
+      domainLabel: cfg.roleLabel,
+      configId: cfg.id,
+      status: 'idle' as const,
+    };
+  });
+  if (!agentEntries[0]) return; // error already sent
+
+  const hostCfg = getAgent('host');
   const room: DiscussionRoom = {
     id: uuid(),
     topic,
     state: 'INIT',
     agents: [
-      { id: uuid(), role: 'HOST', name: '主持人', domainLabel: '主持人', status: 'idle' },
-      ...agentNames.map(name => ({ id: uuid(), role: 'AGENT' as const, name, domainLabel: name, status: 'idle' as const })),
+      { id: uuid(), role: 'MANAGER' as const, name: '主持人', domainLabel: '主持人', configId: 'host', status: 'idle' as const },
+      ...agentEntries as DiscussionRoom['agents'],
     ],
     messages: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
     sessionIds: {},
+    a2aDepth: 0,
+    a2aCallChain: [],
   };
   store.create(room);
   roomsRepo.create(room);
@@ -52,7 +75,8 @@ roomsRouter.get('/:id/messages', (req, res) => {
   res.json({ state: room.state, messages: room.messages, agents: room.agents, report: room.report });
 });
 
-// POST /api/rooms/:id/start — 开始 INIT 阶段（幂等：非 INIT 状态直接返回 ok）
+// POST /api/rooms/:id/start — 开始讨论（幂等：非 INIT 状态直接返回 ok）
+//主持人开场 (INIT) 结束后自动流转到 RESEARCH，所有 Agent 同步开始调查
 roomsRouter.post('/:id/start', async (req, res) => {
   const room = store.get(req.params.id);
   if (!room) return res.status(404).json({ error: 'Room not found' });
@@ -60,9 +84,18 @@ roomsRouter.post('/:id/start', async (req, res) => {
     return res.json({ status: 'ok', state: room.state, idempotent: true });
   }
   try {
+    // 1. 主持人开场白（流式输出到前端）
     await hostReply(req.params.id, 'INIT');
+
+    // 2. 自动流转 INIT → RESEARCH：所有专家 Agent 开始调查
+    const specialistAgents = room.agents.filter(a => a.role === 'WORKER');
+    store.update(req.params.id, { state: 'RESEARCH' });
+    roomsRepo.update(req.params.id, { state: 'RESEARCH' });
+    // 触发所有 Agent 并行调查 + 主持人协调（流式输出到前端）
+    await Promise.all(specialistAgents.map(agent => agentInvestigate(req.params.id, agent)));
+    await hostReply(req.params.id, 'RESEARCH');
+
     const updated = store.get(req.params.id);
-    if (updated) roomsRepo.update(req.params.id, { state: updated.state });
     res.json({ status: 'ok', state: updated?.state });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -88,7 +121,7 @@ roomsRouter.post('/:id/advance', async (req, res) => {
   }
 
   try {
-    const specialistAgents = room.agents.filter(a => a.role === 'AGENT');
+    const specialistAgents = room.agents.filter(a => a.role === 'WORKER');
 
     if (room.state === 'INIT') {
       store.update(req.params.id, { state: 'RESEARCH' });
