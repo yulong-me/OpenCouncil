@@ -24,11 +24,14 @@ export function initSchema(): void {
     // 清理上次失败的残留表（如果存在）
     try { db.exec("DROP TABLE IF EXISTS messages_new"); } catch { /* ignore */ }
 
-    // 检查是否需要迁移：如果存在 AGENT/HOST 数据则需要迁移
-    const oldData = db.prepare("SELECT agent_role FROM messages WHERE agent_role IN ('AGENT', 'HOST') LIMIT 1").get();
-    if (!oldData) {
-      log('INFO', 'db:schema:migrate:messages:already_migrated');
-      return;
+    // 检查 schema 是否需要迁移：查看 messages 表的 CHECK 约束定义
+    const schema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").get() as { sql: string } | undefined;
+    if (schema) {
+      // 如果 CHECK 约束已经包含 MANAGER/WORKER，说明已迁移
+      if (schema.sql.includes('MANAGER') && schema.sql.includes('WORKER')) {
+        log('INFO', 'db:schema:migrate:messages:already_migrated');
+        return;
+      }
     }
 
     // 安全迁移：创建新表 → 用 CASE 映射角色 → 删除旧表 → 重命名
