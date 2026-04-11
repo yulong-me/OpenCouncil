@@ -111,8 +111,6 @@ function ProviderTab({ onClose }: { onClose: () => void }) {
           <ProviderForm
             key={current.name}
             provider={current}
-            onSave={handleSave}
-            saving={saving}
           />
         ) : (
           <p className="text-sm text-apple-secondary text-center py-8">选择一个 Provider</p>
@@ -124,31 +122,20 @@ function ProviderTab({ onClose }: { onClose: () => void }) {
 
 function ProviderForm({
   provider,
-  onSave,
-  saving,
 }: {
   provider: ProviderConfig
-  onSave: (p: ProviderConfig) => void
-  saving: boolean
 }) {
-  const [form, setForm] = useState(provider)
-  const [lastResult, setLastResult] = useState(provider.lastTestResult)
   const [testDetail, setTestDetail] = useState<{ cli: string; output?: string; error?: string } | null>(null)
   const [testing, setTesting] = useState(false)
 
-  useEffect(() => { setForm(provider); setLastResult(provider.lastTestResult); setTestDetail(null) }, [provider])
-
-  function field<K extends keyof ProviderConfig>(key: K, value: ProviderConfig[K]) {
-    setForm(f => ({ ...f, [key]: value }))
-  }
+  useEffect(() => { setTestDetail(null) }, [provider])
 
   function handleTest() {
     setTesting(true)
-    fetch(`${API}/api/providers/${form.name}/test`, { method: 'POST' })
+    fetch(`${API}/api/providers/${provider.name}/test`, { method: 'POST' })
       .then(r => r.json())
       .then((result: { success: boolean; cli: string; output?: string; error?: string }) => {
         setTestDetail({ cli: result.cli, output: result.output, error: result.error })
-        setLastResult({ success: result.success, version: result.output?.slice(0, 80), error: result.error })
         setTesting(false)
       })
       .catch(err => {
@@ -159,38 +146,6 @@ function ProviderForm({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2">
-          <label className="block text-xs font-medium text-apple-secondary mb-1">CLI 路径</label>
-          <input value={form.cliPath} onChange={e => field('cliPath', e.target.value)}
-            className="w-full border border-apple-border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-apple-primary/30" />
-        </div>
-        <div className="col-span-2">
-          <label className="block text-xs font-medium text-apple-secondary mb-1">默认模型</label>
-          <input value={form.defaultModel} onChange={e => field('defaultModel', e.target.value)}
-            placeholder={form.name === 'opencode' ? 'google/gemini-2-0-flash' : 'claude-sonnet-4-6'}
-            className="w-full border border-apple-border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-apple-primary/30" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-apple-secondary mb-1">API Key</label>
-          <input type="password" value={form.apiKey} onChange={e => field('apiKey', e.target.value)}
-            placeholder="sk-…"
-            className="w-full border border-apple-border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-apple-primary/30" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-apple-secondary mb-1">Base URL</label>
-          <input value={form.baseUrl} onChange={e => field('baseUrl', e.target.value)}
-            placeholder="https://api.anthropic.com"
-            className="w-full border border-apple-border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-apple-primary/30" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-apple-secondary mb-1">超时（秒）</label>
-          <input type="number" value={form.timeout} onChange={e => field('timeout', Number(e.target.value))}
-            min={10} max={300}
-            className="w-full border border-apple-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-apple-primary/30" />
-        </div>
-      </div>
-
       {/* 测试结果输出 */}
       {testDetail && (
         <div className="border border-apple-border rounded-lg overflow-hidden">
@@ -200,8 +155,10 @@ function ProviderForm({
           <div className="bg-gray-900 px-3 py-2 font-mono text-xs text-green-400 whitespace-pre-wrap break-all">
             {testDetail.cli}
           </div>
-          <div className="bg-gray-900 px-3 py-1.5 font-mono text-xs text-gray-400 border-t border-gray-700">
-            输出 {testDetail.error ? <span className="text-red-400">✗ {testDetail.error}</span> : '✓'}
+          <div className="bg-gray-900 px-3 py-1.5 font-mono text-xs border-t border-gray-700">
+            输出 {testDetail.error
+              ? <span className="text-red-400">✗ {testDetail.error}</span>
+              : <span className="text-green-400">✓ 成功</span>}
           </div>
           {testDetail.output && (
             <div className="bg-gray-900 px-3 py-2 font-mono text-xs text-green-300 whitespace-pre-wrap break-all border-t border-gray-700 max-h-40 overflow-y-auto">
@@ -211,22 +168,11 @@ function ProviderForm({
         </div>
       )}
 
-      {/* 测试 + 保存 */}
-      <div className="flex items-center gap-3">
-        <button onClick={handleTest} disabled={testing}
-          className="px-4 py-1.5 text-sm bg-apple-bg border border-apple-border rounded-lg hover:bg-apple-border/50 disabled:opacity-50 transition-colors">
-          {testing ? '测试中…' : '测试连接'}
-        </button>
-        {lastResult && !testDetail && (
-          <span className={`text-xs ${lastResult.success ? 'text-green-600' : 'text-red-500'}`}>
-            {lastResult.success ? '✓' : '✗'} {lastResult.version || lastResult.error}
-          </span>
-        )}
-        <button onClick={() => { onSave(form); setTestDetail(null) }} disabled={saving}
-          className="ml-auto px-5 py-1.5 text-sm bg-apple-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity">
-          {saving ? '保存中…' : '保存'}
-        </button>
-      </div>
+      {/* 测试主按钮 */}
+      <button onClick={handleTest} disabled={testing}
+        className="w-full py-2.5 text-sm bg-apple-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity font-medium">
+        {testing ? '测试中…' : (testDetail ? '再次测试' : '测试连接')}
+      </button>
     </div>
   )
 }
