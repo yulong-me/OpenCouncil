@@ -1,7 +1,8 @@
 ---
 featId: F021
 name: 数据库持久化
-status: spec
+status: done
+completed: 2026-04-11
 owner: 宪宪
 created: 2026-04-11
 topics: [backend, database, persistence]
@@ -139,20 +140,20 @@ backend/src/db/
 
 ## Acceptance Criteria
 
-- [ ] `better-sqlite3` 加入 `backend/package.json`
-- [ ] `npm rebuild better-sqlite3` 可正常编译（验证 native 模块可用）
-- [ ] `backend/data/` 加入 `.gitignore`（.db 文件不提交）
-- [ ] SQLite DB 在 `backend/data/muti-agent.db` 自动创建（schema.sql 执行）
-- [ ] `schema.sql` 文件存在且与 Markdown 一致
-- [ ] 迁移前自动备份 JSON → `.bak`，迁移成功后才删除备份
-- [ ] `/api/agents` 走 DB 不走 JSON 文件
-- [ ] `/api/providers` 走 DB 不走 JSON 文件
-- [ ] 新建 Room 时写入 DB
-- [ ] 新消息写入 DB（`room_id` 关联）
-- [ ] 审计日志写入 DB
-- [ ] Session IDs 持久化到 DB（含 created_at）
-- [ ] 所有路由可跨进程重启恢复
-- [ ] 进程重启后数据完整恢复（内存 → DB 替换完成）
+- [x] `better-sqlite3` 加入 `backend/package.json`
+- [x] `npm rebuild better-sqlite3` 可正常编译（验证 native 模块可用）
+- [x] `backend/data/` 加入 `.gitignore`（.db 文件不提交）
+- [x] SQLite DB 在 `backend/data/muti-agent.db` 自动创建（schema.sql 执行）
+- [x] `schema.sql` 文件存在且与 Markdown 一致
+- [x] 迁移前自动备份 JSON → `.bak`，迁移成功后才删除备份
+- [x] `/api/agents` 走 DB 不走 JSON 文件
+- [x] `/api/providers` 走 DB 不走 JSON 文件
+- [x] 新建 Room 时写入 DB
+- [x] 新消息写入 DB（`room_id` 关联）
+- [x] 审计日志写入 DB
+- [x] Session IDs 持久化到 DB（含 created_at）
+- [x] 所有路由可跨进程重启恢复
+- [x] 进程重启后数据完整恢复（内存 → DB 替换完成）
 
 ## Dependencies
 
