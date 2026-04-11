@@ -1,5 +1,21 @@
 import { db } from '../db.js';
-import { type AgentConfig } from '../../config/agentConfig.js';
+
+export type ProviderName = 'claude-code' | 'opencode';
+
+export interface AgentConfig {
+  id: string;
+  name: string;
+  roleLabel: string;
+  role: 'HOST' | 'AGENT';
+  provider: ProviderName;
+  providerOpts: {
+    model?: string;
+    thinking?: boolean;
+    [key: string]: unknown;
+  };
+  systemPrompt: string;
+  enabled: boolean;
+}
 
 export const agentsRepo = {
   list(): AgentConfig[] {

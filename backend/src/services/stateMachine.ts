@@ -1,6 +1,6 @@
 import { store } from '../store.js';
 import { getAgentByName } from '../config/agentConfig.js';
-import { getProvider } from '../config/providerConfig.js';
+import { getProvider } from './providers/index.js';
 import type { ClaudeEvent } from './providers/index.js';
 import { emitStreamStart, emitStreamEnd, emitAgentStatus, emitStreamDelta, emitThinkingDelta } from './socketEmitter.js';
 import { HOST_PROMPTS } from '../prompts/host.js';

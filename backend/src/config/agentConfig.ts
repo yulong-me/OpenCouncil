@@ -1,7 +1,6 @@
-import { agentsRepo } from '../db/repositories/agents.js';
-import type { AgentConfig } from '../db/repositories/agents.js';
+import { agentsRepo, type AgentConfig, type ProviderName } from '../db/repositories/agents.js';
 
-export type { AgentConfig };
+export type { AgentConfig, ProviderName };
 export { agentsRepo };
 
 export function getAgents(): AgentConfig[] {

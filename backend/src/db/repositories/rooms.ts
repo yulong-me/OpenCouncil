@@ -28,8 +28,9 @@ export const roomsRepo = {
       report: row.report as string | undefined,
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
-      agents: [], // loaded separately
+      agents: [],
       messages: messagesRepo.listByRoom(row.id as string),
+      sessionIds: {},
     };
   },
 

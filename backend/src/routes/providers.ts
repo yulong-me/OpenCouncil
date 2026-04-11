@@ -83,38 +83,93 @@ router.get('/:name/preview', (req, res) => {
   }
 })
 
-// POST /api/providers/:name/test — test CLI connection
+// POST /api/providers/:name/test — run actual agent CLI command with test prompt
 router.post('/:name/test', (req, res) => {
   const p = getProvider(req.params.name)
   if (!p) return res.status(404).json({ error: 'Provider not found' })
 
-  const isOpencode = p.name === 'opencode'
-  const cmd = isOpencode ? p.cliPath.replace(/^~/, process.env.HOME || '/root') : p.cliPath
-  const args = isOpencode ? ['--version'] : ['--version']
+  const cliPath = p.cliPath.replace(/^~/, process.env.HOME || '/root')
+  const timeout = Math.max((p.timeout ?? 90) * 1000, 30000)
+  const testPrompt = '说一个简单的词，比如"你好"'
 
-  const env = { ...process.env }
+  const env: Record<string, string> = { ...(process.env as Record<string, string>) }
   if (p.apiKey) env.ANTHROPIC_API_KEY = p.apiKey
   if (p.baseUrl) env.ANTHROPIC_BASE_URL = p.baseUrl
 
-  const proc = spawn(cmd, args, { timeout: 15000, env })
+  let args: string[]
+  let resultCli: string
+
+  if (p.name === 'claude-code') {
+    args = ['-p', testPrompt, '--verbose', '--output-format=stream-json', '--include-partial-messages']
+    resultCli = `claude ${args.join(' ')}`
+  } else if (p.name === 'opencode') {
+    args = ['run']
+    if (p.thinking) args.push('--thinking')
+    if (p.defaultModel) args.push('-m', p.defaultModel)
+    args.push('--format', 'json', '--', testPrompt)
+    resultCli = `opencode ${args.join(' ')}`
+  } else {
+    return res.status(400).json({ error: 'Unknown provider type' })
+  }
+
+  const proc = spawn(cliPath, args, { timeout, env, stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   let stderr = ''
+  let outputLines: string[] = []
+  let capturedOutput = ''
 
-  proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString() })
+  proc.stdout?.on('data', (d: Buffer) => {
+    const text = d.toString()
+    stdout += text
+    if (p.name === 'opencode') {
+      // opencode --format json outputs JSON per line; collect text from delta events
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue
+        try {
+          const obj = JSON.parse(line)
+          if (obj.type === 'delta' && obj.text) {
+            capturedOutput += obj.text
+            outputLines.push(`[delta] ${obj.text}`)
+          }
+        } catch { /* skip */ }
+      }
+    } else {
+      // claude stream-json format
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue
+        try {
+          const obj = JSON.parse(line)
+          if (obj.type === 'content_block_delta' && obj.delta?.type === 'thinking_delta' && obj.delta.thinking) {
+            outputLines.push(`[thinking] ${obj.delta.thinking}`)
+          } else if (obj.type === 'content_block_delta' && obj.delta?.type === 'text_delta' && obj.delta.text) {
+            capturedOutput += obj.delta.text
+            outputLines.push(`[text] ${obj.delta.text}`)
+          } else if (obj.type === 'message_delta' && obj.usage) {
+            outputLines.push(`[usage] input=${obj.usage.input_tokens} output=${obj.usage.output_tokens}`)
+          }
+        } catch { /* skip */ }
+      }
+    }
+  })
+
   proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
 
   proc.on('close', (code) => {
     const success = code === 0
-    const version = success ? stdout.trim().split('\n')[0] : undefined
-    const error = success ? undefined : stderr.trim().slice(0, 200)
-    const result = { success, version, error }
-    updateTestResult(req.params.name, result)
+    const result = {
+      success,
+      cli: resultCli,
+      output: capturedOutput || (outputLines.length > 0 ? outputLines.join('\n') : (stdout.trim() || undefined)),
+      rawOutput: stdout.slice(0, 500),
+      error: success ? undefined : stderr.trim().slice(0, 300),
+    }
+    updateTestResult(req.params.name, { success, version: capturedOutput.slice(0, 50) || `exit ${code}` })
     res.json(result)
   })
 
   proc.on('error', (err) => {
-    const result = { success: false, error: err.message }
-    updateTestResult(req.params.name, result)
+    const result = { success: false, cli: resultCli, output: undefined, rawOutput: undefined, error: err.message }
+    updateTestResult(req.params.name, { success: false, error: err.message })
     res.json(result)
   })
 })

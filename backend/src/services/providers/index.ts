@@ -4,7 +4,7 @@
  */
 import { streamClaudeCodeProvider } from './claudeCode.js';
 import { streamOpenCodeProvider } from './opencode.js';
-import type { AgentConfig, ProviderName } from '../../config/agentConfig.js';
+import type { ProviderName } from '../../config/agentConfig.js';
 
 // Re-export the unified event type
 export type ClaudeEvent =

@@ -53,7 +53,6 @@ function ProviderTab({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
 
   useEffect(() => {
     fetch(`${API}/api/providers`)
@@ -79,21 +78,6 @@ function ProviderTab({ onClose }: { onClose: () => void }) {
       }
       setSaving(false)
     }).catch(() => setSaving(false))
-  }
-
-  function handleTest() {
-    if (!selected) return
-    setTesting(true)
-    fetch(`${API}/api/providers/${selected}/test`, { method: 'POST' })
-      .then(r => r.json())
-      .then((result: { success: boolean; version?: string; error?: string }) => {
-        setProviders(prev => ({
-          ...prev,
-          [selected]: { ...prev[selected], lastTested: Date.now(), lastTestResult: result },
-        }))
-        setTesting(false)
-      })
-      .catch(() => setTesting(false))
   }
 
   const current = selected ? providers[selected] : null
@@ -128,9 +112,7 @@ function ProviderTab({ onClose }: { onClose: () => void }) {
             key={current.name}
             provider={current}
             onSave={handleSave}
-            onTest={handleTest}
             saving={saving}
-            testing={testing}
           />
         ) : (
           <p className="text-sm text-apple-secondary text-center py-8">选择一个 Provider</p>
@@ -143,23 +125,36 @@ function ProviderTab({ onClose }: { onClose: () => void }) {
 function ProviderForm({
   provider,
   onSave,
-  onTest,
   saving,
-  testing,
 }: {
   provider: ProviderConfig
   onSave: (p: ProviderConfig) => void
-  onTest: () => void
   saving: boolean
-  testing: boolean
 }) {
   const [form, setForm] = useState(provider)
   const [lastResult, setLastResult] = useState(provider.lastTestResult)
+  const [testDetail, setTestDetail] = useState<{ cli: string; output?: string; error?: string } | null>(null)
+  const [testing, setTesting] = useState(false)
 
-  useEffect(() => { setForm(provider); setLastResult(provider.lastTestResult) }, [provider])
+  useEffect(() => { setForm(provider); setLastResult(provider.lastTestResult); setTestDetail(null) }, [provider])
 
   function field<K extends keyof ProviderConfig>(key: K, value: ProviderConfig[K]) {
     setForm(f => ({ ...f, [key]: value }))
+  }
+
+  function handleTest() {
+    setTesting(true)
+    fetch(`${API}/api/providers/${form.name}/test`, { method: 'POST' })
+      .then(r => r.json())
+      .then((result: { success: boolean; cli: string; output?: string; error?: string }) => {
+        setTestDetail({ cli: result.cli, output: result.output, error: result.error })
+        setLastResult({ success: result.success, version: result.output?.slice(0, 80), error: result.error })
+        setTesting(false)
+      })
+      .catch(err => {
+        setTestDetail({ cli: '', error: err.message })
+        setTesting(false)
+      })
   }
 
   return (
@@ -196,25 +191,38 @@ function ProviderForm({
         </div>
       </div>
 
-      {/* 命令预览 */}
-      <div className="bg-gray-900 rounded-lg px-3 py-2 font-mono text-xs text-green-400 whitespace-pre-wrap break-all">
-        {form.name === 'opencode'
-          ? `opencode run ${form.defaultModel ? `-m ${form.defaultModel}` : ''} ${form.thinking ? '--thinking' : ''} --format json -- "<prompt>"`
-          : `claude -p "<prompt>" --verbose --output-format=stream-json --include-partial-messages`}
-      </div>
+      {/* 测试结果输出 */}
+      {testDetail && (
+        <div className="border border-apple-border rounded-lg overflow-hidden">
+          <div className="bg-gray-900 px-3 py-1.5 font-mono text-xs text-gray-400 border-b border-gray-700">
+            命令
+          </div>
+          <div className="bg-gray-900 px-3 py-2 font-mono text-xs text-green-400 whitespace-pre-wrap break-all">
+            {testDetail.cli}
+          </div>
+          <div className="bg-gray-900 px-3 py-1.5 font-mono text-xs text-gray-400 border-t border-gray-700">
+            输出 {testDetail.error ? <span className="text-red-400">✗ {testDetail.error}</span> : '✓'}
+          </div>
+          {testDetail.output && (
+            <div className="bg-gray-900 px-3 py-2 font-mono text-xs text-green-300 whitespace-pre-wrap break-all border-t border-gray-700 max-h-40 overflow-y-auto">
+              {testDetail.output}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 测试 + 保存 */}
       <div className="flex items-center gap-3">
-        <button onClick={onTest} disabled={testing}
+        <button onClick={handleTest} disabled={testing}
           className="px-4 py-1.5 text-sm bg-apple-bg border border-apple-border rounded-lg hover:bg-apple-border/50 disabled:opacity-50 transition-colors">
           {testing ? '测试中…' : '测试连接'}
         </button>
-        {lastResult && (
+        {lastResult && !testDetail && (
           <span className={`text-xs ${lastResult.success ? 'text-green-600' : 'text-red-500'}`}>
             {lastResult.success ? '✓' : '✗'} {lastResult.version || lastResult.error}
           </span>
         )}
-        <button onClick={() => onSave(form)} disabled={saving}
+        <button onClick={() => { onSave(form); setTestDetail(null) }} disabled={saving}
           className="ml-auto px-5 py-1.5 text-sm bg-apple-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity">
           {saving ? '保存中…' : '保存'}
         </button>
