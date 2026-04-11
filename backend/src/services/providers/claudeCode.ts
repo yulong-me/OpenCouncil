@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { ClaudeEvent } from './index.js';
+import { getProvider } from '../../config/providerConfig.js';
 
 function telemetry(event: 'call_start' | 'call_end' | 'call_error', meta: Record<string, unknown>) {
   const ts = new Date().toISOString();
@@ -13,14 +14,24 @@ export async function* streamClaudeCodeProvider(
   opts: Record<string, unknown> = {},
 ): AsyncGenerator<ClaudeEvent, void, undefined> {
   const start = Date.now();
-  const timeout = (opts.timeout as number) ?? 90000;
+  const providerCfg = getProvider('claude-code');
+  const timeout = (opts.timeout as number) ?? (providerCfg?.timeout ?? 90000);
   const sessionId = opts.sessionId as string | undefined;
-  telemetry('call_start', { agentId, promptLength: prompt.length, timeout, sessionId: sessionId ?? 'new' });
+
+  // Resolve CLI path (expand ~)
+  const cliPath = (providerCfg?.cliPath ?? 'claude').replace(/^~/, process.env.HOME || '/root');
+
+  // Build environment: inject API key and base URL if configured
+  const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+  if (providerCfg?.apiKey) env.ANTHROPIC_API_KEY = providerCfg.apiKey;
+  if (providerCfg?.baseUrl) env.ANTHROPIC_BASE_URL = providerCfg.baseUrl;
+
+  telemetry('call_start', { agentId, promptLength: prompt.length, timeout, sessionId: sessionId ?? 'new', cliPath });
 
   const args = ['-p', prompt, '--verbose', '--output-format=stream-json', '--include-partial-messages'];
   if (sessionId) args.splice(1, 0, '--resume', sessionId);
 
-  const proc = spawn('claude', args, { timeout, stdio: ['ignore', 'pipe', 'pipe'] });
+  const proc = spawn(cliPath, args, { timeout, env, stdio: ['ignore', 'pipe', 'pipe'] });
 
   let stderrBuffer = '';
   proc.stderr?.on('data', (d: Buffer) => { stderrBuffer += d.toString(); });

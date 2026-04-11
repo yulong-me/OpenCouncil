@@ -7,6 +7,7 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { io, type Socket } from 'socket.io-client'
 import CreateRoomModal from '@/components/CreateRoomModal'
+import SettingsDrawer from '@/components/SettingsDrawer'
 
 // ── BubbleSection: a single collapsible section within a message bubble ───────
 // States: collapsed (1 line) | expanded (full)
@@ -99,8 +100,9 @@ function BubbleSection({
   )
 }
 
-// ── ExpandableText: icon button to expand / collapse long content ──────────────
-// (kept for compatibility — not used in the new two-section bubble design)
+// ── ExpandableText: expand/collapse for long user messages ──────────────────
+// (used for USER messages; agents use BubbleSection instead)
+
 // ── Markdown components matching cat-cafe style ──────────────────────────────
 function ExpandableText({
   text,
@@ -251,6 +253,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [advancing, setAdvancing] = useState(false)
   const [advancingChoice, setAdvancingChoice] = useState<string | undefined>(undefined)
   const [started, setStarted] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const startRequestedRef = useRef(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollStateRef = useRef<{ state: DiscussionState; agents: Agent[] }>({ state: 'INIT' as DiscussionState, agents: [] as Agent[] })
@@ -577,7 +580,18 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       <div className="flex-1 flex flex-col">
         <div className="h-20 bg-white border-b border-apple-border px-8 flex items-center justify-between">
           <h1 className="text-xl font-bold text-apple-text">AI 智囊团</h1>
-          {roomId && (
+          <div className="flex items-center gap-3">
+            {/* Settings button */}
+            <button
+              onClick={() => setShowSettings(s => !s)}
+              className="w-9 h-9 rounded-xl bg-apple-bg hover:bg-apple-border flex items-center justify-center text-apple-secondary hover:text-apple-primary transition-colors"
+              title="系统设置"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+              </svg>
+            </button>
+            {roomId && (
             <div className="flex items-center gap-2">
               <span className="px-3 py-1 bg-apple-bg rounded-full text-xs font-medium text-apple-secondary">
                 状态
@@ -586,7 +600,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                 {STATE_LABELS[state]}
               </span>
             </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-4" ref={messagesContainerRef} onScroll={handleScroll}>
@@ -769,6 +784,9 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           )}
         </div>
       </div>
+
+      {/* Settings Drawer */}
+      <SettingsDrawer open={showSettings} onClose={() => setShowSettings(false)} />
     </div>
     </>
   )

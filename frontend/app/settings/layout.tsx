@@ -13,6 +13,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           <Link href="/settings/agents" className="text-apple-primary font-semibold text-sm">
             Agent 配置
           </Link>
+          <span className="text-apple-secondary">|</span>
+          <span className="text-apple-secondary/40 text-sm">Provider 配置（请在 ⚙ 抽屉内访问）</span>
         </div>
       </div>
       <div className="max-w-3xl mx-auto px-6 py-8">
