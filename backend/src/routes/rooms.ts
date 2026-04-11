@@ -22,12 +22,14 @@ roomsRouter.post('/', (req, res) => {
   }
 
   // Resolve agent configs by id (id-based routing — avoids name collision risk)
+  // 先验证所有 agent，全部有效后再创建 room（避免双重响应）
+  const invalidAgents = agentIds.filter(id => !getAgent(id));
+  if (invalidAgents.length > 0) {
+    return res.status(400).json({ error: `Agent not found: ${invalidAgents.join(', ')}` });
+  }
+
   const agentEntries = agentIds.map(id => {
-    const cfg = getAgent(id);
-    if (!cfg) {
-      res.status(400).json({ error: `Agent not found: ${id}` });
-      return null;
-    }
+    const cfg = getAgent(id)!;
     return {
       id: uuid(),
       role: cfg.role,
@@ -37,7 +39,6 @@ roomsRouter.post('/', (req, res) => {
       status: 'idle' as const,
     };
   });
-  if (!agentEntries[0]) return; // error already sent
 
   const hostCfg = getAgent('host');
   const room: DiscussionRoom = {

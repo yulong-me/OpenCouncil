@@ -21,10 +21,19 @@ export function initSchema(): void {
   }
   // Migration: update messages CHECK constraint for MANAGER/WORKER roles
   try {
-    db.exec("DROP TABLE IF EXISTS _messages_old");
-    db.exec("ALTER TABLE messages RENAME TO _messages_old");
+    // 检查是否已有新 CHECK 约束（避免重复迁移）
+    const existing = db.prepare("SELECT agent_role FROM messages LIMIT 1").get();
+    if (existing && typeof existing === 'object' && 'agent_role' in existing) {
+      const role = (existing as { agent_role: string }).agent_role;
+      if (role === 'MANAGER' || role === 'WORKER' || role === 'USER') {
+        log('INFO', 'db:schema:migrate:messages:already_migrated');
+        return;
+      }
+    }
+
+    // 安全迁移：创建新表 → 用 CASE 映射角色 → 删除旧表 → 重命名
     db.exec(`
-      CREATE TABLE messages (
+      CREATE TABLE messages_new (
         id              TEXT PRIMARY KEY,
         room_id         TEXT NOT NULL,
         agent_role      TEXT NOT NULL
@@ -42,13 +51,24 @@ export function initSchema(): void {
         temp_msg_id     TEXT,
         FOREIGN KEY (room_id) REFERENCES rooms(id)
       )`);
-    db.exec("INSERT INTO messages SELECT * FROM _messages_old");
-    db.exec("DROP TABLE _messages_old");
+    db.exec(`
+      INSERT INTO messages_new
+        SELECT
+          id, room_id,
+          CASE agent_role
+            WHEN 'AGENT' THEN 'WORKER'
+            WHEN 'HOST' THEN 'MANAGER'
+            ELSE agent_role
+          END,
+          agent_name, content, timestamp, type,
+          thinking, duration_ms, total_cost_usd,
+          input_tokens, output_tokens, temp_msg_id
+        FROM messages`);
+    db.exec("DROP TABLE messages");
+    db.exec("ALTER TABLE messages_new RENAME TO messages");
     log('INFO', 'db:schema:migrate:messages:check_constraint');
   } catch (err) {
-    // If migration fails (e.g., new CHECK already exists), clean up and continue
-    try { db.exec("DROP TABLE IF EXISTS _messages_old"); } catch { /* ignore */ }
-    log('WARN', 'db:schema:migrate:messages:check_constraint_skipped', { reason: String(err) });
+    log('WARN', 'db:schema:migrate:messages:check_constraint_failed', { reason: String(err) });
   }
   log('INFO', 'db:schema:init');
 }

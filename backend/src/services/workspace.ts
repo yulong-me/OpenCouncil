@@ -5,7 +5,7 @@
  * 实现文件级共享（不是消息级共享）。
  *
  * 目录结构：
- * /workspace/room-{roomId}/
+ * {project_root}/workspaces/room-{roomId}/
  * ├── src/
  * │   └── App.tsx          ← Agent A 写的
  * ├── tests/
@@ -16,8 +16,11 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 
-const WORKSPACE_BASE = '/workspace';
+// 使用项目根目录下的 workspaces/，避免 /workspace 需要 root 权限
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const WORKSPACE_BASE = path.resolve(__dirname, '../../workspaces');
 
 export function getWorkspacePath(roomId: string): string {
   return path.join(WORKSPACE_BASE, `room-${roomId}`);
