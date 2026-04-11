@@ -6,15 +6,50 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { io, type Socket } from 'socket.io-client'
+import { useTheme } from 'next-themes'
+import { Menu, X, Plus, Download, MessageSquare, ChevronUp, ChevronDown, ChevronRight, BrainCircuit, Sun, Moon, Settings } from 'lucide-react'
 import CreateRoomModal from '@/components/CreateRoomModal'
-import SettingsDrawer from '@/components/SettingsDrawer'
+import SettingsModal from '@/components/SettingsModal'
 
-// ── BubbleSection: a single collapsible section within a message bubble ───────
-// States: collapsed (1 line) | expanded (full)
-// Props: label, icon, content, isStreaming, agentColor
+function SettingsButton({ onOpen }: { onOpen: () => void }) {
+  const [mounted, setMounted] = useState(false)
+  const { theme, setTheme } = useTheme()
+
+  useEffect(() => setMounted(true), [])
+
+  function handleOpen() {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      window.location.href = '/settings'
+    } else {
+      onOpen()
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={handleOpen}
+        className="w-8 h-8 rounded-full flex items-center justify-center text-ink-soft hover:text-ink hover:bg-surface-muted transition-colors"
+        aria-label="打开设置"
+      >
+        <Settings className="w-4 h-4" aria-hidden/>
+      </button>
+      {mounted && (
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="w-8 h-8 rounded-full flex items-center justify-center text-ink-soft hover:text-ink hover:bg-surface-muted transition-colors"
+          aria-label={theme === 'dark' ? '切换亮色模式' : '切换暗色模式'}
+        >
+          {theme === 'dark' ? <Sun className="w-4 h-4" aria-hidden/> : <Moon className="w-4 h-4" aria-hidden/>}
+        </button>
+      )}
+    </div>
+  )
+}
+
 function BubbleSection({
   label,
-  icon,          // 'brain' | 'output'
+  icon,
   content,
   isStreaming,
   agentColor,
@@ -26,26 +61,15 @@ function BubbleSection({
   agentColor: string
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
-  
   const lineCount = content.split('\n').length
   const isEmpty = !content.trim()
 
-  const expandSquare = (
+  const expandIcon = (
     <div
       className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-[4px] transition-colors"
-      style={{ backgroundColor: `${agentColor}1A`, color: agentColor }}
+      style={{ backgroundColor: `${agentColor}20`, color: agentColor }}
     >
-      {isExpanded ? (
-        // Minus icon
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-          <path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8z" />
-        </svg>
-      ) : (
-        // Plus icon
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-          <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z" />
-        </svg>
-      )}
+      {isExpanded ? <ChevronDown className="w-3 h-3" aria-hidden/> : <ChevronRight className="w-3 h-3" aria-hidden/>}
     </div>
   )
 
@@ -63,34 +87,32 @@ function BubbleSection({
 
   return (
     <div className={icon === 'brain' ? 'mb-3' : 'mb-1'}>
-      {/* Section header — always visible */}
       <button
         onClick={() => setIsExpanded(e => !e)}
+        aria-expanded={isExpanded}
         className="flex items-center gap-2 text-xs font-medium w-full group/section hover:opacity-80 transition-opacity"
         style={{ color: agentColor }}
-        aria-label={`${isExpanded ? '收起' : '展开'}${label}`}
       >
-        {expandSquare}
-        <span className="opacity-90 tracking-wide">{label}</span>
+        {expandIcon}
+        <span className="opacity-90 tracking-wide flex items-center gap-1.5">
+          {icon === 'brain' && <BrainCircuit className="w-3 h-3" aria-hidden/>}
+          {label}
+        </span>
         <span className="text-[11px] opacity-50 ml-1 font-normal tracking-wider">{statusText}</span>
         {streamingCursor}
       </button>
 
-      {/* Section body */}
       {isExpanded && (
         <div
           className={`mt-2 ml-2 pl-3.5 border-l-2 text-[14px] leading-relaxed ${
             icon === 'brain'
-              ? 'font-mono text-apple-secondary bg-gray-50/50 py-2.5 px-3 rounded-r-lg text-[13px]'
-              : 'text-apple-text py-0.5'
+              ? 'font-mono text-ink-soft bg-surface-muted/50 py-2.5 px-3 rounded-r-lg text-[13px] overflow-x-auto'
+              : 'text-ink py-0.5'
           }`}
-          style={{ borderColor: `${agentColor}30` }}
+          style={{ borderColor: `${agentColor}40` }}
         >
           {icon === 'output' ? (
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkBreaks]}
-              components={mdComponents}
-            >{content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>{content}</ReactMarkdown>
           ) : (
             <span className="whitespace-pre-wrap opacity-80">{content}</span>
           )}
@@ -100,147 +122,83 @@ function BubbleSection({
   )
 }
 
-// ── ExpandableText: expand/collapse for long user messages ──────────────────
-// (used for USER messages; agents use BubbleSection instead)
-
-// ── Markdown components matching cat-cafe style ──────────────────────────────
-function ExpandableText({
-  text,
-  clampClass = 'line-clamp-3',
-  className = '',
-}: {
-  text: string
-  clampClass?: string
-  className?: string
-}) {
+function ExpandableText({ text, clampClass = 'line-clamp-3', className = '' }: { text: string; clampClass?: string; className?: string }) {
   const [expanded, setExpanded] = useState(false)
   return (
     <span>
       <span className={expanded ? 'whitespace-normal' : clampClass}>
         <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={mdComponents}>{text}</ReactMarkdown>
       </span>
-      {/* Icon button for expand/collapse */}
       <button
-        className={`mt-1 inline-flex items-center gap-1 text-apple-primary/60 hover:text-apple-primary transition-colors ${className}`}
+        className={`mt-1 inline-flex items-center gap-1 text-accent/80 hover:text-accent transition-colors ${className}`}
         onClick={() => setExpanded(e => !e)}
-        aria-label={expanded ? '收起' : '展开'}
       >
-        {expanded ? (
-          // chevron up
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-            <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-          </svg>
-        ) : (
-          // chevron down
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-          </svg>
-        )}
+        {expanded ? <ChevronUp className="w-3 h-3" aria-hidden/> : <ChevronDown className="w-3 h-3" aria-hidden/>}
       </button>
     </span>
   )
 }
 
-// ── Markdown components matching cat-cafe style ──────────────────────────────
 const mdComponents: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-  h1: ({ children }) => <h1 className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-sm font-bold mb-2 mt-3 first:mt-0">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2 first:mt-0">{children}</h3>,
-  ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-0.5">{children}</ul>,
-  ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-0.5">{children}</ol>,
+  h1: ({ children }) => <h1 className="text-base font-bold mb-2 mt-3 text-ink first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-sm font-bold mb-2 mt-3 text-ink first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2 text-ink first:mt-0">{children}</h3>,
+  ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-0.5 text-ink">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-0.5 text-ink">{children}</ol>,
   li: ({ children }) => <li className="mb-0.5">{children}</li>,
-  blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-300 pl-3 my-2 italic opacity-80">{children}</blockquote>,
-  a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all">{children}</a>,
-  pre: ({ children }) => <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-xs font-mono my-2">{children}</pre>,
-  code: ({ children }) => <code className="bg-gray-100 rounded px-1 py-0.5 text-xs font-mono">{children}</code>,
+  blockquote: ({ children }) => <blockquote className="border-l-2 border-line pl-3 my-2 italic text-ink-soft">{children}</blockquote>,
+  a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline break-all">{children}</a>,
+  pre: ({ children }) => <pre className="bg-[#1e1e1e] text-[#d4d4d4] rounded-lg p-3 overflow-x-auto text-xs font-mono my-2">{children}</pre>,
+  code: ({ children }) => <code className="bg-surface-muted text-ink rounded px-1.5 py-0.5 text-[0.85em] font-mono border border-line">{children}</code>,
 }
 
-// ── Telemetry ────────────────────────────────────────────────────────────────
 function telemetry(event: string, meta?: Record<string, unknown>) {
   const ts = new Date().toISOString()
-  const prefix = `[${ts}] [FE]`
-  if (meta) {
-    console.log(`${prefix} ${event} ${JSON.stringify(meta)}`)
-  } else {
-    console.log(`${prefix} ${event}`)
-  }
+  if (meta) console.log(`[${ts}] [FE] ${event} ${JSON.stringify(meta)}`)
+  else console.log(`[${ts}] [FE] ${event}`)
 }
 
 type DiscussionState = 'INIT' | 'RESEARCH' | 'DEBATE' | 'CONVERGING' | 'DONE'
 type AgentRole = 'HOST' | 'AGENT'
 
 interface Agent {
-  id: string
-  role: AgentRole
-  name: string
-  domainLabel: string
-  status: 'idle' | 'thinking' | 'waiting' | 'done'
+  id: string; role: AgentRole; name: string; domainLabel: string; status: 'idle' | 'thinking' | 'waiting' | 'done'
 }
 
 interface Message {
-  id: string
-  agentRole: AgentRole | 'USER'
-  agentName: string
-  content: string
-  timestamp: number
-  type: string
-  /** Reasoning/thinking content (populated after streaming completes) */
-  thinking?: string
-  /** Streaming timing (populated after streaming completes) */
-  duration_ms?: number
-  total_cost_usd?: number
-  input_tokens?: number
-  output_tokens?: number
-  /** Temporary ID used during streaming */
-  tempMsgId?: string
+  id: string; agentRole: AgentRole | 'USER'; agentName: string; content: string; timestamp: number; type: string;
+  thinking?: string; duration_ms?: number; total_cost_usd?: number; input_tokens?: number; output_tokens?: number; tempMsgId?: string
 }
 
 const STATE_LABELS: Record<DiscussionState, string> = {
-  INIT: '初始化',
-  RESEARCH: '调查中',
-  DEBATE: '辩论中',
-  CONVERGING: '收敛中',
-  DONE: '已完成',
+  INIT: '初始化', RESEARCH: '调查中', DEBATE: '辩论中', CONVERGING: '收敛中', DONE: '已完成',
 }
 
 const AGENT_COLORS: Record<string, { bg: string; text: string }> = {
-  主持人: { bg: '#0071E3', text: '#FFFFFF' },
-  司马迁: { bg: '#8B4513', text: '#FFFFFF' },
-  诸葛亮: { bg: '#2E8B57', text: '#FFFFFF' },
-  李世民: { bg: '#B8860B', text: '#FFFFFF' },
-  孔子: { bg: '#556B2F', text: '#FFFFFF' },
-  曹操: { bg: '#8B0000', text: '#FFFFFF' },
-  马斯克: { bg: '#007AFF', text: '#FFFFFF' },
-  乔布斯: { bg: '#5856D6', text: '#FFFFFF' },
-  爱因斯坦: { bg: '#1E90FF', text: '#FFFFFF' },
-  图灵: { bg: '#4169E1', text: '#FFFFFF' },
-  马云: { bg: '#FF9500', text: '#FFFFFF' },
+  主持人: { bg: '#4F46E5', text: '#FFFFFF' }, // Indigo
+  司马迁: { bg: '#D97706', text: '#FFFFFF' }, // Amber
+  诸葛亮: { bg: '#059669', text: '#FFFFFF' }, // Emerald
+  李世民: { bg: '#DC2626', text: '#FFFFFF' }, // Red
+  孔子: { bg: '#4D7C0F', text: '#FFFFFF' }, // Olive
+  曹操: { bg: '#9F1239', text: '#FFFFFF' }, // Rose
+  马斯克: { bg: '#2563EB', text: '#FFFFFF' }, // Blue
+  乔布斯: { bg: '#7C3AED', text: '#FFFFFF' }, // Violet
+  爱因斯坦: { bg: '#0284C7', text: '#FFFFFF' }, // Sky
+  图灵: { bg: '#0D9488', text: '#FFFFFF' }, // Teal
+  马云: { bg: '#EA580C', text: '#FFFFFF' }, // Orange
 }
 
-const DEFAULT_AGENT_COLOR = { bg: '#34C759', text: '#FFFFFF' }
+const DEFAULT_AGENT_COLOR = { bg: '#10B981', text: '#FFFFFF' } // Emerald
 
 const STATE_BUTTONS: Partial<Record<DiscussionState, { label: string; choice?: string }[]>> = {
   INIT: [{ label: '确认议题方向', choice: 'confirm' }],
-  RESEARCH: [
-    { label: '进入辩论', choice: 'debate' },
-    { label: '继续调查', choice: 'research' },
-  ],
-  DEBATE: [
-    { label: '进入收敛', choice: 'converge' },
-    { label: '继续辩论', choice: 'continue' },
-  ],
-  CONVERGING: [
-    { label: '确认收敛', choice: 'converge' },
-    { label: '继续辩论', choice: 'debate' },
-    { label: '继续调查', choice: 'research' },
-  ],
+  RESEARCH: [{ label: '进入辩论', choice: 'debate' }, { label: '继续调查', choice: 'research' }],
+  DEBATE: [{ label: '进入收敛', choice: 'converge' }, { label: '继续辩论', choice: 'continue' }],
+  CONVERGING: [{ label: '确认收敛', choice: 'converge' }, { label: '继续辩论', choice: 'debate' }, { label: '继续调查', choice: 'research' }],
 }
 
-interface RoomViewProps {
-  roomId?: string
-  defaultCreateOpen?: boolean
-}
+interface RoomViewProps { roomId?: string; defaultCreateOpen?: boolean }
 
 export default function RoomView({ roomId, defaultCreateOpen = false }: RoomViewProps) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(defaultCreateOpen)
@@ -253,25 +211,22 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [advancing, setAdvancing] = useState(false)
   const [advancingChoice, setAdvancingChoice] = useState<string | undefined>(undefined)
   const [started, setStarted] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'agent' | 'provider'>('agent')
+  
   const startRequestedRef = useRef(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollStateRef = useRef<{ state: DiscussionState; agents: Agent[] }>({ state: 'INIT' as DiscussionState, agents: [] as Agent[] })
-
-  // Streaming state: temp messages that are currently streaming
   const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
-  // Streaming thinking content per agent (accumulated in real-time)
   const streamingThinkingRef = useRef<Map<string, string>>(new Map())
-
-  // Track if user has scrolled away from bottom (to avoid fighting their scroll during streaming)
   const userScrolledRef = useRef(false)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
-  // Count of currently active streaming messages (to know when streaming is done)
   const streamingCountRef = useRef(0)
+  const socketRef = useRef<Socket | null>(null)
 
   const scrollToBottom = () => {
     if (userScrolledRef.current) return
-    // During active streaming, use instant scroll (no smooth jitter); smooth only when idle
     const behavior = streamingCountRef.current > 0 ? 'instant' : 'smooth'
     messagesEndRef.current?.scrollIntoView({ behavior })
   }
@@ -285,67 +240,38 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
 
   useEffect(() => { scrollToBottom() }, [messages])
 
-  // ── Socket.IO ───────────────────────────────────────────────────────────────
-  const socketRef = useRef<Socket | null>(null)
-
   useEffect(() => {
-    const socket = io('http://localhost:7001', {
-      transports: ['websocket', 'polling'],
-    })
+    const socket = io('http://localhost:7001', { transports: ['websocket', 'polling'] })
     socketRef.current = socket
 
-    socket.on('connect', () => {
-      telemetry('socket:connect')
-    })
-
-    // stream_start: create a placeholder message for real-time streaming
-    socket.on('stream_start', (data: { roomId: string; agentId: string; agentName: string; timestamp: number; tempMsgId: string }) => {
+    socket.on('connect', () => telemetry('socket:connect'))
+    socket.on('stream_start', (data: any) => {
       if (data.roomId !== roomId) return
       streamingCountRef.current++
-      // Clear previous thinking buffer for this agent
       streamingThinkingRef.current.set(data.agentId, '')
       telemetry('socket:stream_start', { agentName: data.agentName, tempMsgId: data.tempMsgId })
-      const tempMsg: Message = {
-        id: data.tempMsgId,
-        agentRole: 'AGENT',
-        agentName: data.agentName,
-        content: '',
-        timestamp: data.timestamp,
-        type: 'streaming',
-        tempMsgId: data.tempMsgId,
-      }
+      const tempMsg: Message = { id: data.tempMsgId, agentRole: 'AGENT', agentName: data.agentName, content: '', timestamp: data.timestamp, type: 'streaming', tempMsgId: data.tempMsgId }
       streamingMessagesRef.current.set(data.agentId, tempMsg)
-      setMessages(prev => {
-        const filtered = prev.filter(m => m.tempMsgId !== data.tempMsgId)
-        return [...filtered, tempMsg]
-      })
+      setMessages(prev => [...prev.filter(m => m.tempMsgId !== data.tempMsgId), tempMsg])
     })
-
-    // stream_delta: append text to the streaming message (keyed by tempMsgId via agentId lookup)
-    socket.on('stream_delta', (data: { roomId: string; agentId: string; text: string }) => {
+    socket.on('stream_delta', (data: any) => {
       if (data.roomId !== roomId) return
-      // Find by agentId: streamingMessagesRef maps agentId → Message
       const msg = streamingMessagesRef.current.get(data.agentId)
       if (msg) {
         msg.content += data.text
         setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, content: msg.content } : m))
       }
     })
-
-    // thinking_delta: accumulate thinking content for real-time display
-    socket.on('thinking_delta', (data: { roomId: string; agentId: string; thinking: string }) => {
+    socket.on('thinking_delta', (data: any) => {
       if (data.roomId !== roomId) return
       const existing = streamingThinkingRef.current.get(data.agentId) || ''
       streamingThinkingRef.current.set(data.agentId, existing + data.thinking)
-      // Update the message's thinking field in real-time
       const msg = streamingMessagesRef.current.get(data.agentId)
       if (msg) {
         setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, thinking: streamingThinkingRef.current.get(data.agentId) } : m))
       }
     })
-
-    // stream_end: finalize the message with stats
-    socket.on('stream_end', (data: { roomId: string; agentId: string; tempMsgId: string; duration_ms: number; total_cost_usd: number; input_tokens: number; output_tokens: number }) => {
+    socket.on('stream_end', (data: any) => {
       if (data.roomId !== roomId) return
       streamingCountRef.current = Math.max(0, streamingCountRef.current - 1)
       telemetry('socket:stream_end', { tempMsgId: data.tempMsgId, duration_ms: data.duration_ms })
@@ -355,63 +281,35 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         msg.total_cost_usd = data.total_cost_usd
         msg.input_tokens = data.input_tokens
         msg.output_tokens = data.output_tokens
-        // Replace streaming message with finalized one (using tempMsgId as key)
         setMessages(prev => prev.map(m => m.id === data.tempMsgId ? { ...msg, type: m.type !== 'streaming' ? m.type : 'statement' } : m))
       }
     })
-
-    // agent_status: update agent status in real-time
-    socket.on('agent_status', (data: { roomId: string; agentId: string; status: string }) => {
+    socket.on('agent_status', (data: any) => {
       if (data.roomId !== roomId) return
       setAgents(prev => prev.map(a => a.id === data.agentId ? { ...a, status: data.status as Agent['status'] } : a))
     })
 
-    return () => {
-      socket.disconnect()
-      socketRef.current = null
-    }
-  }, [])
+    return () => { socket.disconnect(); socketRef.current = null }
+  }, [roomId])
 
-  // Join room on Socket.IO when roomId changes
   useEffect(() => {
     if (!roomId || !socketRef.current) return
     socketRef.current.emit('join-room', roomId)
     telemetry('socket:join_room', { roomId })
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.emit('leave-room', roomId)
-      }
-    }
+    return () => { if (socketRef.current) socketRef.current.emit('leave-room', roomId) }
   }, [roomId])
 
-  // Load room list
   useEffect(() => {
     telemetry('room:list:load')
-    fetch('http://localhost:7001/api/rooms')
-      .then(r => {
-        if (!r.ok) throw new Error(`status ${r.status}`)
-        return r.json()
-      })
-      .then((data: { id: string; topic: string; createdAt: number }[]) => {
-        setRooms(data)
-        telemetry('room:list:ok', { count: data.length })
-      })
-      .catch((err) => {
-        telemetry('room:list:error', { error: err.message })
-      })
+    fetch('http://localhost:7001/api/rooms').then(r => r.ok ? r.json() : []).then(data => setRooms(data)).catch(console.error)
   }, [])
 
-  // Poll for updates — only when roomId is set and agents are active
   useEffect(() => {
     if (!roomId) return
-    telemetry('room:poll:start', { roomId })
     const poll = async () => {
       try {
         const res = await fetch(`http://localhost:7001/api/rooms/${roomId}/messages`)
-        if (!res.ok) {
-          telemetry('room:poll:error', { roomId, status: res.status })
-          return
-        }
+        if (!res.ok) return
         const data = await res.json()
         const newState = data.state || 'INIT'
         const newAgents = data.agents || []
@@ -420,374 +318,331 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         setAgents(newAgents)
         setReport(data.report || '')
 
-        // Merge REST messages with streaming messages:
-        // REST messages replace streaming placeholders (matched by agentName + tempMsgId)
-        // Streaming messages that haven't received final REST update stay visible
         const restMessages: Message[] = data.messages || []
-
         setMessages(prev => {
           const result: Message[] = []
           const replacedTemps = new Set<string>()
-
-          // First pass: REST messages
           for (const rm of restMessages) {
             if (rm.tempMsgId) {
               replacedTemps.add(rm.tempMsgId)
-              // Find the corresponding streaming message by tempMsgId
-              const streamingMsg = Array.from(streamingMessagesRef.current.values())
-                .find(sm => sm.tempMsgId === rm.tempMsgId)
-              if (streamingMsg) {
-                // Replace streaming placeholder with final REST message
-                result.push({ ...rm, id: streamingMsg.id })
-              } else {
-                result.push(rm)
-              }
+              const streamingMsg = Array.from(streamingMessagesRef.current.values()).find(sm => sm.tempMsgId === rm.tempMsgId)
+              result.push(streamingMsg ? { ...rm, id: streamingMsg.id } : rm)
             } else {
               result.push(rm)
             }
           }
-
-          // Second pass: streaming messages not yet replaced by REST (still active)
           for (const sm of prev) {
-            if (sm.tempMsgId && !replacedTemps.has(sm.tempMsgId)) {
-              result.push(sm)
-            }
+            if (sm.tempMsgId && !replacedTemps.has(sm.tempMsgId)) result.push(sm)
           }
-
           return result
         })
 
-        // Auto-start: only in INIT, guarded by both started state and ref
         if (data.state === 'INIT' && !started && !startRequestedRef.current) {
           startRequestedRef.current = true
           setStarted(true)
-          telemetry('room:auto:start', { roomId })
           await fetch(`http://localhost:7001/api/rooms/${roomId}/start`, { method: 'POST' })
         }
-
-        telemetry('room:poll:ok', { roomId, state: data.state, messageCount: (data.messages || []).length, agentCount: (data.agents || []).length })
-      } catch (err) {
-        telemetry('room:poll:error', { roomId, error: String(err) })
-      }
+      } catch {}
     }
     poll()
-    // Poll every 2s; skip cycles when nothing active (all agents idle/done and not INIT)
     const interval = setInterval(() => {
       const { state: s, agents: ag } = pollStateRef.current
-      const anyThinking = ag.some((a: Agent) => a.status === 'thinking' || a.status === 'waiting')
-      if (!anyThinking && s !== 'INIT' && s !== 'DONE') {
-        telemetry('room:poll:idle_skip', { roomId, state: s })
-        return
-      }
+      const anyThinking = ag.some(a => a.status === 'thinking' || a.status === 'waiting')
+      if (!anyThinking && s !== 'INIT' && s !== 'DONE') return
       poll()
     }, 2000)
-    return () => {
-      clearInterval(interval)
-      telemetry('room:poll:stop', { roomId })
-    }
+    return () => clearInterval(interval)
   }, [roomId, started])
 
   const handleAdvance = async (choice?: string) => {
     if (!roomId) return
-    telemetry('room:advance', { roomId, state, choice })
     setAdvancing(true)
     setAdvancingChoice(choice)
-    let success = false
     try {
       const res = await fetch(`http://localhost:7001/api/rooms/${roomId}/advance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userChoice: choice }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userChoice: choice }),
       })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        telemetry('room:advance:error', { roomId, status: res.status, error: err.error || res.statusText })
-      } else {
-        const data = await res.json().catch(() => ({}))
-        telemetry('room:advance:ok', { roomId, choice, newState: data.state })
-        success = true
+      if (res.ok) {
+        const res2 = await fetch(`http://localhost:7001/api/rooms/${roomId}/messages`)
+        if (res2.ok) {
+          const data = await res2.json()
+          setState(data.state || 'INIT')
+          setAgents(data.agents || [])
+          setReport(data.report || '')
+          setMessages(data.messages || [])
+        }
       }
-    } catch (err) {
-      telemetry('room:advance:error', { roomId, error: String(err) })
-    } finally {
+    } catch (err) {} finally {
       setAdvancing(false)
       setAdvancingChoice(undefined)
-      // Immediately poll once to refresh state/messages after action
-      if (success) {
-        try {
-          const res = await fetch(`http://localhost:7001/api/rooms/${roomId}/messages`)
-          if (res.ok) {
-            const data = await res.json()
-            const newState = data.state || 'INIT'
-            const newAgents = data.agents || []
-            pollStateRef.current = { state: newState, agents: newAgents }
-            setState(newState)
-            setAgents(newAgents)
-            setReport(data.report || '')
-            setMessages(data.messages || [])
-          }
-        } catch {}
-      }
     }
   }
 
   const handleDownload = () => {
     if (!report) return
-    const blob = new Blob([report], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = URL.createObjectURL(new Blob([report], { type: 'text/markdown' }))
     a.download = 'discussion-report.md'
     a.click()
   }
 
+  const toggleMobileMenu = () => setMobileMenuOpen(o => !o)
+
   return (
     <>
       <CreateRoomModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
-      <div className="h-screen flex bg-apple-bg overflow-hidden">
-      {/* Left: Session List */}
-      <div className="w-[260px] bg-white border-r border-apple-border flex flex-col">
-        <div className="p-5 border-b border-apple-border flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-apple-text">讨论历史</h2>
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="w-8 h-8 rounded-full bg-apple-bg flex items-center justify-center text-apple-primary hover:bg-gray-200 transition-colors"
-            title="发起讨论"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3">
-          {rooms.map(room => (
-            <div
-              key={room.id}
-              onClick={() => router.push(`/room/${room.id}`)}
-              className={`p-3 rounded-xl mb-2 cursor-pointer transition-colors ${room.id === roomId ? 'bg-apple-bg' : 'hover:bg-apple-bg'}`}
-            >
-              <p className="text-sm font-medium text-apple-text truncate">{room.topic}</p>
-              <p className="text-xs text-apple-secondary">{new Date(room.createdAt).toLocaleDateString('zh')}</p>
-            </div>
-          ))}
-          {rooms.length === 0 && (
-            <p className="text-xs text-apple-secondary text-center mt-4">暂无讨论记录</p>
-          )}
-        </div>
-      </div>
-
-      {/* Center: Main Discussion */}
-      <div className="flex-1 flex flex-col">
-        <div className="h-20 bg-white border-b border-apple-border px-8 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-apple-text">AI 智囊团</h1>
-          <div className="flex items-center gap-3">
-            {/* Settings button */}
+      <div className="h-[100dvh] flex bg-bg overflow-hidden text-ink font-sans">
+        
+        {/* Left Sidebar (Desktop) */}
+        <div className="hidden md:flex w-[280px] bg-surface border-r border-line flex-col z-20">
+          <div className="p-5 border-b border-line flex items-center justify-between">
+            <h2 className="text-[15px] font-bold text-ink">讨论历史</h2>
             <button
-              onClick={() => setShowSettings(s => !s)}
-              className="w-9 h-9 rounded-xl bg-apple-bg hover:bg-apple-border flex items-center justify-center text-apple-secondary hover:text-apple-primary transition-colors"
-              title="系统设置"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="w-8 h-8 rounded-full bg-surface-muted flex items-center justify-center text-ink hover:text-accent hover:bg-line transition-colors"
+              title="发起讨论"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-              </svg>
+              <Plus className="w-4 h-4" aria-hidden/>
             </button>
-            {roomId && (
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-apple-bg rounded-full text-xs font-medium text-apple-secondary">
-                状态
-              </span>
-              <span className="px-4 py-1.5 bg-apple-primary/10 rounded-full text-sm font-bold text-apple-primary">
-                {STATE_LABELS[state]}
-              </span>
-            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+            {rooms.map(room => (
+              <div
+                key={room.id}
+                onClick={() => router.push(`/room/${room.id}`)}
+                className={`p-3.5 rounded-xl mb-2 cursor-pointer transition-colors border ${room.id === roomId ? 'bg-surface-muted border-line' : 'border-transparent hover:bg-surface-muted/50'}`}
+              >
+                <p className="text-[14px] font-medium text-ink truncate flex items-center gap-2">
+                  <MessageSquare className="w-3.5 h-3.5 opacity-60" aria-hidden/>
+                  {room.topic}
+                </p>
+                <p className="text-[12px] text-ink-soft mt-1.5 ml-5.5">{new Date(room.createdAt).toLocaleDateString('zh')}</p>
+              </div>
+            ))}
+            {rooms.length === 0 && (
+              <p className="text-xs text-ink-soft text-center mt-6">暂无讨论记录</p>
             )}
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-4" ref={messagesContainerRef} onScroll={handleScroll}>
-          {messages.map(msg => {
-            const isUser = msg.agentRole === 'USER'
-            const isStreaming = msg.type === 'streaming' || msg.duration_ms === undefined
-            const agentColor = AGENT_COLORS[msg.agentName]?.bg || DEFAULT_AGENT_COLOR.bg
-            const USER_BG = '#007AFF'
-            const USER_SECONDARY = '#EFF6FF'
+        {/* Mobile Menu Overlay */}
+        {mobileMenuOpen && (
+          <div className="md:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={toggleMobileMenu}>
+            <div className="w-[80%] max-w-[300px] h-full bg-surface border-r border-line flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="p-5 border-b border-line flex items-center justify-between">
+                <h2 className="text-[15px] font-bold text-ink">讨论历史</h2>
+                <button onClick={toggleMobileMenu} aria-label="关闭菜单" className="p-2 text-ink-soft hover:text-ink"><X className="w-5 h-5" aria-hidden/></button>
+              </div>
+              <div className="p-3">
+                 <button
+                  onClick={() => { setIsCreateModalOpen(true); toggleMobileMenu(); }}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-white hover:bg-accent-deep transition-colors text-sm font-medium"
+                >
+                  <Plus className="w-4 h-4" aria-hidden/> 发起新讨论
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                {rooms.map(room => (
+                  <div
+                    key={room.id}
+                    onClick={() => { router.push(`/room/${room.id}`); toggleMobileMenu(); }}
+                    className={`p-3.5 rounded-xl mb-2 border ${room.id === roomId ? 'bg-surface-muted border-line' : 'border-transparent hover:bg-surface-muted/50'}`}
+                  >
+                    <p className="text-[14px] font-medium text-ink truncate">{room.topic}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
-            // cat-cafe pattern: user = flex justify-end (right), agent = flex gap-2 (left)
-            if (isUser) {
-              return (
-                <div key={msg.id} className="flex justify-end gap-2 mb-4 items-start">
-                  <div className="w-full max-w-[75%]">
-                    <div className="flex justify-end items-center gap-2 mb-1">
-                      <span className="text-xs text-apple-secondary">
-                        {new Date(msg.timestamp).toLocaleTimeString('zh')}
-                      </span>
-                      {isStreaming && (
-                        <span className="text-xs text-green-600 animate-pulse">● 回答中</span>
-                      )}
-                      <span className="text-xs font-semibold" style={{ color: USER_BG }}>你</span>
-                    </div>
-                    <div
-                      className="rounded-2xl rounded-br-sm px-4 py-3"
-                      style={{ backgroundColor: USER_SECONDARY, color: USER_BG }}
-                    >
-                      <div className="text-sm break-words">
-                        {msg.content.length > 300 && !isStreaming ? (
-                          <ExpandableText text={msg.content} className="text-sm" />
-                        ) : (
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm, remarkBreaks]}
-                            components={mdComponents}
-                          >{msg.content}</ReactMarkdown>
-                        )}
+        {/* Center: Main Discussion */}
+        <div className="flex-1 flex flex-col relative min-w-0">
+          {/* Main Header */}
+          <div className="h-[60px] md:h-16 bg-nav-bg backdrop-blur-xl border-b border-line px-4 md:px-6 flex items-center justify-between sticky top-0 z-10">
+            <div className="flex items-center gap-3">
+              <button className="md:hidden p-2 -ml-2 text-ink-soft hover:text-ink" onClick={toggleMobileMenu}>
+                <Menu className="w-5 h-5" aria-hidden/>
+              </button>
+              <h1 className="text-lg font-bold text-ink hidden sm:block">AI 智囊团</h1>
+            </div>
+            
+            <div className="flex items-center gap-2 md:gap-4">
+              {roomId && (
+                <div className="hidden sm:flex items-center gap-2 mr-2" aria-label={`当前状态: ${STATE_LABELS[state]}`}>
+                  <span className="px-2.5 py-1 bg-surface-muted rounded-full text-[11px] font-semibold text-ink-soft uppercase tracking-wide">
+                    状态
+                  </span>
+                  <span className="px-3 py-1 bg-accent/10 border border-accent/20 rounded-full text-xs font-bold text-accent">
+                    {STATE_LABELS[state]}
+                  </span>
+                </div>
+              )}
+              
+              <SettingsButton onOpen={() => { setSettingsInitialTab('agent'); setSettingsOpen(true) }} />
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-6 scroll-smooth custom-scrollbar" ref={messagesContainerRef} onScroll={handleScroll}>
+            {messages.map(msg => {
+              const isUser = msg.agentRole === 'USER'
+              const isStreaming = msg.type === 'streaming' || msg.duration_ms === undefined
+              const agentColor = AGENT_COLORS[msg.agentName]?.bg || DEFAULT_AGENT_COLOR.bg
+              
+              if (isUser) {
+                return (
+                  <div key={msg.id} className="flex justify-end gap-3 mb-6 items-start">
+                    <div className="w-full max-w-[85%] md:max-w-[70%]">
+                      <div className="flex justify-end items-center gap-2 mb-1.5">
+                        <span className="text-[11px] text-ink-soft">
+                          {new Date(msg.timestamp).toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {isStreaming && <span className="text-[11px] text-accent animate-pulse font-medium">● 回答中</span>}
+                        <span className="text-[12px] font-bold text-ink">你</span>
+                      </div>
+                      <div className="rounded-2xl rounded-tr-sm px-4 py-3.5 bg-ink text-bg shadow-sm border border-line/10">
+                        <div className="text-[14px] break-words leading-relaxed text-bg">
+                          {msg.content.length > 300 && !isStreaming ? (
+                            <ExpandableText text={msg.content} className="text-accent hover:text-accent-deep" />
+                          ) : (
+                            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{...mdComponents, p: ({children}) => <p className="mb-2 last:mb-0 text-bg">{children}</p>, a: ({href, children}) => <a href={href} target="_blank" className="underline underline-offset-2 opacity-90 hover:opacity-100">{children}</a>}}>{msg.content}</ReactMarkdown>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                  {/* Avatar on right for user */}
+                )
+              }
+
+              return (
+                <div key={msg.id} className="group flex gap-3 mb-6 items-start">
                   <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                    style={{ backgroundColor: USER_BG }}
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm mt-1"
+                    style={{ backgroundColor: agentColor }}
                   >
-                    ME
+                    {msg.agentName.slice(0, 1)}
+                  </div>
+                  <div className="w-full max-w-[85%] md:max-w-[70%]">
+                    <div className="mb-1.5 flex items-center gap-2">
+                      <span className="text-[13px] font-bold" style={{ color: agentColor }}>{msg.agentName}</span>
+                      <span className="text-[11px] text-ink-soft">
+                        {new Date(msg.timestamp).toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {isStreaming && (
+                        <span className="text-[11px] text-emerald-500 font-medium flex items-center gap-1">
+                          <span className="animate-pulse">● 回答中</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="rounded-2xl rounded-tl-sm px-4 py-3.5 bg-surface border border-line shadow-sm">
+                      <BubbleSection
+                        label="思考过程"
+                        icon="brain"
+                        content={msg.thinking ?? ''}
+                        isStreaming={isStreaming}
+                        agentColor={agentColor}
+                      />
+                      <BubbleSection
+                        label="回复"
+                        icon="output"
+                        content={msg.content}
+                        isStreaming={isStreaming}
+                        agentColor={agentColor}
+                      />
+                    </div>
+                    {!isStreaming && msg.duration_ms && state === 'DONE' && (
+                      <div className="mt-1.5 px-3 py-1.5 bg-surface border border-line rounded-lg text-[11px] text-ink-soft flex flex-wrap gap-x-4 gap-y-1 max-w-fit">
+                        <span>⏱ {(msg.duration_ms / 1000).toFixed(1)}s</span>
+                        {msg.total_cost_usd && <span>💰 ${msg.total_cost_usd.toFixed(4)}</span>}
+                        {msg.input_tokens && <span>📥 {msg.input_tokens}</span>}
+                        {msg.output_tokens && <span>📤 {msg.output_tokens}</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
               )
-            }
+            })}
+            {messages.length === 0 && roomId && (
+              <div className="flex flex-col items-center justify-center h-40 text-ink-soft gap-3 opacity-60">
+                <BrainCircuit className="w-8 h-8" aria-hidden/>
+                <p className="text-sm">等待主持人发言...</p>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
 
-            // Agent message — left aligned
-            return (
-              <div key={msg.id} className="group flex gap-2 mb-4 items-start">
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                  style={{ backgroundColor: agentColor }}
-                >
-                  {msg.agentName.slice(0, 1)}
-                </div>
-                <div className="w-full max-w-[75%]">
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className="text-xs font-semibold" style={{ color: agentColor }}>{msg.agentName}</span>
-                    <span className="text-xs text-apple-secondary">
-                      {new Date(msg.timestamp).toLocaleTimeString('zh')}
-                    </span>
-                    {isStreaming && (
-                      <span className="text-xs text-green-600 animate-pulse">
-                        ● 回答中
-                        <span className="inline-block w-1 h-3.5 bg-green-600 animate-pulse ml-0.5 rounded-sm opacity-60" />
-                      </span>
-                    )}
-                    {!isStreaming && msg.duration_ms && (
-                      <span className="text-xs text-apple-secondary">· {(msg.duration_ms / 1000).toFixed(1)}s</span>
-                    )}
-                  </div>
-                  <div className="rounded-2xl rounded-tl-sm px-4 py-3.5 bg-white shadow-sm border border-apple-border/50">
-                    {/* Section 1: Thinking — collapsible, brain icon */}
-                    <BubbleSection
-                      label="推理过程"
-                      icon="brain"
-                      content={msg.thinking ?? ''}
-                      isStreaming={isStreaming}
-                      agentColor={agentColor}
-                    />
-                    {/* Section 2: Output — collapsible, bubble icon */}
-                    <BubbleSection
-                      label="最终输出"
-                      icon="output"
-                      content={msg.content}
-                      isStreaming={isStreaming}
-                      agentColor={agentColor}
-                    />
-                  </div>
-                  {!isStreaming && msg.duration_ms && state === 'DONE' && (
-                    <div className="mt-1 px-2 py-1 bg-gray-50 rounded-lg text-xs text-gray-500 flex flex-wrap gap-3">
-                      <span>耗时: {(msg.duration_ms / 1000).toFixed(1)}s</span>
-                      {msg.total_cost_usd !== undefined && msg.total_cost_usd > 0 && (
-                        <span>费用: ${msg.total_cost_usd.toFixed(4)}</span>
-                      )}
-                      {msg.input_tokens !== undefined && msg.input_tokens > 0 && (
-                        <span>输入: {msg.input_tokens} tokens</span>
-                      )}
-                      {msg.output_tokens !== undefined && msg.output_tokens > 0 && (
-                        <span>输出: {msg.output_tokens} tokens</span>
-                      )}
+          {/* Action Area */}
+          <div className="bg-nav-bg backdrop-blur-xl border-t border-line px-4 md:px-8 py-4">
+            {state === 'DONE' ? (
+              <button
+                type="button"
+                className="w-full bg-ink text-bg font-semibold py-3.5 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-sm"
+                onClick={handleDownload}
+              >
+                <Download className="w-4 h-4" aria-hidden/> 下载讨论报告
+              </button>
+            ) : roomId ? (
+              <div className="flex gap-3 flex-wrap">
+                {(STATE_BUTTONS[state] || []).map(btn => {
+                  const isActive = advancing && advancingChoice === btn.choice
+                  return (
+                    <button
+                      key={btn.label}
+                      type="button"
+                      className="flex-1 bg-surface border border-line text-ink font-semibold py-3 rounded-xl hover:bg-surface-muted transition-all disabled:opacity-50 text-[14px] shadow-sm hover:shadow active:scale-[0.99] disabled:active:scale-100"
+                      onClick={() => handleAdvance(btn.choice)}
+                      disabled={advancing}
+                    >
+                      {isActive ? '处理中...' : btn.label}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Right Sidebar (Agents) */}
+        <div className="hidden lg:flex w-[260px] bg-surface border-l border-line flex-col z-20">
+          <div className="p-5 border-b border-line">
+            <h2 className="text-[15px] font-bold text-ink">参与 Agent</h2>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+            {agents.map(agent => {
+              const colors = AGENT_COLORS[agent.name] || DEFAULT_AGENT_COLOR
+              return (
+                <div key={agent.id} className="bg-bg border border-line rounded-xl p-3 shadow-sm">
+                  <div className="flex items-center gap-3 mb-2.5">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm" style={{ backgroundColor: colors.bg }}>
+                      {agent.name.slice(0, 1)}
                     </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-          {messages.length === 0 && roomId && (
-            <p className="text-sm text-apple-secondary text-center mt-8">等待主持人发言...</p>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Action Area */}
-        <div className="bg-white border-t border-apple-border px-8 py-5">
-          {state === 'DONE' ? (
-            <button
-              className="w-full bg-apple-primary text-white font-semibold py-4 rounded-xl hover:opacity-90 transition-opacity"
-              onClick={handleDownload}
-            >
-              下载报告
-            </button>
-          ) : roomId ? (
-            <div className="flex gap-3 flex-wrap">
-              {(STATE_BUTTONS[state] || []).map(btn => {
-                const isActive = advancing && advancingChoice === btn.choice
-                return (
-                  <button
-                    key={btn.label}
-                    className="flex-1 bg-apple-primary text-white font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50"
-                    onClick={() => handleAdvance(btn.choice)}
-                    disabled={advancing}
-                  >
-                    {isActive ? '处理中...' : btn.label}
-                  </button>
-                )
-              })}
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Right: Agent States */}
-      <div className="w-[300px] bg-white border-l border-apple-border flex flex-col">
-        <div className="p-5 border-b border-apple-border">
-          <h2 className="text-sm font-semibold text-apple-text">参与 Agent</h2>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {agents.map(agent => {
-            const colors = AGENT_COLORS[agent.name] || DEFAULT_AGENT_COLOR
-            return (
-              <div key={agent.id} className="bg-apple-bg rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: colors.bg }}>
-                    {agent.name.slice(0, 1)}
+                    <div>
+                      <p className="text-[14px] font-bold leading-none mb-1 text-ink">{agent.name}</p>
+                      <p className="text-[11px] text-ink-soft leading-none">{agent.role === 'HOST' ? '主持人' : agent.domainLabel}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: colors.bg }}>{agent.name}</p>
-                    <p className="text-xs text-apple-secondary">{agent.role === 'HOST' ? '主持人' : agent.domainLabel}</p>
+                  <div className="flex items-center gap-1.5 bg-surface-muted px-2 py-1 rounded-md max-w-fit">
+                    <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                      agent.status === 'thinking' || agent.status === 'waiting'
+                        ? 'bg-emerald-500 animate-pulse shadow-[0_0_4px_rgba(16,185,129,0.5)]'
+                        : 'bg-ink-soft/40'
+                    }`}></span>
+                    <span className="text-[11px] font-medium text-ink-soft">
+                      {agent.status === 'thinking' ? '工作中' : agent.status === 'waiting' ? '等待中' : '空闲'}
+                    </span>
                   </div>
                 </div>
-                <p className="text-xs text-apple-secondary flex items-center gap-1.5">
-                  <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
-                    agent.status === 'thinking' || agent.status === 'waiting'
-                      ? 'bg-green-500 animate-pulse'
-                      : 'bg-gray-300'
-                  }`}></span>
-                  {agent.status === 'thinking' ? '工作中' : agent.status === 'waiting' ? '等待中' : '空闲'}
-                </p>
-              </div>
-            )
-          })}
-          {agents.length === 0 && (
-            <p className="text-xs text-apple-secondary text-center mt-4">选择讨论室后显示 Agent 状态</p>
-          )}
+              )
+            })}
+            {agents.length === 0 && (
+              <p className="text-[12px] text-ink-soft text-center mt-6">选择讨论室后显示参与者</p>
+            )}
+          </div>
         </div>
+
       </div>
 
-      {/* Settings Drawer */}
-      <SettingsDrawer open={showSettings} onClose={() => setShowSettings(false)} />
-    </div>
+      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsInitialTab} />
     </>
   )
 }

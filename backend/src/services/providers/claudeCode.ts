@@ -15,7 +15,7 @@ export async function* streamClaudeCodeProvider(
 ): AsyncGenerator<ClaudeEvent, void, undefined> {
   const start = Date.now();
   const providerCfg = getProvider('claude-code');
-  const timeout = (opts.timeout as number) ?? (providerCfg?.timeout ?? 90000);
+  const timeout = ((opts.timeout as number) ?? (providerCfg?.timeout ?? 90)) * 1000;
   const sessionId = opts.sessionId as string | undefined;
 
   // Resolve CLI path (expand ~)
@@ -95,18 +95,20 @@ export async function* streamClaudeCodeProvider(
     }
   }
 
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
     proc.on('close', (code) => {
-      if (code !== 0 && stderrBuffer.trim()) {
-        telemetry('call_error', { agentId, stderr: stderrBuffer.slice(0, 500) });
+      if (code !== 0) {
+        const errMsg = stderrBuffer.trim() || `CLI exited with code ${code}`;
+        telemetry('call_error', { agentId, stderr: errMsg.slice(0, 500) });
+        reject(new Error(errMsg));
       } else {
         telemetry('call_end', { agentId, duration_ms: Date.now() - start, sessionId: capturedSessionId });
+        resolve();
       }
-      resolve();
     });
     proc.on('error', (err) => {
       telemetry('call_error', { agentId, error: err.message });
-      resolve();
+      reject(err);
     });
   });
 }

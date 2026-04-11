@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { X, Play, Server, Users, Trash2, Edit2, Check, CheckCircle2 } from 'lucide-react'
 
 const API = 'http://localhost:7001'
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 type ProviderName = 'claude-code' | 'opencode'
 
@@ -38,21 +37,10 @@ const PROVIDER_LABELS: Record<ProviderName, string> = {
   'opencode': 'OpenCode',
 }
 
-// ── Provider Tab ───────────────────────────────────────────────────────────────
-
-function timeAgo(ts: number): string {
-  const diff = Date.now() - ts
-  if (diff < 60000) return '刚刚'
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
-  return new Date(ts).toLocaleDateString('zh')
-}
-
 function ProviderTab({ onClose }: { onClose: () => void }) {
   const [providers, setProviders] = useState<Record<string, ProviderConfig>>({})
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     fetch(`${API}/api/providers`)
@@ -65,38 +53,22 @@ function ProviderTab({ onClose }: { onClose: () => void }) {
       .catch(() => setLoading(false))
   }, [])
 
-  function handleSave(updated: ProviderConfig) {
-    setSaving(true)
-    fetch(`${API}/api/providers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
-    }).then(async r => {
-      if (r.ok) {
-        const data = await r.json()
-        setProviders(prev => ({ ...prev, [data.name]: data }))
-      }
-      setSaving(false)
-    }).catch(() => setSaving(false))
-  }
-
   const current = selected ? providers[selected] : null
 
   return (
-    <div className="flex gap-4 h-full">
-      {/* Left: list */}
-      <div className="w-[180px] flex-shrink-0 flex flex-col gap-2">
+    <div className="flex flex-col md:flex-row gap-6 h-full">
+      <div className="w-full md:w-[200px] flex-shrink-0 flex flex-col gap-2">
         {loading ? (
-          <p className="text-xs text-apple-secondary">加载中…</p>
+          <p className="text-[13px] text-ink-soft">加载中…</p>
         ) : (
           Object.values(providers).map(p => (
             <button
               key={p.name}
               onClick={() => setSelected(p.name)}
-              className={`w-full text-left px-3 py-2.5 rounded-xl transition-all text-sm ${
+              className={`w-full text-left px-4 py-3 rounded-xl transition-all text-[14px] font-medium border ${
                 selected === p.name
-                  ? 'bg-apple-primary/10 border-2 border-apple-primary font-semibold text-apple-primary'
-                  : 'bg-apple-bg border-2 border-transparent text-apple-text hover:border-apple-border'
+                  ? 'bg-surface border-accent text-accent shadow-sm'
+                  : 'bg-bg border-line text-ink hover:bg-surface-muted'
               }`}
             >
               {p.label}
@@ -105,26 +77,20 @@ function ProviderTab({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
-      {/* Right: form */}
-      <div className="flex-1 overflow-y-auto pr-1">
+      <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
         {current ? (
-          <ProviderForm
-            key={current.name}
-            provider={current}
-          />
+          <ProviderForm key={current.name} provider={current} />
         ) : (
-          <p className="text-sm text-apple-secondary text-center py-8">选择一个 Provider</p>
+          <div className="h-full flex items-center justify-center text-ink-soft text-[14px]">
+            请在左侧选择一个 Provider
+          </div>
         )}
       </div>
     </div>
   )
 }
 
-function ProviderForm({
-  provider,
-}: {
-  provider: ProviderConfig
-}) {
+function ProviderForm({ provider }: { provider: ProviderConfig }) {
   const [testDetail, setTestDetail] = useState<{ cli: string; output?: string; error?: string } | null>(null)
   const [testing, setTesting] = useState(false)
 
@@ -145,238 +111,60 @@ function ProviderForm({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* 测试结果输出 */}
+    <div className="flex flex-col gap-6">
+      <div className="bg-surface rounded-xl border border-line p-5">
+        <h3 className="text-[15px] font-bold text-ink mb-1">{provider.label}</h3>
+        <p className="text-[13px] text-ink-soft mb-4">测试基础连接和流式输出。</p>
+        
+        <button onClick={handleTest} disabled={testing}
+          className="w-full py-3 text-[14px] bg-ink text-bg rounded-xl hover:opacity-90 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2 shadow-sm active:scale-[0.99]">
+          <Play className="w-4 h-4 fill-current" />
+          {testing ? '测试中…' : (testDetail ? '重新测试' : '测试连接')}
+        </button>
+      </div>
+
       {testDetail && (
-        <div className="border border-apple-border rounded-lg overflow-hidden">
-          <div className="bg-gray-900 px-3 py-1.5 font-mono text-xs text-gray-400 border-b border-gray-700">
+        <div className="border border-line rounded-xl overflow-hidden shadow-sm">
+          <div className="bg-[#1e1e1e] px-4 py-2 font-mono text-[12px] text-gray-400 border-b border-[#333]">
             命令
           </div>
-          <div className="bg-gray-900 px-3 py-2 font-mono text-xs text-green-400 whitespace-pre-wrap break-all">
+          <div className="bg-[#1e1e1e] px-4 py-3 font-mono text-[13px] text-emerald-400 whitespace-pre-wrap break-all">
             {testDetail.cli}
           </div>
-          <div className="bg-gray-900 px-3 py-1.5 font-mono text-xs border-t border-gray-700">
-            输出 {testDetail.error
-              ? <span className="text-red-400">✗ {testDetail.error}</span>
-              : <span className="text-green-400">✓ 成功</span>}
+          <div className="bg-[#1e1e1e] px-4 py-2 font-mono text-[12px] border-t border-[#333] flex items-center gap-2">
+            输出状态: {testDetail.error
+              ? <span className="text-red-400 flex items-center gap-1"><X className="w-3 h-3"/> {testDetail.error}</span>
+              : <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> 成功</span>}
           </div>
           {testDetail.output && (
-            <div className="bg-gray-900 px-3 py-2 font-mono text-xs text-green-300 whitespace-pre-wrap break-all border-t border-gray-700 max-h-40 overflow-y-auto">
+            <div className="bg-[#1e1e1e] px-4 py-3 font-mono text-[13px] text-emerald-300/90 whitespace-pre-wrap break-all border-t border-[#333] max-h-60 overflow-y-auto custom-scrollbar">
               {testDetail.output}
             </div>
           )}
         </div>
       )}
+    </div>
+  )
+}
 
-      {/* 测试主按钮 */}
-      <button onClick={handleTest} disabled={testing}
-        className="w-full py-2.5 text-sm bg-apple-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity font-medium">
-        {testing ? '测试中…' : (testDetail ? '再次测试' : '测试连接')}
+function AgentTab() {
+  const router = useRouter()
+  return (
+    <div className="h-full flex flex-col items-center justify-center text-center p-8 bg-surface rounded-2xl border border-line">
+      <Users className="w-12 h-12 text-ink-soft mb-4" />
+      <h3 className="text-lg font-bold text-ink mb-2">Agent 高级配置</h3>
+      <p className="text-[14px] text-ink-soft mb-6 max-w-md">
+        我们已将 Agent 管理移动到专门的配置页面，以便提供更丰富的功能和更好的体验。
+      </p>
+      <button 
+        onClick={() => router.push('/settings/agents')}
+        className="bg-accent text-white px-6 py-3 rounded-xl font-bold hover:bg-accent-deep transition-all shadow-sm active:scale-[0.99]"
+      >
+        前往 Agent 管理中心 →
       </button>
     </div>
   )
 }
-
-// ── Agent Tab ─────────────────────────────────────────────────────────────────
-
-function AgentTab() {
-  const [agents, setAgents] = useState<AgentConfig[]>([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [showAdd, setShowAdd] = useState(false)
-  const router = useRouter()
-
-  function load() {
-    setLoading(true)
-    fetch(`${API}/api/agents`)
-      .then(r => r.json())
-      .then((data: AgentConfig[]) => { setAgents(data); setLoading(false) })
-      .catch(() => setLoading(false))
-  }
-
-  useEffect(() => { load() }, [])
-
-  function handleSave(updated: AgentConfig) {
-    setSaving(true)
-    fetch(`${API}/api/agents/${updated.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
-    }).then(async r => {
-      if (r.ok) {
-        const data = await r.json()
-        setAgents(prev => prev.map(a => a.id === data.id ? data : a))
-      }
-      setSaving(false)
-      setEditingId(null)
-    }).catch(() => setSaving(false))
-  }
-
-  function handleDelete(id: string) {
-    if (!confirm('确认删除该 Agent？')) return
-    fetch(`${API}/api/agents/${id}`, { method: 'DELETE' })
-      .then(r => { if (r.ok) { setAgents(prev => prev.filter(a => a.id !== id)); router.refresh() } })
-      .catch(console.error)
-  }
-
-  function handleAdd(form: Omit<AgentConfig, 'id'>) {
-    fetch(`${API}/api/agents`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, role: 'AGENT', providerOpts: { thinking: true }, enabled: true }),
-    }).then(async r => {
-      if (r.ok) { load(); setShowAdd(false) }
-    }).catch(console.error)
-  }
-
-  if (loading) return <p className="text-sm text-apple-secondary text-center py-8">加载中…</p>
-
-  return (
-    <div className="flex flex-col gap-3 h-full overflow-y-auto pr-1">
-      {agents.map(agent => (
-        <div key={agent.id} className="bg-white rounded-xl border border-apple-border p-4">
-          {editingId === agent.id ? (
-            <AgentEditForm
-              agent={agent}
-              onSave={handleSave}
-              onCancel={() => setEditingId(null)}
-              saving={saving}
-            />
-          ) : (
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                style={{ backgroundColor: agent.role === 'HOST' ? '#FF9500' : '#0071E3' }}>
-                {agent.name.slice(0, 1)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-apple-text">{agent.name}</span>
-                  {agent.role === 'HOST' && <span className="text-xs bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded">主持人</span>}
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${
-                    agent.provider === 'opencode' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'
-                  }`}>{agent.provider}</span>
-                </div>
-                <p className="text-xs text-apple-secondary truncate font-mono">{agent.roleLabel || '—'} · {agent.providerOpts.model || '默认模型'}</p>
-              </div>
-              <div className="flex gap-2 flex-shrink-0">
-                <button onClick={() => setEditingId(agent.id)}
-                  className="text-xs text-apple-primary hover:underline">编辑</button>
-                {agent.role !== 'HOST' && (
-                  <button onClick={() => handleDelete(agent.id)}
-                    className="text-xs text-red-500 hover:underline">删除</button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
-
-      {/* Add form */}
-      {showAdd ? (
-        <AgentAddForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />
-      ) : (
-        <button onClick={() => setShowAdd(true)}
-          className="w-full py-2.5 text-sm text-apple-primary border-2 border-dashed border-apple-border rounded-xl hover:border-apple-primary/50 transition-colors">
-          + 新增 Agent
-        </button>
-      )}
-    </div>
-  )
-}
-
-function AgentEditForm({ agent, onSave, onCancel, saving }: {
-  agent: AgentConfig
-  onSave: (a: AgentConfig) => void
-  onCancel: () => void
-  saving: boolean
-}) {
-  const [form, setForm] = useState(agent)
-  useEffect(() => { setForm(agent) }, [agent])
-
-  function field<K extends keyof AgentConfig>(k: K, v: AgentConfig[K]) {
-    setForm(f => ({ ...f, [k]: v }))
-  }
-  function opt(k: string, v: unknown) {
-    setForm(f => ({ ...f, providerOpts: { ...f.providerOpts, [k]: v } }))
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-4 gap-3">
-        <div>
-          <label className="block text-xs text-apple-secondary mb-1">名称</label>
-          <input value={form.name} onChange={e => field('name', e.target.value)}
-            className="w-full border border-apple-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-apple-primary/30" />
-        </div>
-        <div>
-          <label className="block text-xs text-apple-secondary mb-1">角色标签</label>
-          <input value={form.roleLabel} onChange={e => field('roleLabel', e.target.value)}
-            className="w-full border border-apple-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-apple-primary/30" />
-        </div>
-        <div>
-          <label className="block text-xs text-apple-secondary mb-1">Provider</label>
-          <select value={form.provider} onChange={e => field('provider', e.target.value as ProviderName)}
-            className="w-full border border-apple-border rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apple-primary/30">
-            {(Object.keys(PROVIDER_LABELS) as ProviderName[]).map(p => (
-              <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-apple-secondary mb-1">模型</label>
-          <input value={form.providerOpts.model ?? ''} onChange={e => opt('model', e.target.value)}
-            className="w-full border border-apple-border rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-apple-primary/30" />
-        </div>
-      </div>
-      <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="px-3 py-1 text-sm text-apple-secondary">取消</button>
-        <button onClick={() => onSave(form)} disabled={saving}
-          className="px-4 py-1 text-sm bg-apple-primary text-white rounded-lg disabled:opacity-50">
-          {saving ? '保存中…' : '保存'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function AgentAddForm({ onAdd, onCancel }: { onAdd: (a: Omit<AgentConfig, 'id'>) => void; onCancel: () => void }) {
-  const [form, setForm] = useState({ name: '', roleLabel: '', provider: 'claude-code' as ProviderName, systemPrompt: '' })
-
-  return (
-    <div className="bg-white rounded-xl border border-apple-border p-4 flex flex-col gap-3">
-      <p className="text-sm font-semibold text-apple-text">新增 Agent</p>
-      <div className="grid grid-cols-4 gap-3">
-        <div>
-          <label className="block text-xs text-apple-secondary mb-1">名称</label>
-          <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            className="w-full border border-apple-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-apple-primary/30" placeholder="小明" />
-        </div>
-        <div>
-          <label className="block text-xs text-apple-secondary mb-1">角色标签</label>
-          <input value={form.roleLabel} onChange={e => setForm(f => ({ ...f, roleLabel: e.target.value }))}
-            className="w-full border border-apple-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-apple-primary/30" placeholder="历史学家" />
-        </div>
-        <div>
-          <label className="block text-xs text-apple-secondary mb-1">Provider</label>
-          <select value={form.provider} onChange={e => setForm(f => ({ ...f, provider: e.target.value as ProviderName }))}
-            className="w-full border border-apple-border rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apple-primary/30">
-            {(Object.keys(PROVIDER_LABELS) as ProviderName[]).map(p => (
-              <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="px-3 py-1 text-sm text-apple-secondary">取消</button>
-        <button onClick={() => { if (form.name) onAdd(form as Omit<AgentConfig, 'id'>) }}
-          className="px-4 py-1 text-sm bg-apple-primary text-white rounded-lg">创建</button>
-      </div>
-    </div>
-  )
-}
-
-// ── Main Drawer ───────────────────────────────────────────────────────────────
 
 export default function SettingsDrawer({
   open,
@@ -391,43 +179,37 @@ export default function SettingsDrawer({
 
   return (
     <>
-      {/* Overlay */}
-      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity" onClick={onClose} />
 
-      {/* Drawer */}
-      <div className="fixed right-0 top-0 bottom-0 w-[680px] bg-apple-bg border-l border-apple-border shadow-2xl z-50 flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-apple-border">
-          <div className="flex gap-1 bg-apple-bg rounded-xl p-1">
+      <div className="fixed right-0 top-0 bottom-0 w-full md:w-[720px] bg-bg border-l border-line shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
+        <div className="flex items-center justify-between px-6 py-4 bg-nav-bg backdrop-blur-xl border-b border-line">
+          <div className="flex gap-2 bg-surface-muted rounded-xl p-1.5 border border-line">
             <button
               onClick={() => setTab('provider')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                tab === 'provider' ? 'bg-white shadow-sm text-apple-primary' : 'text-apple-secondary hover:text-apple-text'
+              className={`px-4 py-1.5 rounded-lg text-[13px] font-bold transition-all flex items-center gap-2 ${
+                tab === 'provider' ? 'bg-bg shadow-sm text-ink' : 'text-ink-soft hover:text-ink'
               }`}
             >
-              Provider 配置
+              <Server className="w-4 h-4" /> Provider
             </button>
             <button
               onClick={() => setTab('agent')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                tab === 'agent' ? 'bg-white shadow-sm text-apple-primary' : 'text-apple-secondary hover:text-apple-text'
+              className={`px-4 py-1.5 rounded-lg text-[13px] font-bold transition-all flex items-center gap-2 ${
+                tab === 'agent' ? 'bg-bg shadow-sm text-ink' : 'text-ink-soft hover:text-ink'
               }`}
             >
-              Agent 配置
+              <Users className="w-4 h-4" /> Agents
             </button>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-apple-secondary hover:text-apple-text hover:bg-apple-bg transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-ink-soft hover:text-ink hover:bg-surface transition-colors"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-hidden p-6">
+        <div className="flex-1 overflow-hidden p-6 md:p-8">
           {tab === 'provider' ? <ProviderTab onClose={onClose} /> : <AgentTab />}
         </div>
       </div>

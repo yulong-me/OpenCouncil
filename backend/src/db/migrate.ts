@@ -12,6 +12,13 @@ export function initSchema(): void {
   const schemaPath = path.join(__dirname, 'schema.sql');
   const sql = fs.readFileSync(schemaPath, 'utf-8');
   db.exec(sql);
+  // Migration: add tags column to agents table if it doesn't exist (existing DBs)
+  try {
+    db.exec("ALTER TABLE agents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
+    log('INFO', 'db:schema:migrate:agents:tags');
+  } catch {
+    // Column already exists — safe to ignore
+  }
   log('INFO', 'db:schema:init');
 }
 

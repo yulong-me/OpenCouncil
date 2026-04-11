@@ -9,12 +9,12 @@ export interface AgentConfig {
   role: 'HOST' | 'AGENT';
   provider: ProviderName;
   providerOpts: {
-    model?: string;
     thinking?: boolean;
     [key: string]: unknown;
   };
   systemPrompt: string;
   enabled: boolean;
+  tags: string[];
 }
 
 export const agentsRepo = {
@@ -29,6 +29,7 @@ export const agentsRepo = {
       providerOpts: JSON.parse(r.provider_opts as string),
       systemPrompt: r.system_prompt as string,
       enabled: Boolean(r.enabled),
+      tags: JSON.parse(r.tags as string),
     }));
   },
 
@@ -44,13 +45,14 @@ export const agentsRepo = {
       providerOpts: JSON.parse(r.provider_opts as string),
       systemPrompt: r.system_prompt as string,
       enabled: Boolean(r.enabled),
+      tags: JSON.parse(r.tags as string),
     };
   },
 
   upsert(agent: AgentConfig): void {
     db.prepare(`
-      INSERT OR REPLACE INTO agents (id, name, role, role_label, provider, provider_opts, system_prompt, enabled)
-      VALUES (@id, @name, @role, @roleLabel, @provider, @providerOpts, @systemPrompt, @enabled)
+      INSERT OR REPLACE INTO agents (id, name, role, role_label, provider, provider_opts, system_prompt, enabled, tags)
+      VALUES (@id, @name, @role, @roleLabel, @provider, @providerOpts, @systemPrompt, @enabled, @tags)
     `).run({
       id: agent.id,
       name: agent.name,
@@ -60,6 +62,7 @@ export const agentsRepo = {
       providerOpts: JSON.stringify(agent.providerOpts),
       systemPrompt: agent.systemPrompt,
       enabled: agent.enabled ? 1 : 0,
+      tags: JSON.stringify(agent.tags),
     });
   },
 

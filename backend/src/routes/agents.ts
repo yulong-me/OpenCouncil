@@ -36,6 +36,7 @@ agentsRouter.post('/', (req: Request, res: Response) => {
     providerOpts: body.providerOpts ?? {},
     systemPrompt: body.systemPrompt ?? '',
     enabled: body.enabled ?? true,
+    tags: body.tags ?? [],
   };
 
   agents.push(newAgent);

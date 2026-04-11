@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS agents (
   provider      TEXT NOT NULL,
   provider_opts TEXT NOT NULL DEFAULT '{}',
   system_prompt TEXT NOT NULL,
-  enabled       INTEGER NOT NULL DEFAULT 1
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  tags          TEXT NOT NULL DEFAULT '[]'
 );
 
 -- ⚠️ api_key stored in plaintext; production should use KMS or env-var injection

@@ -1,23 +1,43 @@
+'use client'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { Bot, Server, ChevronLeft } from 'lucide-react'
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+
+  const isAgents = pathname === '/settings/agents'
+  const isProviders = pathname === '/settings/providers'
+
   return (
-    <div className="min-h-screen bg-apple-bg">
+    <div className="min-h-screen bg-bg">
       {/* Top nav */}
-      <div className="bg-white border-b border-apple-border">
-        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center gap-6">
-          <Link href="/" className="text-apple-secondary hover:text-apple-primary text-sm transition-colors">
-            ← 讨论室
+      <div className="bg-surface border-b border-line sticky top-0 z-10 backdrop-blur-xl">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center gap-6">
+          <Link href="/" className="flex items-center gap-2 text-ink-soft hover:text-ink text-[13px] transition-colors">
+            <ChevronLeft className="w-4 h-4" /> 讨论室
           </Link>
-          <span className="text-apple-secondary">|</span>
-          <Link href="/settings/agents" className="text-apple-primary font-semibold text-sm">
-            Agent 配置
+          <span className="text-line">|</span>
+          <Link
+            href="/settings/agents"
+            className={`flex items-center gap-1.5 text-[13px] font-medium transition-colors ${
+              isAgents ? 'text-accent font-bold' : 'text-ink-soft hover:text-ink'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5" /> Agent 配置
           </Link>
-          <span className="text-apple-secondary">|</span>
-          <span className="text-apple-secondary/40 text-sm">Provider 配置（请在 ⚙ 抽屉内访问）</span>
+          <span className="text-line">|</span>
+          <Link
+            href="/settings/providers"
+            className={`flex items-center gap-1.5 text-[13px] font-medium transition-colors ${
+              isProviders ? 'text-accent font-bold' : 'text-ink-soft hover:text-ink'
+            }`}
+          >
+            <Server className="w-3.5 h-3.5" /> Provider 配置
+          </Link>
         </div>
       </div>
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="max-w-4xl mx-auto px-6 py-8">
         {children}
       </div>
     </div>

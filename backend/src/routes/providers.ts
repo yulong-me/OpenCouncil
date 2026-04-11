@@ -70,13 +70,13 @@ router.get('/:name/preview', (req, res) => {
     res.json({
       provider: 'opencode',
       cli: cliPath,
-      args: ['run', ...(p.defaultModel ? ['-m', p.defaultModel] : []), ...(p.thinking ? ['--thinking'] : []), '--format', 'json', '--', '<prompt>'],
+      args: ['run', ...(p.thinking ? ['--thinking'] : []), '--format', 'json', '--', '<prompt>'],
       env: {
         ...(p.apiKey ? { ANTHROPIC_API_KEY: '(已设置)' } : {}),
         ...(p.baseUrl ? { ANTHROPIC_BASE_URL: p.baseUrl } : {}),
       },
       timeout: p.timeout,
-      note: 'Agent 调用时: opencode run -m <model> --thinking --format json -- "<prompt>"',
+      note: 'Agent 调用时: opencode run --thinking --format json -- "<prompt>"',
     })
   } else {
     res.json({ provider: p.name, cli: cliPath, note: '未知 Provider 类型' })
@@ -105,7 +105,7 @@ router.post('/:name/test', (req, res) => {
   } else if (p.name === 'opencode') {
     args = ['run']
     if (p.thinking) args.push('--thinking')
-    if (p.defaultModel) args.push('-m', p.defaultModel)
+    // no -m flag: let opencode use its default model
     args.push('--format', 'json', '--', testPrompt)
     resultCli = `opencode ${args.join(' ')}`
   } else {

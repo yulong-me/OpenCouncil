@@ -15,8 +15,8 @@ export async function* streamOpenCodeProvider(
 ): AsyncGenerator<ClaudeEvent, void, undefined> {
   const start = Date.now();
   const providerCfg = getProvider('opencode');
-  const timeout = (opts.timeout as number) ?? (providerCfg?.timeout ?? 90000);
-  const model = opts.model as string | undefined ?? providerCfg?.defaultModel;
+  const timeout = ((opts.timeout as number) ?? (providerCfg?.timeout ?? 90)) * 1000;
+  // No -m flag: let opencode use its own default model
   const thinking = opts.thinking !== false; // default true
   const sessionId = opts.sessionId as string | undefined;
 
@@ -28,7 +28,7 @@ export async function* streamOpenCodeProvider(
   if (providerCfg?.apiKey) env.ANTHROPIC_API_KEY = providerCfg.apiKey;
   if (providerCfg?.baseUrl) env.ANTHROPIC_BASE_URL = providerCfg.baseUrl;
 
-  telemetry('call_start', { agentId, promptLength: prompt.length, timeout, model, thinking, sessionId: sessionId ?? 'new', cliPath });
+  telemetry('call_start', { agentId, promptLength: prompt.length, timeout, thinking, sessionId: sessionId ?? 'new', cliPath });
 
   // Build args: opencode run [opts] -- <prompt>
   // Critical: always use --format json (clowder-ai reference implementation)
@@ -38,9 +38,6 @@ export async function* streamOpenCodeProvider(
   }
   if (thinking) {
     args.push('--thinking');
-  }
-  if (model) {
-    args.push('-m', model);
   }
   args.push('--format', 'json');
   args.push('--', prompt);
@@ -81,9 +78,11 @@ export async function* streamOpenCodeProvider(
     } else if (eventType === 'text') {
       yield { type: 'delta', agentId, text: (part?.text as string) ?? '' };
     } else if (eventType === 'step_finish') {
-      const tokens = (parsed as Record<string, unknown>).tokens as Record<string, number> | undefined;
-      const cost = (parsed as Record<string, unknown>).cost as number | undefined;
-      const reason = (parsed as Record<string, unknown>).reason as string | undefined;
+      // Read metadata from the 'part' sub-object (which contains reason/cost/tokens)
+      const finishPart = (part ?? parsed) as Record<string, unknown>;
+      const tokens = finishPart.tokens as Record<string, number> | undefined;
+      const cost = finishPart.cost as number | undefined;
+      const reason = finishPart.reason as string | undefined;
       // Only emit 'end' when the agent has finished responding (not after tool calls)
       if (reason === 'stop' || reason === 'nostop') {
         yield {
@@ -96,24 +95,25 @@ export async function* streamOpenCodeProvider(
           sessionId: capturedSessionId,
         };
       }
-      // For 'tool-calls': continue waiting for subsequent steps (tool results + final text)
     } else if (eventType === 'error' || (part?.type === 'error')) {
       yield { type: 'error', agentId, message: (part?.error as string) ?? 'unknown opencode error' };
     }
   }
 
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
     proc.on('close', (code) => {
-      if (code !== 0 && stderrBuffer.trim()) {
-        telemetry('call_error', { agentId, stderr: stderrBuffer.slice(0, 500) });
+      if (code !== 0) {
+        const errMsg = stderrBuffer.trim() || `CLI exited with code ${code}`;
+        telemetry('call_error', { agentId, stderr: errMsg.slice(0, 500) });
+        reject(new Error(errMsg));
       } else {
         telemetry('call_end', { agentId, duration_ms: Date.now() - start, sessionId: capturedSessionId });
+        resolve();
       }
-      resolve();
     });
     proc.on('error', (err) => {
       telemetry('call_error', { agentId, error: err.message });
-      resolve();
+      reject(err);
     });
   });
 }

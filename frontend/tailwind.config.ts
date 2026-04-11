@@ -1,6 +1,7 @@
 import type { Config } from 'tailwindcss'
 
 const config: Config = {
+  darkMode: 'class',
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -9,19 +10,37 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        ink: 'var(--ink)',
+        'ink-soft': 'var(--ink-soft)',
+        surface: 'var(--surface)',
+        'surface-muted': 'var(--surface-muted)',
+        bg: 'var(--bg)',
+        'nav-bg': 'var(--nav-bg)',
+        line: 'var(--line)',
+        accent: 'var(--accent)',
+        'accent-deep': 'var(--accent-deep)',
+        
+        // legacy apple colors for backward compatibility during transition
         apple: {
-          bg: '#F5F5F7',
-          primary: '#0071E3',
-          text: '#1D1D1F',
-          secondary: '#86868B',
-          card: '#FFFFFF',
-          border: '#E5E5E7',
+          bg: 'var(--bg)',
+          primary: 'var(--accent)',
+          text: 'var(--ink)',
+          secondary: 'var(--ink-soft)',
+          card: 'var(--surface)',
+          border: 'var(--line)',
           green: '#34C759',
           orange: '#FF9500',
         },
       },
       fontFamily: {
-        sans: ['SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        sans: ['Manrope', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        display: ['"Bricolage Grotesque"', 'Manrope', 'Inter', 'sans-serif'],
+      },
+      borderRadius: {
+        'pill': 'var(--radius-pill)',
+        'lg': 'var(--radius-lg)',
+        'md': 'var(--radius-md)',
+        'sm': 'var(--radius-sm)',
       },
     },
   },
