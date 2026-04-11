@@ -10,7 +10,7 @@ interface AgentConfig {
   id: string
   name: string
   roleLabel: string
-  role: 'HOST' | 'AGENT'
+  role: 'MANAGER' | 'WORKER' | 'USER'
   provider: 'claude-code' | 'opencode'
   providerOpts: { thinking?: boolean; [key: string]: unknown }
   systemPrompt: string
@@ -28,13 +28,16 @@ const PROVIDER_LABELS: Record<string, string> = {
   'opencode': 'OpenCode',
 }
 
-const DOMAIN_TAGS = ['历史', '科技', '财经', '哲学']
-
 const DOMAIN_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   '历史': { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' },
   '科技': { bg: '#DBEAFE', text: '#1E40AF', border: '#93C5FD' },
   '财经': { bg: '#D1FAE5', text: '#065F46', border: '#6EE7B7' },
   '哲学': { bg: '#EDE9FE', text: '#5B21B6', border: '#C4B5FD' },
+}
+const DEFAULT_TAG_COLOR = { bg: '#F3F4F6', text: '#374151', border: '#D1D5DB' }
+
+function getTagStyle(tag: string) {
+  return DOMAIN_COLORS[tag] ?? DEFAULT_TAG_COLOR
 }
 
 const AGENT_COLORS = [
@@ -68,7 +71,7 @@ export default function CreateRoomModal({
     fetch(`${API}/api/agents`)
       .then(r => r.json())
       .then((data: AgentConfig[]) => {
-        setAgents(data.filter(a => a.role !== 'HOST' && a.enabled))
+        setAgents(data.filter(a => a.role !== 'MANAGER' && a.enabled))
         setLoadingAgents(false)
       })
       .catch(() => setLoadingAgents(false))
@@ -112,7 +115,7 @@ export default function CreateRoomModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic,
-          agents: selectedAgents.map(a => a.name),
+          agents: selectedAgents.map(a => a.id),
         }),
       })
       if (!res.ok) {
@@ -165,41 +168,44 @@ export default function CreateRoomModal({
           </div>
 
           {/* Tag Filter Bar */}
-          {!loadingAgents && agents.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-5" role="group" aria-label="按领域筛选">
-              <button
-                type="button"
-                onClick={() => setActiveTag(null)}
-                className={`px-4 py-1.5 rounded-full text-[12px] font-bold border transition-all ${
-                  activeTag === null
-                    ? 'bg-ink text-bg border-ink shadow-sm'
-                    : 'bg-surface text-ink-soft border-line hover:border-ink/40'
-                }`}
-              >
-                全部
-              </button>
-              {DOMAIN_TAGS.map(tag => {
-                const dc = DOMAIN_COLORS[tag]
-                const isActive = activeTag === tag
-                return (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => setActiveTag(isActive ? null : tag)}
-                    className={`px-4 py-1.5 rounded-full text-[12px] font-bold border transition-all ${
-                      isActive
-                        ? 'shadow-sm'
-                        : 'bg-surface text-ink-soft border-line hover:border-ink/40'
-                    }`}
-                    style={isActive ? { backgroundColor: dc.bg, color: dc.text, borderColor: dc.border } : {}}
-                    aria-pressed={isActive}
-                  >
-                    {tag}
-                  </button>
-                )
-              })}
-            </div>
-          )}
+          {!loadingAgents && agents.length > 0 && (() => {
+            const availableTags = [...new Set(agents.flatMap(a => a.tags))]
+            return (
+              <div className="flex flex-wrap gap-2 mb-5" role="group" aria-label="按领域筛选">
+                <button
+                  type="button"
+                  onClick={() => setActiveTag(null)}
+                  className={`px-4 py-1.5 rounded-full text-[12px] font-bold border transition-all ${
+                    activeTag === null
+                      ? 'bg-ink text-bg border-ink shadow-sm'
+                      : 'bg-surface text-ink-soft border-line hover:border-ink/40'
+                  }`}
+                >
+                  全部
+                </button>
+                {availableTags.map(tag => {
+                  const dc = getTagStyle(tag)
+                  const isActive = activeTag === tag
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setActiveTag(isActive ? null : tag)}
+                      className={`px-4 py-1.5 rounded-full text-[12px] font-bold border transition-all ${
+                        isActive
+                          ? 'shadow-sm'
+                          : 'bg-surface text-ink-soft border-line hover:border-ink/40'
+                      }`}
+                      style={isActive ? { backgroundColor: dc.bg, color: dc.text, borderColor: dc.border } : {}}
+                      aria-pressed={isActive}
+                    >
+                      {tag}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })()}
 
         {/* Agent Grid */}
         {loadingAgents ? (
@@ -214,7 +220,6 @@ export default function CreateRoomModal({
               const isSelected = selected.has(ag.id)
               const color = agentColor(ag.name)
               const domainTag = ag.tags[0] // first tag is the domain
-              const domainStyle = DOMAIN_COLORS[domainTag]
               return (
                 <button
                   key={ag.id}
@@ -242,10 +247,10 @@ export default function CreateRoomModal({
                   </div>
                   <p className="text-[14px] font-bold text-ink">{ag.name}</p>
                   <p className="text-[11px] text-ink-soft mt-0.5">{ag.roleLabel}</p>
-                  {domainStyle && (
+                  {domainTag && (
                     <span
                       className="mt-2 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider"
-                      style={{ backgroundColor: domainStyle.bg, color: domainStyle.text }}
+                      style={{ backgroundColor: getTagStyle(domainTag).bg, color: getTagStyle(domainTag).text }}
                     >
                       {domainTag}
                     </span>

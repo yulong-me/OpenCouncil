@@ -19,6 +19,37 @@ export function initSchema(): void {
   } catch {
     // Column already exists — safe to ignore
   }
+  // Migration: update messages CHECK constraint for MANAGER/WORKER roles
+  try {
+    db.exec("DROP TABLE IF EXISTS _messages_old");
+    db.exec("ALTER TABLE messages RENAME TO _messages_old");
+    db.exec(`
+      CREATE TABLE messages (
+        id              TEXT PRIMARY KEY,
+        room_id         TEXT NOT NULL,
+        agent_role      TEXT NOT NULL
+                        CHECK (agent_role IN ('MANAGER','WORKER','USER')),
+        agent_name      TEXT NOT NULL,
+        content         TEXT NOT NULL,
+        timestamp       INTEGER NOT NULL,
+        type            TEXT NOT NULL
+                        CHECK (type IN ('system','statement','question','rebuttal','summary','report','user_action')),
+        thinking        TEXT,
+        duration_ms     INTEGER,
+        total_cost_usd  REAL,
+        input_tokens    INTEGER,
+        output_tokens   INTEGER,
+        temp_msg_id     TEXT,
+        FOREIGN KEY (room_id) REFERENCES rooms(id)
+      )`);
+    db.exec("INSERT INTO messages SELECT * FROM _messages_old");
+    db.exec("DROP TABLE _messages_old");
+    log('INFO', 'db:schema:migrate:messages:check_constraint');
+  } catch (err) {
+    // If migration fails (e.g., new CHECK already exists), clean up and continue
+    try { db.exec("DROP TABLE IF EXISTS _messages_old"); } catch { /* ignore */ }
+    log('WARN', 'db:schema:migrate:messages:check_constraint_skipped', { reason: String(err) });
+  }
   log('INFO', 'db:schema:init');
 }
 

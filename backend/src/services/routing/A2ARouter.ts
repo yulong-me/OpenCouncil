@@ -22,8 +22,8 @@ export const MAX_A2A_DEPTH = 4;
  * // => ['opencode']
  */
 export function scanForA2AMentions(text: string): string[] {
-  // 匹配行首的 @agentId（word boundary 开始）
-  const matches = text.match(/^@(\w+)/gm);
+  // 匹配行首的 @agentId（支持中文、英文、数字、连字符、下划线）
+  const matches = text.match(/^@([\w\u4e00-\u9fff-]+)/gm);
   if (!matches) return [];
 
   // 去重

@@ -9,7 +9,7 @@ import { v4 as uuid } from 'uuid';
 import { roomsRepo, messagesRepo } from '../db/index.js';
 import { sessionsRepo } from '../db/index.js';
 import { auditRepo } from '../db/index.js';
-import { getWorkspacePath } from './workspace.js';
+import { getWorkspacePath, ensureWorkspace } from './workspace.js';
 import { scanForA2AMentions, MAX_A2A_DEPTH, buildManagerFallbackPrompt, updateA2AContext, resetA2ADepth } from './routing/A2ARouter.js';
 
 function telemetry(event: string, meta: Record<string, unknown>) {
@@ -175,7 +175,7 @@ ${ctx.userMessage}`;
 
   const room = store.get(roomId);
   const existingSessionId = room?.sessionIds[agentName];
-  const workspace = getWorkspacePath(roomId);
+  const workspace = await ensureWorkspace(roomId);  // 确保 workspace 目录存在
   const providerOpts: Record<string, unknown> = {
     ...(agentConfig?.providerOpts ?? {}),
     sessionId: existingSessionId,
@@ -263,6 +263,9 @@ ${ctx.userMessage}`;
   }
 
   emitStreamEnd(roomId, agentId, tempMsgId, { duration_ms, total_cost_usd, input_tokens, output_tokens });
+
+  // A2A 编排：在 Agent 输出后检测 @mention 并路由
+  await a2aOrchestrate(roomId, agentId, agentName, accumulated);
 
   return accumulated;
 }
