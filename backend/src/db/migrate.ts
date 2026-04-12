@@ -20,6 +20,14 @@ export function initSchema(): void {
     // Column already exists — safe to ignore
   }
 
+  // Migration: add agent_ids column to rooms table for persistent agent membership
+  try {
+    db.exec("ALTER TABLE rooms ADD COLUMN agent_ids TEXT NOT NULL DEFAULT '[]'");
+    log('INFO', 'db:schema:migrate:rooms:agent_ids');
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
   // F004 Migration: INIT/RESEARCH/DEBATE/CONVERGING → RUNNING, HOST → MANAGER, AGENT → WORKER
   try {
     const roomsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='rooms'").get() as { sql: string } | undefined;
@@ -46,14 +54,15 @@ export function initSchema(): void {
     db.exec("CREATE TABLE rooms_backup AS SELECT * FROM rooms");
     db.exec("CREATE TABLE messages_backup AS SELECT * FROM messages");
 
-    // 重建 rooms 和 messages 表
-    db.exec("DROP TABLE IF EXISTS rooms");
+    // 重建 rooms 和 messages 表（先 messages 再 rooms，因 messages.room_id → rooms.id）
     db.exec("DROP TABLE IF EXISTS messages");
+    db.exec("DROP TABLE IF EXISTS rooms");
     db.exec(sql);
 
     // 迁移 rooms 数据: INIT/RESEARCH/DEBATE/CONVERGING → RUNNING, DONE → DONE
+    // agent_ids: 旧 room 无存储，回填 ["host"]（主持人必定在）
     db.exec(`
-      INSERT INTO rooms (id, topic, state, report, created_at, updated_at)
+      INSERT INTO rooms (id, topic, state, report, agent_ids, created_at, updated_at)
       SELECT
         id, topic,
         CASE state
@@ -63,7 +72,9 @@ export function initSchema(): void {
           WHEN 'CONVERGING' THEN 'RUNNING'
           ELSE state
         END,
-        report, created_at, updated_at
+        report,
+        '["host"]',
+        created_at, updated_at
       FROM rooms_backup`);
 
     // 迁移 messages 数据: HOST → MANAGER, AGENT → WORKER, 移除 temp_msg_id 列
@@ -85,12 +96,18 @@ export function initSchema(): void {
 
     log('INFO', 'db:schema:migrate:rooms:migrated');
   } catch (err) {
-    // 迁移失败时尝试恢复
+    // 迁移失败时从备份恢复，不丢失数据
     try {
-      db.exec("DROP TABLE IF EXISTS rooms_backup");
-      db.exec("DROP TABLE IF EXISTS messages_backup");
-    } catch { /* ignore */ }
-    log('WARN', 'db:schema:migrate:rooms:migrate_failed', { reason: String(err) });
+      db.exec("DROP TABLE IF EXISTS rooms");
+      db.exec("DROP TABLE IF EXISTS messages");
+      db.exec("CREATE TABLE rooms AS SELECT * FROM rooms_backup");
+      db.exec("CREATE TABLE messages AS SELECT * FROM messages_backup");
+      db.exec("DROP TABLE rooms_backup");
+      db.exec("DROP TABLE messages_backup");
+      log('WARN', 'db:schema:migrate:rooms:rolled_back', { reason: String(err) });
+    } catch (restoreErr) {
+      log('ERROR', 'db:schema:migrate:rooms:restore_failed', { migrateErr: String(err), restoreErr: String(restoreErr) });
+    }
   }
 }
 

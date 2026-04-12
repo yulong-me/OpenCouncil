@@ -267,6 +267,7 @@ ${ctx.userMessage}`;
     `[DEBUG] stream_start agent=${agentName}(${agentId}) msgId=${msgId} room=${roomId} role=${agentRole}`,
   );
   emitStreamStart(roomId, agentId, agentName, Date.now(), msgId, agentRole);
+  updateAgentStatus(roomId, agentId, 'thinking');
 
   let accumulated = '';
   let accumulatedThinking = '';
@@ -306,6 +307,11 @@ ${ctx.userMessage}`;
       `[${ts}] [ERROR] streamingCallAgent provider=${providerName} agentId=${agentId}`,
       err,
     );
+    // 确保错误时也发出 stream_end 和 idle，防止 UI 卡在"回答中"
+    if (msgId) {
+      emitStreamEnd(roomId, agentId, msgId, { duration_ms: 0, total_cost_usd: 0, input_tokens: 0, output_tokens: 0 });
+    }
+    updateAgentStatus(roomId, agentId, 'idle');
     throw err;
   }
 
@@ -356,6 +362,7 @@ ${ctx.userMessage}`;
     input_tokens,
     output_tokens,
   });
+  updateAgentStatus(roomId, agentId, 'idle');
 
   // A2A 编排：扫描 @mention 并路由到对应 Worker
   await a2aOrchestrate(roomId, agentId, agentName, accumulated);

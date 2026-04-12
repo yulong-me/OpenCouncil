@@ -7,9 +7,16 @@ import { agentsRouter } from './routes/agents.js';
 import providersRouter from './routes/providers.js';
 import { store } from './store.js';
 import { log } from './log.js';
-import { initDB } from './db/index.js';
+import { initDB, roomsRepo } from './db/index.js';
 
 initDB();
+
+// 启动时从 DB 恢复所有 rooms 到内存 store，确保重启后对话列表不丢失
+const persistedRooms = roomsRepo.list();
+for (const room of persistedRooms) {
+  store.create(room);
+}
+log('INFO', 'store:loaded_from_db', { roomCount: persistedRooms.length });
 
 const app = express();
 const httpServer = createServer(app);

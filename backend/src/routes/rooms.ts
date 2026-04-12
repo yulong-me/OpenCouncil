@@ -89,6 +89,7 @@ roomsRouter.get('/:id', (req, res) => {
 roomsRouter.get('/:id/messages', (req, res) => {
   const room = store.get(req.params.id);
   if (!room) return res.status(404).json({ error: 'Room not found' });
+  res.setHeader('Cache-Control', 'no-store');
   res.json({
     state: room.state,
     messages: room.messages,

@@ -11,6 +11,21 @@ import { Menu, X, Plus, Download, MessageSquare, ChevronUp, ChevronDown, Chevron
 import CreateRoomModal from '@/components/CreateRoomModal'
 import SettingsModal from '@/components/SettingsModal'
 
+/** Format timestamp as relative time (e.g. "2分钟前", "3小时前", "昨天") */
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts
+  const sec = Math.floor(diff / 1000)
+  if (sec < 60) return '刚刚'
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}分钟前`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}小时前`
+  const day = Math.floor(hr / 24)
+  if (day === 1) return '昨天'
+  if (day < 7) return `${day}天前`
+  return new Date(ts).toLocaleDateString('zh')
+}
+
 function SettingsButton({ onOpen }: { onOpen: () => void }) {
   const [mounted, setMounted] = useState(false)
   const { theme, setTheme } = useTheme()
@@ -61,6 +76,8 @@ function BubbleSection({
   agentColor: string
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
+  // #3: Thinking 流式时自动展开（流式开始时自动展开，结束后保持用户控制）
+  const effectiveExpanded = isExpanded || (isStreaming && icon === 'brain')
   const lineCount = content.split('\n').length
   const isEmpty = !content.trim()
 
@@ -69,7 +86,7 @@ function BubbleSection({
       className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-[4px] transition-colors"
       style={{ backgroundColor: `${agentColor}20`, color: agentColor }}
     >
-      {isExpanded ? <ChevronDown className="w-3 h-3" aria-hidden/> : <ChevronRight className="w-3 h-3" aria-hidden/>}
+      {effectiveExpanded ? <ChevronDown className="w-3 h-3" aria-hidden/> : <ChevronRight className="w-3 h-3" aria-hidden/>}
     </div>
   )
 
@@ -89,7 +106,7 @@ function BubbleSection({
     <div className={icon === 'brain' ? 'mb-3' : 'mb-1'}>
       <button
         onClick={() => setIsExpanded(e => !e)}
-        aria-expanded={isExpanded}
+        aria-expanded={effectiveExpanded}
         className="flex items-center gap-2 text-xs font-medium w-full group/section hover:opacity-80 transition-opacity"
         style={{ color: agentColor }}
       >
@@ -102,7 +119,7 @@ function BubbleSection({
         {streamingCursor}
       </button>
 
-      {isExpanded && (
+      {effectiveExpanded && (
         <div
           className={`mt-2 ml-2 pl-3.5 border-l-2 text-[14px] leading-relaxed ${
             icon === 'brain'
@@ -149,7 +166,7 @@ const mdComponents: Components = {
   li: ({ children }) => <li className="mb-0.5">{children}</li>,
   blockquote: ({ children }) => <blockquote className="border-l-2 border-line pl-3 my-2 italic text-ink-soft">{children}</blockquote>,
   a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline break-all">{children}</a>,
-  pre: ({ children }) => <pre className="bg-[#1e1e1e] text-[#d4d4d4] rounded-lg p-3 overflow-x-auto text-xs font-mono my-2">{children}</pre>,
+  pre: ({ children }) => <pre className="dark:bg-[#1e1e1e] dark:text-[#d4d4d4] bg-[#f5f5f5] text-[#333] rounded-lg p-3 overflow-x-auto text-xs font-mono my-2">{children}</pre>,
   code: ({ children }) => <code className="bg-surface-muted text-ink rounded px-1.5 py-0.5 text-[0.85em] font-mono border border-line">{children}</code>,
 }
 
@@ -207,7 +224,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [messages, setMessages] = useState<Message[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [report, setReport] = useState<string>('')
-  const [rooms, setRooms] = useState<{ id: string; topic: string; createdAt: number }[]>([])
+  const [rooms, setRooms] = useState<{ id: string; topic: string; createdAt: number; state: DiscussionState }[]>([])
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsInitialTab, setSettingsInitialTab] = useState<'agent' | 'provider'>('agent')
@@ -215,6 +232,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [debugLogs, setDebugLogs] = useState<{ ts: string; event: string; meta?: Record<string, unknown> }[]>([])
   const [userInput, setUserInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollStateRef = useRef<{ state: DiscussionState; agents: Agent[] }>({ state: 'RUNNING' as DiscussionState, agents: [] as Agent[] })
@@ -236,6 +255,13 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     if (!el) return
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
     userScrolledRef.current = distFromBottom > 100
+    setShowScrollBtn(distFromBottom > 100)
+  }
+
+  const handleScrollToBottom = () => {
+    userScrolledRef.current = false
+    setShowScrollBtn(false)
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
   useEffect(() => { scrollToBottom() }, [messages])
@@ -358,12 +384,24 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     const content = userInput.trim()
     setUserInput('')
     try {
-      await fetch(`http://localhost:7001/api/rooms/${roomId}/messages`, {
+      const res = await fetch(`http://localhost:7001/api/rooms/${roomId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
       })
-    } catch {} finally {
+      if (!res.ok) {
+        const err = await res.text()
+        console.error('[RoomView] POST /messages failed:', res.status, err)
+        setUserInput(content)
+        setSendError('发送失败，请重试')
+        setTimeout(() => setSendError(null), 4000)
+      }
+    } catch (e) {
+      console.error('[RoomView] POST /messages network error:', e)
+      setUserInput(content)
+      setSendError('发送失败，请检查网络')
+      setTimeout(() => setSendError(null), 4000)
+    } finally {
       setSending(false)
     }
   }
@@ -394,11 +432,20 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                 onClick={() => router.push(`/room/${room.id}`)}
                 className={`p-3.5 rounded-xl mb-2 cursor-pointer transition-colors border ${room.id === roomId ? 'bg-surface-muted border-line' : 'border-transparent hover:bg-surface-muted/50'}`}
               >
-                <p className="text-[14px] font-medium text-ink truncate flex items-center gap-2">
-                  <MessageSquare className="w-3.5 h-3.5 opacity-60" aria-hidden/>
-                  {room.topic}
-                </p>
-                <p className="text-[12px] text-ink-soft mt-1.5 ml-5.5">{new Date(room.createdAt).toLocaleDateString('zh')}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-[14px] font-medium text-ink truncate flex-1 flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 opacity-60 flex-shrink-0" aria-hidden/>
+                    {room.topic}
+                  </p>
+                  <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                    room.state === 'RUNNING'
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                      : 'bg-ink-soft/10 text-ink-soft'
+                  }`}>
+                    {room.state === 'RUNNING' ? '进行中' : '已完成'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-ink-soft mt-1 ml-5.5">{formatRelativeTime(room.createdAt)}</p>
               </div>
             ))}
             {rooms.length === 0 && (
@@ -430,7 +477,17 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                     onClick={() => { router.push(`/room/${room.id}`); toggleMobileMenu(); }}
                     className={`p-3.5 rounded-xl mb-2 border ${room.id === roomId ? 'bg-surface-muted border-line' : 'border-transparent hover:bg-surface-muted/50'}`}
                   >
-                    <p className="text-[14px] font-medium text-ink truncate">{room.topic}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[14px] font-medium text-ink truncate">{room.topic}</p>
+                      <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                        room.state === 'RUNNING'
+                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-ink-soft/10 text-ink-soft'
+                      }`}>
+                        {room.state === 'RUNNING' ? '进行中' : '已完成'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-ink-soft mt-1">{formatRelativeTime(room.createdAt)}</p>
                   </div>
                 ))}
               </div>
@@ -468,7 +525,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-6 scroll-smooth custom-scrollbar" ref={messagesContainerRef} onScroll={handleScroll}>
             {messages.map(msg => {
               const isUser = msg.agentRole === 'USER'
-              const isStreaming = msg.type === 'streaming' || msg.duration_ms === undefined
+              const isStreaming = !isUser && (msg.type === 'streaming' || msg.duration_ms === undefined)
               const agentColor = AGENT_COLORS[msg.agentName]?.bg || DEFAULT_AGENT_COLOR.bg
               
               if (isUser) {
@@ -551,6 +608,14 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
               </div>
             )}
             <div ref={messagesEndRef} />
+            {showScrollBtn && (
+              <button
+                onClick={handleScrollToBottom}
+                className="sticky bottom-4 left-1/2 -translate-x-1/2 bg-accent text-white px-4 py-2 rounded-full text-xs font-medium shadow-lg hover:bg-accent-deep transition-colors flex items-center gap-1.5 z-10"
+              >
+                <ChevronDown className="w-3.5 h-3.5" aria-hidden/> 回到底部
+              </button>
+            )}
           </div>
 
           {/* Action Area */}
@@ -564,6 +629,10 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                 <Download className="w-4 h-4" aria-hidden/> 下载讨论报告
               </button>
             ) : roomId ? (
+              <div className="flex flex-col gap-2">
+              {sendError && (
+                <div className="text-xs text-red-500 px-1">{sendError}</div>
+              )}
               <div className="flex gap-3">
                 <input
                   type="text"
@@ -583,6 +652,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                   {sending ? '发送中...' : '发送'}
                 </button>
               </div>
+              </div>
             ) : null}
           </div>
         </div>
@@ -591,7 +661,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         <div className="hidden lg:flex w-[260px] bg-surface border-l border-line flex-col z-20">
           <div className="p-5 border-b border-line">
             <h2 className="text-[15px] font-bold text-ink">参与 Agent</h2>
-            {roomId && (
+            {debugOpen && roomId && (
               <button
                 onClick={() => navigator.clipboard.writeText(roomId)}
                 title="点击复制 Room ID"
@@ -627,8 +697,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                       {agent.status === 'thinking' ? '工作中' : agent.status === 'waiting' ? '等待中' : '空闲'}
                     </span>
                   </div>
-                  {/* 当前消息 ID：点击可复制 */}
-                  {(() => {
+                  {/* 当前消息 ID：点击可复制 (debug only) */}
+                  {debugOpen && (() => {
                     const activeMsg = messages.find(m => m.agentRole === agent.role && m.agentName === agent.name && (m.type === 'streaming' || m.duration_ms === undefined))
                       || messages.filter(m => m.agentRole === agent.role && m.agentName === agent.name).sort((a, b) => b.timestamp - a.timestamp)[0]
                     if (!activeMsg) return null

@@ -1,17 +1,20 @@
 import { db } from '../db.js';
 import type { DiscussionRoom, Message } from '../../types.js';
+import { agentsRepo } from './agents.js';
+import { v4 as uuid } from 'uuid';
 
 /** Rooms CRUD */
 export const roomsRepo = {
   create(room: DiscussionRoom): DiscussionRoom {
     db.prepare(`
-      INSERT INTO rooms (id, topic, state, report, created_at, updated_at)
-      VALUES (@id, @topic, @state, @report, @createdAt, @updatedAt)
+      INSERT INTO rooms (id, topic, state, report, agent_ids, created_at, updated_at)
+      VALUES (@id, @topic, @state, @report, @agentIds, @createdAt, @updatedAt)
     `).run({
       id: room.id,
       topic: room.topic,
       state: room.state,
       report: room.report ?? null,
+      agentIds: JSON.stringify(room.agents.map(a => a.configId)),
       createdAt: room.createdAt,
       updatedAt: room.updatedAt,
     });
@@ -21,6 +24,11 @@ export const roomsRepo = {
   get(id: string): DiscussionRoom | undefined {
     const row = db.prepare('SELECT * FROM rooms WHERE id = ?').get(id) as Record<string, unknown> | undefined;
     if (!row) return undefined;
+    const agentIds: string[] = JSON.parse((row.agent_ids as string) ?? '[]');
+    const agents = agentIds
+      .map(configId => agentsRepo.get(configId))
+      .filter((a): a is NonNullable<typeof a> => a !== undefined)
+      .map(a => ({ id: uuid(), role: a.role, name: a.name, domainLabel: a.roleLabel, status: 'idle' as const, configId: a.id }));
     return {
       id: row.id as string,
       topic: row.topic as string,
@@ -28,7 +36,7 @@ export const roomsRepo = {
       report: row.report as string | undefined,
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
-      agents: [],
+      agents,
       messages: messagesRepo.listByRoom(row.id as string),
       sessionIds: {},
       a2aDepth: 0,
@@ -44,6 +52,7 @@ export const roomsRepo = {
         topic = @topic,
         state = @state,
         report = @report,
+        agent_ids = @agentIds,
         updated_at = @updatedAt
       WHERE id = @id
     `).run({
@@ -51,6 +60,9 @@ export const roomsRepo = {
       topic: partial.topic ?? (existing.topic as string),
       state: partial.state ?? (existing.state as string),
       report: partial.report !== undefined ? partial.report : (existing.report as string | null),
+      agentIds: partial.agents !== undefined
+        ? JSON.stringify(partial.agents.map(a => a.configId))
+        : (existing.agent_ids as string),
       updatedAt: Date.now(),
     });
     return this.get(id);
