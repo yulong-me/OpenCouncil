@@ -708,19 +708,28 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
 
         {/* Right Sidebar (Agents) */}
         <div className="hidden lg:flex w-[260px] bg-surface border-l border-line flex-col z-20">
-          <div className="p-5 border-b border-line">
-            <h2 className="text-[15px] font-bold text-ink">参与 Agent</h2>
-            {debugOpen && roomId && (
+          <div className="p-5 border-b border-line space-y-1.5">
+            {roomId && (
               <button
                 onClick={() => navigator.clipboard.writeText(roomId)}
-                title="点击复制 Room ID"
-                className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-soft hover:text-accent transition-colors cursor-pointer group"
+                title="点击复制对话 ID"
+                className="flex items-center gap-1.5 text-[11px] text-ink-soft hover:text-accent transition-colors cursor-pointer group w-full"
               >
-                <span className="font-mono opacity-60 group-hover:opacity-100">Room:</span>
-                <span className="font-mono truncate max-w-[120px] group-hover:text-accent">{roomId.slice(0, 8)}…</span>
-                <span className="text-[10px] opacity-40">📋</span>
+                <span className="opacity-60 group-hover:opacity-100 shrink-0">ID:</span>
+                <span className="font-mono truncate group-hover:text-accent">{roomId.slice(0, 8)}…</span>
+                <span className="text-[10px] opacity-40 ml-auto">📋</span>
               </button>
             )}
+            {debugOpen && (
+              <button
+                onClick={() => roomId && navigator.clipboard.writeText(roomId)}
+                title="复制完整 Room ID"
+                className="text-[10px] text-ink-soft/40 hover:text-accent/60 transition-colors cursor-pointer"
+              >
+                {roomId}
+              </button>
+            )}
+            <h2 className="text-[15px] font-bold text-ink pt-1">参与 Agent</h2>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
             {agents.map(agent => {
