@@ -76,8 +76,8 @@ function BubbleSection({
   agentColor: string
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
-  // #3: Thinking 流式时自动展开（流式开始时自动展开，结束后保持用户控制）
-  const effectiveExpanded = isExpanded || (isStreaming && icon === 'brain')
+  // Reply 流式时自动展开，思考保持折叠，结束后由用户控制
+  const effectiveExpanded = isExpanded || (isStreaming && icon === 'output')
   const lineCount = content.split('\n').length
   const isEmpty = !content.trim()
 
@@ -523,7 +523,12 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-6 scroll-smooth custom-scrollbar" ref={messagesContainerRef} onScroll={handleScroll}>
-            {messages.map(msg => {
+            {/* USER 消息优先排序：同时间戳时用户消息在前 */}
+            {([...messages].sort((a, b) => {
+              if (a.agentRole === 'USER' && b.agentRole !== 'USER' && Math.abs(a.timestamp - b.timestamp) < 5000) return -1
+              if (b.agentRole === 'USER' && a.agentRole !== 'USER' && Math.abs(a.timestamp - b.timestamp) < 5000) return 1
+              return a.timestamp - b.timestamp
+            })).map(msg => {
               const isUser = msg.agentRole === 'USER'
               const isStreaming = !isUser && (msg.type === 'streaming' || msg.duration_ms === undefined)
               const agentColor = AGENT_COLORS[msg.agentName]?.bg || DEFAULT_AGENT_COLOR.bg
@@ -604,7 +609,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
             {messages.length === 0 && roomId && (
               <div className="flex flex-col items-center justify-center h-40 text-ink-soft gap-3 opacity-60">
                 <BrainCircuit className="w-8 h-8" aria-hidden/>
-                <p className="text-sm">等待主持人发言...</p>
+                <p className="text-sm">输入消息开始讨论，或 @mention 专家</p>
               </div>
             )}
             <div ref={messagesEndRef} />
