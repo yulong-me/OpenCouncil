@@ -62,6 +62,27 @@ function SettingsButton({ onOpen }: { onOpen: () => void }) {
   )
 }
 
+// Extract @mentioned agent names from markdown content
+// Matches patterns like "@哲学家" or "[@经济学家](url)" in markdown
+function extractMentions(content: string): string[] {
+  const seen = new Set<string>()
+  // Match @mentions in markdown: @name or [@name](url) or [@ name](url)
+  const patterns = [
+    /\[@([^\]]+)\]\([^)]+\)/g,  // [@name](url)
+    /@([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef_a-zA-Z0-9]{1,20})/g, // @name (Chinese + common chars)
+  ]
+  for (const pattern of patterns) {
+    let match
+    while ((match = pattern.exec(content)) !== null) {
+      const name = match[1].trim()
+      if (name && name.length > 0 && !seen.has(name)) {
+        seen.add(name)
+      }
+    }
+  }
+  return Array.from(seen)
+}
+
 function BubbleSection({
   label,
   icon,
@@ -70,7 +91,7 @@ function BubbleSection({
   agentColor,
 }: {
   label: string
-  icon: 'brain' | 'output'
+  icon: 'brain' | 'output' | 'call'
   content: string
   isStreaming: boolean
   agentColor: string
@@ -79,6 +100,7 @@ function BubbleSection({
   // Reply 流式时自动展开，思考保持折叠，结束后由用户控制
   const effectiveExpanded = isExpanded || (isStreaming && icon === 'output')
   const lineCount = content.split('\n').length
+  const isMentionLine = icon === 'call'
   const isEmpty = !content.trim()
 
   const expandIcon = (
@@ -102,8 +124,11 @@ function BubbleSection({
 
   if (isEmpty && !isStreaming) return null
 
+  // call sections always expand when present (show "引用 → @xxx")
+  const effectiveExpandedForCall = isMentionLine ? true : effectiveExpanded
+
   return (
-    <div className={icon === 'brain' ? 'mb-3' : 'mb-1'}>
+    <div className={icon === 'brain' ? 'mb-3' : icon === 'call' ? 'mb-3' : 'mb-1'}>
       <button
         onClick={() => setIsExpanded(e => !e)}
         aria-expanded={effectiveExpanded}
@@ -113,13 +138,23 @@ function BubbleSection({
         {expandIcon}
         <span className="opacity-90 tracking-wide flex items-center gap-1.5">
           {icon === 'brain' && <BrainCircuit className="w-3 h-3" aria-hidden/>}
+          {icon === 'call' && <span className="text-[11px] font-bold" aria-hidden>@</span>}
           {label}
+          {icon === 'call' && content && (
+            <span className="font-bold" style={{ color: agentColor }}>{content}</span>
+          )}
         </span>
         <span className="text-[11px] opacity-50 ml-1 font-normal tracking-wider">{statusText}</span>
         {streamingCursor}
       </button>
 
-      {effectiveExpanded && (
+      {effectiveExpandedForCall ? (
+        <div className="mt-1.5 ml-2 flex items-center">
+          <span className="text-[12px] text-ink-soft">引用</span>
+          <span className="mx-1.5 text-ink-soft">→</span>
+          <span className="text-[12px] font-bold" style={{ color: agentColor }}>{content}</span>
+        </div>
+      ) : effectiveExpanded && (
         <div
           className={`mt-2 ml-2 pl-3.5 border-l-2 text-[14px] leading-relaxed ${
             icon === 'brain'
@@ -302,7 +337,9 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       streamingThinkingRef.current.set(data.agentId, existing + data.thinking)
       const msg = streamingMessagesRef.current.get(data.agentId)
       if (msg) {
-        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, thinking: streamingThinkingRef.current.get(data.agentId) } : m))
+        const accumulatedThinking = streamingThinkingRef.current.get(data.agentId)
+        msg.thinking = accumulatedThinking
+        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, thinking: accumulatedThinking } : m))
       }
     })
     socket.on('stream_end', (data: any) => {
@@ -315,7 +352,13 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         msg.total_cost_usd = data.total_cost_usd
         msg.input_tokens = data.input_tokens
         msg.output_tokens = data.output_tokens
-        setMessages(prev => prev.map(m => m.id === data.id ? { ...msg, type: m.type !== 'streaming' ? m.type : 'statement' } : m))
+        // Preserve accumulated thinking from thinking_delta (stream_end fires after last delta)
+        const accumulatedThinking = streamingThinkingRef.current.get(data.agentId)
+        setMessages(prev => prev.map(m => m.id === data.id ? {
+          ...msg,
+          thinking: accumulatedThinking ?? msg.thinking,
+          type: m.type !== 'streaming' ? m.type : 'statement',
+        } : m))
       }
     })
     socket.on('agent_status', (data: any) => {
@@ -586,6 +629,16 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                         isStreaming={isStreaming}
                         agentColor={agentColor}
                       />
+                      {extractMentions(msg.content).map(name => (
+                        <BubbleSection
+                          key={name}
+                          label="引用"
+                          icon="call"
+                          content={name}
+                          isStreaming={isStreaming}
+                          agentColor={agentColor}
+                        />
+                      ))}
                       <BubbleSection
                         label="回复"
                         icon="output"
