@@ -45,3 +45,8 @@ export function emitThinkingDelta(roomId: string, agentId: string, thinking: str
 export function emitAgentStatus(roomId: string, agentId: string, status: string) {
   getIO().to(roomId).emit('agent_status', { roomId, agentId, status });
 }
+
+/** Emit user message insertion — frontend inserts immediately without waiting for poll */
+export function emitUserMessage(roomId: string, message: { id: string; agentRole: string; agentName: string; content: string; timestamp: number; type: string }) {
+  getIO().to(roomId).emit('user_message', { roomId, message });
+}

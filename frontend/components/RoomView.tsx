@@ -300,6 +300,20 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     socketRef.current = socket
 
     socket.on('connect', () => telemetry('socket:connect'))
+    socket.on('user_message', (data: any) => {
+      if (data.roomId !== roomId) return
+      const msg = data.message as Message
+      setMessages(prev => {
+        // Dedupe by id, insert in sorted position
+        if (prev.some(m => m.id === msg.id)) return prev
+        const merged = [...prev, msg]
+        return merged.sort((a, b) => {
+          if (a.agentRole === 'USER' && b.agentRole !== 'USER') return -1
+          if (b.agentRole === 'USER' && a.agentRole !== 'USER') return 1
+          return a.timestamp - b.timestamp
+        })
+      })
+    })
     socket.on('stream_start', (data: any) => {
       if (data.roomId !== roomId) return
       streamingCountRef.current++
@@ -382,10 +396,15 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         setReport(data.report || '')
 
         setMessages(prev => {
-          // F004: dedup by message id - keep streaming ones, add new ones
+          // 合并 poll 数据与现有消息，重新排序保证顺序正确
           const existingIds = new Set(prev.map(m => m.id))
-          const newMsgs = (data.messages || []).filter((m: Message) => !existingIds.has(m.id))
-          return [...prev, ...newMsgs]
+          const merged = [...prev, ...(data.messages || []).filter((m: Message) => !existingIds.has(m.id))]
+          // 始终重新排序：USER 优先，然后按时间戳
+          return merged.sort((a, b) => {
+            if (a.agentRole === 'USER' && b.agentRole !== 'USER') return -1
+            if (b.agentRole === 'USER' && a.agentRole !== 'USER') return 1
+            return a.timestamp - b.timestamp
+          })
         })
       } catch {}
     }

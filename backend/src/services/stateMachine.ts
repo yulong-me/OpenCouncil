@@ -18,6 +18,7 @@ import {
   emitAgentStatus,
   emitStreamDelta,
   emitThinkingDelta,
+  emitUserMessage,
 } from './socketEmitter.js';
 import { HOST_PROMPTS } from '../prompts/host.js';
 import type { Message, Agent, MessageType } from '../types.js';
@@ -46,6 +47,8 @@ function addMessage(
   const message: Message = { ...msg, id: uuid(), timestamp: Date.now() };
   store.update(roomId, { messages: [...room.messages, message] });
   messagesRepo.insert(roomId, message);
+  // Emit socket event so frontend inserts user message immediately (no waiting for poll)
+  emitUserMessage(roomId, message);
   return message;
 }
 
