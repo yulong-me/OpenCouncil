@@ -11,7 +11,7 @@ const CONFIG_DIR = path.resolve(process.cwd(), 'config');
 export function initSchema(): void {
   const schemaPath = path.join(__dirname, 'schema.sql');
   const sql = fs.readFileSync(schemaPath, 'utf-8');
-  db.exec(sql);
+
   // Migration: add tags column to agents table if it doesn't exist (existing DBs)
   try {
     db.exec("ALTER TABLE agents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
@@ -19,25 +19,79 @@ export function initSchema(): void {
   } catch {
     // Column already exists — safe to ignore
   }
-  // F004 Migration: Rebuild strategy for rooms/messages (conversation data not preserved)
+
+  // F004 Migration: INIT/RESEARCH/DEBATE/CONVERGING → RUNNING, HOST → MANAGER, AGENT → WORKER
   try {
     const roomsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='rooms'").get() as { sql: string } | undefined;
-    if (roomsSchema) {
-      // 如果 CHECK 约束已经是 RUNNING/DONE，说明已迁移
-      if (roomsSchema.sql.includes('RUNNING') && roomsSchema.sql.includes('DONE')) {
-        log('INFO', 'db:schema:migrate:rooms:already_migrated');
-      } else {
-        // 旧 schema：重建 rooms 和 messages 表（对话数据丢弃）
-        db.exec("DROP TABLE IF EXISTS messages");
-        db.exec("DROP TABLE IF EXISTS rooms");
-        db.exec(sql);  // 重新应用 schema
-        log('INFO', 'db:schema:migrate:rooms:rebuilt');
-      }
+    if (!roomsSchema) {
+      // 表不存在，直接应用 schema
+      db.exec(sql);
+      log('INFO', 'db:schema:init');
+      return;
     }
+
+    // 如果 CHECK 约束已经是 RUNNING/DONE，说明已迁移
+    if (roomsSchema.sql.includes('RUNNING') && roomsSchema.sql.includes('DONE')) {
+      db.exec(sql);
+      log('INFO', 'db:schema:migrate:rooms:already_migrated');
+      return;
+    }
+
+    // 旧 schema 检测到：迁移数据 → 重建表
+    log('INFO', 'db:schema:migrate:rooms:detected_old_schema');
+
+    // 备份旧数据到临时表
+    db.exec("DROP TABLE IF EXISTS rooms_backup");
+    db.exec("DROP TABLE IF EXISTS messages_backup");
+    db.exec("CREATE TABLE rooms_backup AS SELECT * FROM rooms");
+    db.exec("CREATE TABLE messages_backup AS SELECT * FROM messages");
+
+    // 重建 rooms 和 messages 表
+    db.exec("DROP TABLE IF EXISTS rooms");
+    db.exec("DROP TABLE IF EXISTS messages");
+    db.exec(sql);
+
+    // 迁移 rooms 数据: INIT/RESEARCH/DEBATE/CONVERGING → RUNNING, DONE → DONE
+    db.exec(`
+      INSERT INTO rooms (id, topic, state, report, created_at, updated_at)
+      SELECT
+        id, topic,
+        CASE state
+          WHEN 'INIT' THEN 'RUNNING'
+          WHEN 'RESEARCH' THEN 'RUNNING'
+          WHEN 'DEBATE' THEN 'RUNNING'
+          WHEN 'CONVERGING' THEN 'RUNNING'
+          ELSE state
+        END,
+        report, created_at, updated_at
+      FROM rooms_backup`);
+
+    // 迁移 messages 数据: HOST → MANAGER, AGENT → WORKER, 移除 temp_msg_id 列
+    db.exec(`
+      INSERT INTO messages (id, room_id, agent_role, agent_name, content, timestamp, type, thinking, duration_ms, total_cost_usd, input_tokens, output_tokens)
+      SELECT
+        id, room_id,
+        CASE agent_role
+          WHEN 'HOST' THEN 'MANAGER'
+          WHEN 'AGENT' THEN 'WORKER'
+          ELSE agent_role
+        END,
+        agent_name, content, timestamp, type, thinking, duration_ms, total_cost_usd, input_tokens, output_tokens
+      FROM messages_backup`);
+
+    // 清理临时表
+    db.exec("DROP TABLE rooms_backup");
+    db.exec("DROP TABLE messages_backup");
+
+    log('INFO', 'db:schema:migrate:rooms:migrated');
   } catch (err) {
-    log('WARN', 'db:schema:migrate:rooms:rebuild_failed', { reason: String(err) });
+    // 迁移失败时尝试恢复
+    try {
+      db.exec("DROP TABLE IF EXISTS rooms_backup");
+      db.exec("DROP TABLE IF EXISTS messages_backup");
+    } catch { /* ignore */ }
+    log('WARN', 'db:schema:migrate:rooms:migrate_failed', { reason: String(err) });
   }
-  log('INFO', 'db:schema:init');
 }
 
 /** Run JSON → DB migration with backup logic */
@@ -49,7 +103,6 @@ export function migrateFromJson(): void {
 
   if (fs.existsSync(agentsPath)) {
     try {
-      // Backup before migration
       fs.copyFileSync(agentsPath, agentsPath + '.bak');
       log('INFO', 'db:migrate:agents:backup', { path: agentsPath + '.bak' });
 
@@ -78,7 +131,6 @@ export function migrateFromJson(): void {
       log('INFO', 'db:migrate:agents:done', { count: agents.length });
       migrated = true;
     } catch (err) {
-      // Restore backup on failure
       const bak = agentsPath + '.bak';
       if (fs.existsSync(bak)) {
         fs.copyFileSync(bak, agentsPath);
