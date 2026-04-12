@@ -307,11 +307,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         // Dedupe by id, insert in sorted position
         if (prev.some(m => m.id === msg.id)) return prev
         const merged = [...prev, msg]
-        return merged.sort((a, b) => {
-          if (a.agentRole === 'USER' && b.agentRole !== 'USER') return -1
-          if (b.agentRole === 'USER' && a.agentRole !== 'USER') return 1
-          return a.timestamp - b.timestamp
-        })
+        return merged.sort((a, b) => a.timestamp - b.timestamp)
       })
     })
     socket.on('stream_start', (data: any) => {
@@ -399,12 +395,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           // 合并 poll 数据与现有消息，重新排序保证顺序正确
           const existingIds = new Set(prev.map(m => m.id))
           const merged = [...prev, ...(data.messages || []).filter((m: Message) => !existingIds.has(m.id))]
-          // 始终重新排序：USER 优先，然后按时间戳
-          return merged.sort((a, b) => {
-            if (a.agentRole === 'USER' && b.agentRole !== 'USER') return -1
-            if (b.agentRole === 'USER' && a.agentRole !== 'USER') return 1
-            return a.timestamp - b.timestamp
-          })
+          // 按时间戳正序排列
+          return merged.sort((a, b) => a.timestamp - b.timestamp)
         })
       } catch {}
     }
@@ -572,11 +564,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
 
           <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-6 scroll-smooth custom-scrollbar" ref={messagesContainerRef} onScroll={handleScroll}>
             {/* USER 消息永远在前，然后按时间戳 */}
-            {([...messages].sort((a, b) => {
-              if (a.agentRole === 'USER' && b.agentRole !== 'USER') return -1
-              if (b.agentRole === 'USER' && a.agentRole !== 'USER') return 1
-              return a.timestamp - b.timestamp
-            })).map(msg => {
+            {/* 按时间戳正序显示 */}
+            {([...messages].sort((a, b) => a.timestamp - b.timestamp)).map(msg => {
               const isUser = msg.agentRole === 'USER'
               const isStreaming = !isUser && (msg.type === 'streaming' || msg.duration_ms === undefined)
               const agentColor = AGENT_COLORS[msg.agentName]?.bg || DEFAULT_AGENT_COLOR.bg
