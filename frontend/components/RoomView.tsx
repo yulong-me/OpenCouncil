@@ -91,7 +91,7 @@ function BubbleSection({
   agentColor,
 }: {
   label: string
-  icon: 'brain' | 'output' | 'call'
+  icon: 'brain' | 'output'
   content: string
   isStreaming: boolean
   agentColor: string
@@ -100,7 +100,6 @@ function BubbleSection({
   // Reply 流式时自动展开，思考保持折叠，结束后由用户控制
   const effectiveExpanded = isExpanded || (isStreaming && icon === 'output')
   const lineCount = content.split('\n').length
-  const isMentionLine = icon === 'call'
   const isEmpty = !content.trim()
 
   const expandIcon = (
@@ -124,11 +123,8 @@ function BubbleSection({
 
   if (isEmpty && !isStreaming) return null
 
-  // call sections always expand when present (show "引用 → @xxx")
-  const effectiveExpandedForCall = isMentionLine ? true : effectiveExpanded
-
   return (
-    <div className={icon === 'brain' ? 'mb-3' : icon === 'call' ? 'mb-3' : 'mb-1'}>
+    <div className={icon === 'brain' ? 'mb-3' : 'mb-1'}>
       <button
         onClick={() => setIsExpanded(e => !e)}
         aria-expanded={effectiveExpanded}
@@ -138,23 +134,13 @@ function BubbleSection({
         {expandIcon}
         <span className="opacity-90 tracking-wide flex items-center gap-1.5">
           {icon === 'brain' && <BrainCircuit className="w-3 h-3" aria-hidden/>}
-          {icon === 'call' && <span className="text-[11px] font-bold" aria-hidden>@</span>}
           {label}
-          {icon === 'call' && content && (
-            <span className="font-bold" style={{ color: agentColor }}>{content}</span>
-          )}
         </span>
         <span className="text-[11px] opacity-50 ml-1 font-normal tracking-wider">{statusText}</span>
         {streamingCursor}
       </button>
 
-      {effectiveExpandedForCall ? (
-        <div className="mt-1.5 ml-2 flex items-center">
-          <span className="text-[12px] text-ink-soft">引用</span>
-          <span className="mx-1.5 text-ink-soft">→</span>
-          <span className="text-[12px] font-bold" style={{ color: agentColor }}>{content}</span>
-        </div>
-      ) : effectiveExpanded && (
+      {effectiveExpanded && (
         <div
           className={`mt-2 ml-2 pl-3.5 border-l-2 text-[14px] leading-relaxed ${
             icon === 'brain'
@@ -629,16 +615,20 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                         isStreaming={isStreaming}
                         agentColor={agentColor}
                       />
-                      {extractMentions(msg.content).map(name => (
-                        <BubbleSection
-                          key={name}
-                          label="引用"
-                          icon="call"
-                          content={name}
-                          isStreaming={isStreaming}
-                          agentColor={agentColor}
-                        />
-                      ))}
+                      {extractMentions(msg.content).length > 0 && (
+                        <div className="mb-3 flex items-center gap-2 text-xs font-medium" style={{ color: agentColor }}>
+                          <span className="opacity-50">@</span>
+                          <span>点名</span>
+                          <span className="opacity-80">
+                            {extractMentions(msg.content).map((name, i) => (
+                              <span key={name} className="font-bold" style={{ color: agentColor }}>
+                                {i > 0 && ' '}
+                                {name}
+                              </span>
+                            ))}
+                          </span>
+                        </div>
+                      )}
                       <BubbleSection
                         label="回复"
                         icon="output"
