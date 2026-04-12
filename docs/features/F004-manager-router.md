@@ -3,7 +3,7 @@ feature_id: F004
 topics: [multi-agent, manager, orchestration, conversation-mode]
 doc_kind: feature
 created: 2026-04-12
-status: draft
+status: design-approved
 owner: 宪宪
 summary: "Manager 简化为纯路由器：用户自由对话输入 → Manager 编排 Workers A2A 辩论 → Manager 自主决定收敛时机"
 ---
@@ -102,7 +102,7 @@ Manager 判断：
 
 - [x] Q1: Manager "直接回答" vs "组织辩论" → **结论：永远路由，不直接回答**
 - [x] Q2: 用户 @mention 了 Worker，Manager 能干预吗？ → **结论：可以透传但可补充上下文，不拦截**
-- [ ] Q3: 生成报告是 Manager 主动判断还是用户触发？ → **待铲屎官确认**
+- [x] Q3: 生成报告是 Manager 主动判断还是用户触发？ → **用户主动要求触发**
 
 ## 相关 Feature
 
