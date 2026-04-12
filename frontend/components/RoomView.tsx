@@ -128,8 +128,8 @@ function BubbleSection({
       <button
         onClick={() => setIsExpanded(e => !e)}
         aria-expanded={effectiveExpanded}
-        className="flex items-center gap-2 text-xs font-medium w-full group/section hover:opacity-80 transition-opacity"
-        style={{ color: agentColor }}
+        className="flex items-center gap-2 text-xs font-medium w-full group/section hover:opacity-80 transition-opacity px-2 py-1 rounded-lg"
+        style={{ color: agentColor, backgroundColor: `${agentColor}10` }}
       >
         {expandIcon}
         <span className="opacity-90 tracking-wide flex items-center gap-1.5">
@@ -571,7 +571,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                           {new Date(msg.timestamp).toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         {isStreaming && <span className="text-[11px] text-accent animate-pulse font-medium">● 回答中</span>}
-                        <span className="text-[12px] font-bold text-ink">你</span>
+                        <span className="text-[12px] font-bold px-2 py-0.5 rounded-md bg-ink/10 text-ink">你</span>
                       </div>
                       <div className="rounded-2xl rounded-tr-sm px-4 py-3.5 bg-ink text-bg shadow-sm border border-line/10">
                         <div className="text-[14px] break-words leading-relaxed text-bg">
@@ -597,7 +597,10 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                   </div>
                   <div className="w-full max-w-[85%] md:max-w-[70%]">
                     <div className="mb-1.5 flex items-center gap-2">
-                      <span className="text-[13px] font-bold" style={{ color: agentColor }}>{msg.agentName}</span>
+                      <span
+                        className="text-[13px] font-bold px-2 py-0.5 rounded-md"
+                        style={{ backgroundColor: `${agentColor}20`, color: agentColor }}
+                      >{msg.agentName}</span>
                       <span className="text-[11px] text-ink-soft">
                         {new Date(msg.timestamp).toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit' })}
                       </span>
@@ -616,17 +619,17 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                         agentColor={agentColor}
                       />
                       {extractMentions(msg.content).length > 0 && (
-                        <div className="mb-3 flex items-center gap-2 text-xs font-medium" style={{ color: agentColor }}>
-                          <span className="opacity-50">@</span>
-                          <span>点名</span>
-                          <span className="opacity-80">
-                            {extractMentions(msg.content).map((name, i) => (
-                              <span key={name} className="font-bold" style={{ color: agentColor }}>
-                                {i > 0 && ' '}
-                                {name}
-                              </span>
-                            ))}
-                          </span>
+                        <div className="mb-3 flex items-center gap-1.5 text-xs font-medium flex-wrap" style={{ color: agentColor }}>
+                          <span className="opacity-50 mr-0.5">@点名</span>
+                          {extractMentions(msg.content).map((name, i) => (
+                            <span
+                              key={name}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
+                              style={{ backgroundColor: `${agentColor}20`, color: agentColor }}
+                            >
+                              {name}
+                            </span>
+                          ))}
                         </div>
                       )}
                       <BubbleSection
