@@ -1,9 +1,9 @@
 'use client'
 
 import { useParams } from 'next/navigation'
-import RoomView from '@/components/RoomView'
+import RoomView_new from '@/components/RoomView_new'
 
 export default function RoomPage() {
   const { id } = useParams()
-  return <RoomView roomId={id as string} />
+  return <RoomView_new roomId={id as string} />
 }

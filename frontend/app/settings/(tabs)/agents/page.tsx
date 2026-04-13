@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Edit2, Trash2, CheckCircle2, ChevronLeft, Save, X, Plus } from 'lucide-react'
+import { error } from '../../../../lib/logger'
 
 const API = 'http://localhost:7001'
 
@@ -333,7 +334,7 @@ export default function AgentsPage() {
     fetch(`${API}/api/agents`)
       .then(r => r.json())
       .then((data: AgentConfig[]) => { setAgents(data); setLoading(false) })
-      .catch(e => { console.error(e); setLoading(false) })
+      .catch(e => { error('agent:load_error', { error: String(e) }); setLoading(false) })
   }
 
   useEffect(() => { load() }, [])
@@ -348,14 +349,14 @@ export default function AgentsPage() {
       const data = await r.json()
       setAgents(prev => prev.map(a => a.id === data.id ? data : a))
       setSaving(false)
-    }).catch(e => { console.error(e); setSaving(false) })
+    }).catch(e => { error('agent:save_error', { error: String(e) }); setSaving(false) })
   }
 
   function handleDelete(id: string) {
     if (!confirm('确认删除该 Agent？')) return
     fetch(`${API}/api/agents/${id}`, { method: 'DELETE' })
       .then(r => { if (r.ok) { setAgents(prev => prev.filter(a => a.id !== id)); router.refresh() } })
-      .catch(e => console.error(e))
+      .catch(e => error('agent:delete_error', { error: String(e) }))
   }
 
   return (
