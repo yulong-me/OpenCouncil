@@ -521,16 +521,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [mentionPickerOpen, closeMentionPicker])
 
-  // Auto-resize textarea after each userInput change (runs after reconciliation, no React/style conflict)
-  useEffect(() => {
-    const ta = textareaRef.current
-    if (!ta) return
-    // min-height from Tailwind min-h-[48px] = 48px
-    const minHeight = 48
-    const maxHeight = parseInt(getComputedStyle(ta).maxHeight) || 160
-    ta.style.height = 'auto'
-    ta.style.height = Math.max(minHeight, Math.min(ta.scrollHeight, maxHeight)) + 'px'
-  }, [userInput])
+  // Fixed textarea height — content overflow scrolls internally. This prevents layout shifts
+  // that trigger browser scroll anchoring (the root cause of page scroll-jump on "@" input).
 
   const selectMentionAgent = useCallback((agentName: string) => {
     const ta = textareaRef.current
@@ -907,7 +899,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
               <div className="flex gap-3">
                 <textarea
                   ref={textareaRef}
-                  className="flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-[14px] text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all resize-none min-h-[48px] max-h-40 overflow-y-auto custom-scrollbar leading-relaxed"
+                  className="flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-[14px] text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all resize-none h-12 leading-relaxed"
                   placeholder="输入消息，或 @mention 专家..."
                   value={userInput}
                   onChange={handleInputChange}
