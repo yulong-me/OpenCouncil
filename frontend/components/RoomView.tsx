@@ -274,6 +274,7 @@ interface Agent {
 interface Message {
   id: string; agentRole: AgentRole | 'USER'; agentName: string; content: string; timestamp: number; type: string;
   thinking?: string; duration_ms?: number; total_cost_usd?: number; input_tokens?: number; output_tokens?: number
+  toAgentId?: string
 }
 
 const STATE_LABELS: Record<DiscussionState, string> = {
@@ -317,6 +318,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [sending, setSending] = useState(false)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  // F0042: 当前消息接收人，默认主持人
+  const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null)
 
   // @mention picker state
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false)
@@ -461,6 +464,11 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         setState(newState)
         setAgents(newAgents)
         setReport(data.report || '')
+        // F0042: 默认选中的接收人是主持人
+        if (selectedRecipientId === null) {
+          const manager = newAgents.find((a: Agent) => a.role === 'MANAGER')
+          if (manager) setSelectedRecipientId(manager.id)
+        }
 
         setMessages(prev => {
           // 合并 poll 数据与现有消息，重新排序保证顺序正确
@@ -533,13 +541,16 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     const newInput = before + '@' + agentName + ' ' + after
     setUserInput(newInput)
     closeMentionPicker()
+    // F0042: 选中该 agent 作为接收人
+    const target = agents.find(a => a.name === agentName)
+    if (target) setSelectedRecipientId(target.id)
     // Restore focus and cursor after the inserted text
     setTimeout(() => {
       const newPos = mentionStartIdx + agentName.length + 2
       ta.focus()
       ta.setSelectionRange(newPos, newPos)
     }, 0)
-  }, [userInput, mentionStartIdx, closeMentionPicker])
+  }, [userInput, mentionStartIdx, closeMentionPicker, agents])
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value
@@ -621,7 +632,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       const res = await fetch(`http://localhost:7001/api/rooms/${roomId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, toAgentId: selectedRecipientId }),
       })
       if (!res.ok) {
         const err = await res.text()
@@ -896,6 +907,23 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                   position={mentionPositionRef.current}
                 />
               )}
+              {/* F0042: recipient badge */}
+              {selectedRecipientId && (() => {
+                const recipient = agents.find(a => a.id === selectedRecipientId)
+                const colors = recipient ? (AGENT_COLORS[recipient.name] || DEFAULT_AGENT_COLOR) : DEFAULT_AGENT_COLOR
+                return (
+                  <div className="flex items-center gap-2 px-1">
+                    <span className="text-[11px] text-ink-soft">发送给:</span>
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: `${colors.bg}15`, color: colors.bg, border: `1px solid ${colors.bg}30` }}
+                    >
+                      <img src={colors.avatar} alt="" className="w-3.5 h-3.5 rounded-full" />
+                      {recipient?.name ?? '未知'}
+                    </span>
+                  </div>
+                )
+              })()}
               <div className="flex gap-3">
                 <textarea
                   ref={textareaRef}
