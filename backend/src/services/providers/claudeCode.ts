@@ -8,6 +8,11 @@ function telemetry(event: 'call_start' | 'call_end' | 'call_error', meta: Record
   console.log(`[${ts}] [PROVIDER:claude-code] ${event} ${JSON.stringify(meta)}`);
 }
 
+function shellQuote(arg: string): string {
+  if (arg === '') return "''";
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
 export async function* streamClaudeCodeProvider(
   prompt: string,
   agentId: string,
@@ -17,6 +22,8 @@ export async function* streamClaudeCodeProvider(
   const providerCfg = getProvider('claude-code');
   const timeout = ((opts.timeout as number) ?? (providerCfg?.timeout ?? 90)) * 1000;
   const sessionId = opts.sessionId as string | undefined;
+  const roomId = opts.roomId as string | undefined;
+  const agentName = opts.agentName as string | undefined;
 
   // Resolve CLI path (expand ~)
   const cliPath = (providerCfg?.cliPath ?? 'claude').replace(/^~/, process.env.HOME || '/root');
@@ -26,7 +33,15 @@ export async function* streamClaudeCodeProvider(
   if (providerCfg?.apiKey) env.ANTHROPIC_API_KEY = providerCfg.apiKey;
   if (providerCfg?.baseUrl) env.ANTHROPIC_BASE_URL = providerCfg.baseUrl;
 
-  telemetry('call_start', { agentId, promptLength: prompt.length, timeout, sessionId: sessionId ?? 'new', cliPath });
+  telemetry('call_start', {
+    roomId,
+    agentId,
+    agentName,
+    promptLength: prompt.length,
+    timeout,
+    sessionId: sessionId ?? 'new',
+    cliPath,
+  });
 
   const args = ['-p', prompt, '--verbose', '--output-format=stream-json', '--include-partial-messages'];
   if (sessionId) args.splice(1, 0, '--resume', sessionId);
@@ -37,7 +52,10 @@ export async function* streamClaudeCodeProvider(
     args.push('--add-dir', workspace);
   }
 
-  console.log(`[PROVIDER:claude-code] COMMAND: ${cliPath} -p [...${prompt.length} chars prompt] --verbose --output-format=stream-json${sessionId ? ` --resume ${sessionId}` : ''}${workspace ? ` --add-dir ${workspace}` : ''}`);
+  const command = `${shellQuote(cliPath)} ${args.map(a => shellQuote(a)).join(' ')}`;
+  console.log(
+    `[PROVIDER:claude-code] COMMAND room=${roomId ?? '-'} agent=${agentName ?? agentId}: ${command}`,
+  );
 
   const proc = spawn(cliPath, args, { timeout, env, stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -107,15 +125,15 @@ export async function* streamClaudeCodeProvider(
     proc.on('close', (code) => {
       if (code !== 0) {
         const errMsg = stderrBuffer.trim() || `CLI exited with code ${code}`;
-        telemetry('call_error', { agentId, stderr: errMsg.slice(0, 500) });
+        telemetry('call_error', { roomId, agentId, agentName, stderr: errMsg.slice(0, 500) });
         reject(new Error(errMsg));
       } else {
-        telemetry('call_end', { agentId, duration_ms: Date.now() - start, sessionId: capturedSessionId });
+        telemetry('call_end', { roomId, agentId, agentName, duration_ms: Date.now() - start, sessionId: capturedSessionId });
         resolve();
       }
     });
     proc.on('error', (err) => {
-      telemetry('call_error', { agentId, error: err.message });
+      telemetry('call_error', { roomId, agentId, agentName, error: err.message });
       reject(err);
     });
   });

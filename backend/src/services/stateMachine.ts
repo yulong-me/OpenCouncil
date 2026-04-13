@@ -263,6 +263,8 @@ ${ctx.userMessage}`;
     ...(agentConfig?.providerOpts ?? {}),
     sessionId: existingSessionId,
     workspace,
+    roomId,
+    agentName,
   };
 
   const msg = addMessage(roomId, {
@@ -397,10 +399,12 @@ export async function a2aOrchestrate(
   );
   if (mentions.length === 0) return;
 
-  // Output guard: if output has a question AND multiple @mentions, downgrade to single @ (Clarify mode)
+  // Output guard: only applies to Manager (host) agents in Clarify mode.
+  // Workers can legitimately @mention multiple peers in parallel discussion.
+  const isManager = room.agents.some(a => a.id === fromAgentId && a.role === 'MANAGER');
   const hasQuestion = /[？?]/.test(outputText);
-  if (hasQuestion && mentions.length > 1) {
-    console.log(`[DEBUG] a2a_guard: question + ${mentions.length} mentions → keeping only first (@${mentions[0]})`);
+  if (isManager && hasQuestion && mentions.length > 1) {
+    console.log(`[DEBUG] a2a_guard: Manager question + ${mentions.length} mentions → keeping only first (@${mentions[0]})`);
     mentions = [mentions[0]];
   }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -10,6 +10,65 @@ import { useTheme } from 'next-themes'
 import { Menu, X, Plus, Download, MessageSquare, ChevronUp, ChevronDown, ChevronRight, BrainCircuit, Sun, Moon, Settings } from 'lucide-react'
 import CreateRoomModal from '@/components/CreateRoomModal'
 import SettingsModal from '@/components/SettingsModal'
+
+/** @mention 自动补全选择器 */
+function MentionPicker({
+  agents,
+  query,
+  highlightIndex,
+  onSelect,
+  position,
+}: {
+  agents: Agent[]
+  query: string
+  highlightIndex: number
+  onSelect: (name: string) => void
+  position: { top: number; left: number }
+}) {
+  const filtered = query
+    ? agents.filter(a => a.name.toLowerCase().includes(query.toLowerCase()))
+    : agents
+
+  if (filtered.length === 0) return null
+
+  return (
+    <div
+      className="fixed z-50 bg-surface border border-line rounded-xl shadow-2xl overflow-hidden"
+      style={{ top: position.top, left: Math.min(position.left, typeof window !== 'undefined' ? window.innerWidth - 280 : position.left), minWidth: 220, maxWidth: 280 }}
+    >
+      <div className="px-3 py-1.5 bg-surface-muted border-b border-line">
+        <span className="text-[10px] font-semibold text-ink-soft uppercase tracking-wider">选择专家</span>
+      </div>
+      <div className="max-h-60 overflow-y-auto custom-scrollbar">
+        {filtered.map((agent, i) => {
+          const colors = AGENT_COLORS[agent.name] || DEFAULT_AGENT_COLOR
+          const isHighlighted = i === highlightIndex
+          return (
+            <button
+              key={agent.id}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                isHighlighted ? 'bg-accent/10' : 'hover:bg-surface-muted/60'
+              }`}
+              onMouseEnter={() => {}}
+              onClick={() => onSelect(agent.name)}
+            >
+              <div className="w-7 h-7 rounded-full flex-shrink-0 shadow-sm overflow-hidden">
+                <img src={colors.avatar} alt={agent.name} className="w-full h-full" />
+              </div>
+              <div className="min-w-0">
+                <p className={`text-[13px] font-bold truncate ${isHighlighted ? 'text-accent' : 'text-ink'}`}>{agent.name}</p>
+                <p className="text-[11px] text-ink-soft truncate">{agent.domainLabel}</p>
+              </div>
+              {isHighlighted && (
+                <span className="ml-auto text-[10px] text-accent/60 font-mono shrink-0">↵</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 /** Format timestamp as relative time (e.g. "2分钟前", "3小时前", "昨天") */
 function formatRelativeTime(ts: number): string {
@@ -256,6 +315,14 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
 
+  // @mention picker state
+  const [mentionPickerOpen, setMentionPickerOpen] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionStartIdx, setMentionStartIdx] = useState(-1)
+  const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mentionPositionRef = useRef({ top: 0, left: 0 })
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollStateRef = useRef<{ state: DiscussionState; agents: Agent[] }>({ state: 'RUNNING' as DiscussionState, agents: [] as Agent[] })
   const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
@@ -264,6 +331,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const streamingCountRef = useRef(0)
   const socketRef = useRef<Socket | null>(null)
+  const sendMessageRef = useRef<() => void>(() => {})
 
   const scrollToBottom = () => {
     if (userScrolledRef.current) return
@@ -418,8 +486,117 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     a.click()
   }
 
+  // @mention picker helpers
+  const filteredAgents = mentionQuery
+    ? agents.filter(a => a.name.toLowerCase().includes(mentionQuery.toLowerCase()))
+    : agents
+
+  const openMentionPicker = useCallback((cursorPos: number, top: number, left: number) => {
+    setMentionPickerOpen(true)
+    setMentionQuery('')
+    setMentionStartIdx(cursorPos)
+    setMentionHighlightIdx(0)
+    mentionPositionRef.current = { top: top + 4, left: Math.min(left, typeof window !== 'undefined' ? window.innerWidth - 290 : left) }
+  }, [])
+
+  const closeMentionPicker = useCallback(() => {
+    setMentionPickerOpen(false)
+    setMentionQuery('')
+    setMentionStartIdx(-1)
+  }, [])
+
+  const selectMentionAgent = useCallback((agentName: string) => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const before = userInput.slice(0, mentionStartIdx)
+    const after = userInput.slice(ta.selectionStart)
+    const newInput = before + '@' + agentName + ' ' + after
+    setUserInput(newInput)
+    closeMentionPicker()
+    // Restore focus and cursor after the inserted text
+    setTimeout(() => {
+      const newPos = mentionStartIdx + agentName.length + 2
+      ta.focus()
+      ta.setSelectionRange(newPos, newPos)
+    }, 0)
+  }, [userInput, mentionStartIdx, closeMentionPicker])
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value
+    const cursor = e.target.selectionStart ?? val.length
+    setUserInput(val)
+
+    // Find @mention trigger: last @ before cursor on current line
+    const textBefore = val.slice(0, cursor)
+    const lineStart = textBefore.lastIndexOf('\n') + 1
+    const textOnLine = textBefore.slice(lineStart)
+    const lastAt = textOnLine.lastIndexOf('@')
+
+    if (lastAt >= 0) {
+      const query = textOnLine.slice(lastAt + 1)
+      // Only trigger if @ is at line start or preceded by whitespace
+      const atPos = lineStart + lastAt
+      const charBefore = atPos > 0 ? val[atPos - 1] : ''
+      if (charBefore === '' || charBefore === ' ' || charBefore === '\n') {
+        // Position the popover near the textarea
+        const rect = textareaRef.current?.getBoundingClientRect()
+        if (rect) {
+          // Approximate cursor position based on line height
+          const lineHeight = parseInt(getComputedStyle(textareaRef.current!).lineHeight) || 24
+          const lines = textOnLine.slice(0, lastAt).split('\n')
+          const col = lastAt
+          const top = rect.top + lineHeight * Math.min(lines.length, 3)
+          const left = rect.left + Math.min(col * 8, rect.width - 220)
+          openMentionPicker(cursor, top, left)
+        } else {
+          openMentionPicker(cursor, 300, 50)
+        }
+        setMentionQuery(query)
+        setMentionHighlightIdx(0)
+        return
+      }
+    }
+
+    closeMentionPicker()
+  }, [openMentionPicker, closeMentionPicker])
+
+  const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!mentionPickerOpen) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        sendMessageRef.current()
+      }
+      return
+    }
+
+    const count = filteredAgents.length
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setMentionHighlightIdx(i => (i + 1) % count)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setMentionHighlightIdx(i => (i - 1 + count) % count)
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      if (filteredAgents[mentionHighlightIdx]) {
+        selectMentionAgent(filteredAgents[mentionHighlightIdx].name)
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      closeMentionPicker()
+    } else if (e.key === 'Backspace') {
+      // Let the normal backspace happen; if it deletes the @, close picker
+      // We'll handle this via a small timeout to check after the change
+      closeMentionPicker()
+    } else {
+      // Any other key: let it through, update query
+    }
+  }, [mentionPickerOpen, filteredAgents, mentionHighlightIdx, selectMentionAgent, closeMentionPicker])
+
   const handleSendMessage = async () => {
     if (!roomId || !userInput.trim() || sending) return
+    setMentionPickerOpen(false)
     setSending(true)
     const content = userInput.trim()
     setUserInput('')
@@ -445,6 +622,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       setSending(false)
     }
   }
+  // Keep ref in sync so keyboard handler can call the latest handleSendMessage
+  sendMessageRef.current = handleSendMessage
 
   const toggleMobileMenu = () => setMobileMenuOpen(o => !o)
 
@@ -686,23 +865,39 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                 <Download className="w-4 h-4" aria-hidden/> 下载讨论报告
               </button>
             ) : roomId ? (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 relative">
               {sendError && (
                 <div className="text-xs text-red-500 px-1">{sendError}</div>
               )}
+              {mentionPickerOpen && (
+                <MentionPicker
+                  agents={agents}
+                  query={mentionQuery}
+                  highlightIndex={mentionHighlightIdx}
+                  onSelect={selectMentionAgent}
+                  position={mentionPositionRef.current}
+                />
+              )}
               <div className="flex gap-3">
-                <input
-                  type="text"
-                  className="flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-[14px] text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all"
+                <textarea
+                  ref={textareaRef}
+                  className="flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-[14px] text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all resize-none min-h-[48px] max-h-40 overflow-y-auto custom-scrollbar leading-relaxed"
                   placeholder="输入消息，或 @mention 专家..."
                   value={userInput}
-                  onChange={e => setUserInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+                  onChange={handleInputChange}
+                  onKeyDown={handleInputKeyDown}
                   disabled={sending}
+                  rows={1}
+                  style={{ height: 'auto' }}
+                  onInput={e => {
+                    const ta = e.currentTarget
+                    ta.style.height = 'auto'
+                    ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'
+                  }}
                 />
                 <button
                   type="button"
-                  className="bg-accent text-white font-semibold px-5 py-3 rounded-xl hover:bg-accent-deep transition-all disabled:opacity-50 text-[14px] shadow-sm"
+                  className="bg-accent text-white font-semibold px-5 py-3 rounded-xl hover:bg-accent-deep transition-all disabled:opacity-50 text-[14px] shadow-sm self-end"
                   onClick={handleSendMessage}
                   disabled={sending || !userInput.trim()}
                 >

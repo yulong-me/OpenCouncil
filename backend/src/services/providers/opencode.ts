@@ -8,6 +8,11 @@ function telemetry(event: 'call_start' | 'call_end' | 'call_error', meta: Record
   console.log(`[${ts}] [PROVIDER:opencode] ${event} ${JSON.stringify(meta)}`);
 }
 
+function shellQuote(arg: string): string {
+  if (arg === '') return "''";
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
 export async function* streamOpenCodeProvider(
   prompt: string,
   agentId: string,
@@ -19,6 +24,8 @@ export async function* streamOpenCodeProvider(
   // No -m flag: let opencode use its own default model
   const thinking = opts.thinking !== false; // default true
   const sessionId = opts.sessionId as string | undefined;
+  const roomId = opts.roomId as string | undefined;
+  const agentName = opts.agentName as string | undefined;
 
   // Resolve CLI path (expand ~)
   const cliPath = (providerCfg?.cliPath ?? 'opencode').replace(/^~/, process.env.HOME || '/root');
@@ -28,7 +35,16 @@ export async function* streamOpenCodeProvider(
   if (providerCfg?.apiKey) env.ANTHROPIC_API_KEY = providerCfg.apiKey;
   if (providerCfg?.baseUrl) env.ANTHROPIC_BASE_URL = providerCfg.baseUrl;
 
-  telemetry('call_start', { agentId, promptLength: prompt.length, timeout, thinking, sessionId: sessionId ?? 'new', cliPath });
+  telemetry('call_start', {
+    roomId,
+    agentId,
+    agentName,
+    promptLength: prompt.length,
+    timeout,
+    thinking,
+    sessionId: sessionId ?? 'new',
+    cliPath,
+  });
 
   // Build args: opencode run [opts] -- <prompt>
   // Critical: always use --format json (clowder-ai reference implementation)
@@ -45,7 +61,10 @@ export async function* streamOpenCodeProvider(
   // Workspace support — 每个 Room 有独立工作目录
   const workspace = opts.workspace as string | undefined;
 
-  console.log(`[PROVIDER:opencode] COMMAND: ${cliPath} run${sessionId ? ` --session ${sessionId}` : ''}${thinking ? ' --thinking' : ''} --format json [...${prompt.length} chars prompt]${workspace ? ` (cwd=${workspace})` : ''}`);
+  const command = `${shellQuote(cliPath)} ${args.map(a => shellQuote(a)).join(' ')}`;
+  console.log(
+    `[PROVIDER:opencode] COMMAND room=${roomId ?? '-'} agent=${agentName ?? agentId}: ${command}${workspace ? ` (cwd=${workspace})` : ''}`,
+  );
 
   const proc = spawn(cliPath, args, { timeout, env, cwd: workspace ?? '/tmp', stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -109,15 +128,15 @@ export async function* streamOpenCodeProvider(
     proc.on('close', (code) => {
       if (code !== 0) {
         const errMsg = stderrBuffer.trim() || `CLI exited with code ${code}`;
-        telemetry('call_error', { agentId, stderr: errMsg.slice(0, 500) });
+        telemetry('call_error', { roomId, agentId, agentName, stderr: errMsg.slice(0, 500) });
         reject(new Error(errMsg));
       } else {
-        telemetry('call_end', { agentId, duration_ms: Date.now() - start, sessionId: capturedSessionId });
+        telemetry('call_end', { roomId, agentId, agentName, duration_ms: Date.now() - start, sessionId: capturedSessionId });
         resolve();
       }
     });
     proc.on('error', (err) => {
-      telemetry('call_error', { agentId, error: err.message });
+      telemetry('call_error', { roomId, agentId, agentName, error: err.message });
       reject(err);
     });
   });
