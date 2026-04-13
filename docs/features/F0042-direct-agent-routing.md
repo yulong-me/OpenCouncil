@@ -3,7 +3,7 @@ feature_ids: [F0042]
 topics: [routing, multi-agent, direct-message]
 doc_kind: feature
 created: 2026-04-13
-status: phase1-done
+status: done
 title: F0042 直接 Agent 路由 — 用户直连专家
 ---
 
