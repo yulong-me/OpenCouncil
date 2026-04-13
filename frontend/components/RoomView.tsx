@@ -514,6 +514,14 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     a.click()
   }
 
+  // F0042: 当 agents 加载后，同步设置默认接收人为 MANAGER（防止首次 poll 前用户就发送）
+  // 注意：不依赖 selectedRecipientId，只在 agents 变化且未设置时初始化
+  useEffect(() => {
+    if (!roomId || agents.length === 0) return
+    const manager = agents.find(a => a.role === 'MANAGER')
+    if (manager) setSelectedRecipientId(prev => prev ?? manager.id)
+  }, [roomId, agents])
+
   // @mention picker helpers
   const filteredAgents = mentionQuery
     ? agents.filter(a => a.name.toLowerCase().includes(mentionQuery.toLowerCase()))
