@@ -483,11 +483,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         setState(newState)
         setAgents(newAgents)
         setReport(data.report || '')
-        // F0042: 默认选中的接收人是主持人
-        if (selectedRecipientId === null) {
-          const manager = newAgents.find((a: Agent) => a.role === 'MANAGER')
-          if (manager) setSelectedRecipientId(manager.id)
-        }
 
         setMessages(prev => {
           // 合并 poll 数据与现有消息，重新排序保证顺序正确
@@ -521,14 +516,9 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   useEffect(() => {
     if (!roomId || agents.length === 0) return
     const manager = agents.find(a => a.role === 'MANAGER')
-    console.log(`[RoomView] useEffect[agents] room=${roomId} agentsCount=${agents.length} manager=${manager ? `${manager.name}(${manager.id})` : 'NONE'}`)
     if (manager) {
-      setSelectedRecipientId(prev => {
-        const next = prev ?? manager.id
-        recipientIdRef.current = next
-        console.log(`[RoomView] setSelectedRecipientId prev=${prev} → ${next}`)
-        return next
-      })
+      setSelectedRecipientId(prev => prev ?? manager.id)
+      recipientIdRef.current = manager.id
     }
   }, [roomId, agents])
 
@@ -578,7 +568,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     closeMentionPicker()
     // F0042: 选中该 agent 作为接收人
     const target = agents.find(a => a.name === agentName)
-    console.log(`[RoomView] selectMentionAgent agentName="${agentName}" target=${target ? `${target.name}(${target.role}, id=${target.id})` : 'NOT FOUND'} agentsCount=${agents.length}`)
     if (target) {
       recipientIdRef.current = target.id
       setSelectedRecipientId(target.id)
@@ -669,7 +658,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     // F0042: 用 ref 保证读到最新值（避免 setState 异步导致的闭包陈旧）
     const recipientId = recipientIdRef.current
     const recipient = agents.find(a => a.id === recipientId)
-    console.log(`[RoomView] handleSendMessage content="${content.slice(0, 30)}" selectedRecipientId=${recipientId} recipient=${recipient?.name}(${recipient?.role}) agentsCount=${agents.length}`)
     setUserInput('')
     try {
       const res = await fetch(`http://localhost:7001/api/rooms/${roomId}/messages`, {
