@@ -118,9 +118,6 @@ router.post('/:name/test', (req, res) => {
   }
 
   const proc = spawn(cliPath, args, { timeout, env, cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] })
-  debug('exexxxx', { cliPath,args });
-  
-  console.log(args,cliPath)
   let stdout = ''
   let stderr = ''
   let outputLines: string[] = []

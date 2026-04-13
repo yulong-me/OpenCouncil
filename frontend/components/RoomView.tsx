@@ -8,6 +8,7 @@ import remarkBreaks from 'remark-breaks'
 import { io, type Socket } from 'socket.io-client'
 import { useTheme } from 'next-themes'
 import { Menu, X, Plus, Download, MessageSquare, ChevronUp, ChevronDown, ChevronRight, BrainCircuit, Sun, Moon, Settings } from 'lucide-react'
+import { debug, error as logError, getDebugLog, telemetry, setRoomId } from '../lib/logger'
 import CreateRoomModal from '@/components/CreateRoomModal'
 import SettingsModal from '@/components/SettingsModal'
 
@@ -18,14 +19,12 @@ function MentionPicker({
   highlightIndex,
   onSelect,
   onHighlight,
-  position,
 }: {
   agents: Agent[]
   query: string
   highlightIndex: number
   onSelect: (name: string) => void
   onHighlight: (index: number) => void
-  position: { top: number; left: number }
 }) {
   const filtered = query
     ? agents.filter(a => a.name.toLowerCase().includes(query.toLowerCase()))
@@ -36,8 +35,8 @@ function MentionPicker({
   return (
     <div
       data-mention-picker="1"
-      className="fixed z-50 bg-surface border border-line rounded-xl shadow-2xl overflow-hidden"
-      style={{ top: position.top, left: Math.max(0, Math.min(position.left, typeof window !== 'undefined' ? window.innerWidth - 240 : position.left)), minWidth: 220, maxWidth: 280 }}
+      className="absolute z-50 bg-surface border border-line rounded-xl shadow-2xl overflow-hidden"
+      style={{ left: 0, bottom: 'calc(100% + 6px)', minWidth: 220, maxWidth: 280 }}
     >
       <div className="px-3 py-1.5 bg-surface-muted border-b border-line">
         <span className="text-[10px] font-semibold text-ink-soft uppercase tracking-wider">选择专家</span>
@@ -253,16 +252,7 @@ const mdComponents: Components = {
   code: ({ children }) => <code className="bg-surface-muted text-ink rounded px-1.5 py-0.5 text-[0.85em] font-mono border border-line">{children}</code>,
 }
 
-// Debug log store: keep last 100 entries
-const DEBUG_MAX = 100
-const debugLogRef = { current: [] as { ts: string; event: string; meta?: Record<string, unknown> }[] }
-function telemetry(event: string, meta?: Record<string, unknown>) {
-  const ts = new Date().toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 })
-  const entry = { ts, event, meta }
-  debugLogRef.current = [entry, ...debugLogRef.current].slice(0, DEBUG_MAX)
-  if (meta) console.log(`[${ts}] [FE] ${event} ${JSON.stringify(meta)}`)
-  else console.log(`[${ts}] [FE] ${event}`)
-}
+// telemetry() is imported from '../lib/logger' (backward-compat alias to debug())
 
 type DiscussionState = 'RUNNING' | 'DONE'
 type AgentRole = 'MANAGER' | 'WORKER' | 'USER'
@@ -297,8 +287,6 @@ const AGENT_COLORS: Record<string, { bg: string; text: string; avatar: string }>
 
 const DEFAULT_AGENT_COLOR = { bg: '#10B981', text: '#FFFFFF', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=agent&backgroundColor=c0aede' } // Emerald
 
-const STATE_BUTTONS: Partial<Record<DiscussionState, { label: string; choice?: string }[]>> = {}
-
 interface RoomViewProps { roomId?: string; defaultCreateOpen?: boolean }
 
 export default function RoomView({ roomId, defaultCreateOpen = false }: RoomViewProps) {
@@ -324,8 +312,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [sendError, setSendError] = useState<string | null>(null)
   // F0042: 当前消息接收人，默认主持人
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null)
-  // ref 版本：handleSendMessage 闭包会始终读到最新值（避免 setState 异步导致的闭包陈旧）
-  const recipientIdRef = useRef<string | null>(null)
 
   // @mention picker state
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false)
@@ -333,7 +319,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [mentionStartIdx, setMentionStartIdx] = useState(-1)
   const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const mentionPositionRef = useRef({ top: 0, left: 0 })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollStateRef = useRef<{ state: DiscussionState; agents: Agent[] }>({ state: 'RUNNING' as DiscussionState, agents: [] as Agent[] })
@@ -367,13 +352,18 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
 
   useEffect(() => { scrollToBottom() }, [messages])
 
-  // Sync debug logs from ref to state every 500ms
+  // Sync debug logs from logger store to state every 500ms
   useEffect(() => {
-    const sync = () => setDebugLogs([...debugLogRef.current])
+    const sync = () => setDebugLogs(getDebugLog())
     sync()
     const interval = setInterval(sync, 500)
     return () => clearInterval(interval)
   }, [])
+
+  // F0043: Set roomId in logger so frontend logs get persisted to logs/{roomId}.log
+  useEffect(() => {
+    setRoomId(roomId ?? null)
+  }, [roomId])
 
   useEffect(() => {
     const socket = io('http://localhost:7001', { transports: ['websocket', 'polling'] })
@@ -394,6 +384,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       if (data.roomId !== roomId) return
       streamingCountRef.current++
       streamingThinkingRef.current.set(data.agentId, '')
+      telemetry('ui:ai:start', { roomId, agentName: data.agentName, agentRole: data.agentRole })
       telemetry('socket:stream_start', { agentName: data.agentName, id: data.id })
       const tempMsg: Message = { id: data.id, agentRole: data.agentRole as AgentRole, agentName: data.agentName, content: '', timestamp: data.timestamp, type: 'streaming' }
       streamingMessagesRef.current.set(data.agentId, tempMsg)
@@ -421,8 +412,15 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     socket.on('stream_end', (data: any) => {
       if (data.roomId !== roomId) return
       streamingCountRef.current = Math.max(0, streamingCountRef.current - 1)
-      telemetry('socket:stream_end', { id: data.id, duration_ms: data.duration_ms })
       const msg = streamingMessagesRef.current.get(data.agentId)
+      telemetry('ui:ai:end', {
+        roomId,
+        agentName: msg?.agentName ?? '',
+        duration_ms: data.duration_ms,
+        total_cost_usd: data.total_cost_usd,
+        output_tokens: data.output_tokens,
+      })
+      telemetry('socket:stream_end', { id: data.id, duration_ms: data.duration_ms })
       if (msg) {
         msg.duration_ms = data.duration_ms
         msg.total_cost_usd = data.total_cost_usd
@@ -449,6 +447,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     if (!roomId || !socketRef.current) return
     socketRef.current.emit('join-room', roomId)
     telemetry('socket:join_room', { roomId })
+    telemetry('ui:room:enter', { roomId, topic: roomId /* topic from store if available */ })
     return () => { if (socketRef.current) socketRef.current.emit('leave-room', roomId) }
   }, [roomId])
 
@@ -467,7 +466,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       }
       setRoomsAgentsMap(agentsMap)
       setRoomsLastToAgentMap(toAgentMap)
-    }).catch(console.error)
+    }).catch(e => logError('room:list_error', { error: String(e) }))
   }, [])
 
   useEffect(() => {
@@ -516,31 +515,19 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   useEffect(() => {
     if (!roomId || agents.length === 0) return
     const manager = agents.find(a => a.role === 'MANAGER')
-    if (manager) {
-      setSelectedRecipientId(prev => prev ?? manager.id)
-      recipientIdRef.current = manager.id
-    }
+    if (manager) setSelectedRecipientId(prev => prev ?? manager.id)
   }, [roomId, agents])
-
-  // F0042: 强制同步 recipientIdRef ← selectedRecipientId（覆盖所有变更来源）
-  // 任何 setSelectedRecipientId 调用后，此 effect 立即将 ref 同步到最新值
-  useEffect(() => {
-    if (selectedRecipientId !== null) {
-      recipientIdRef.current = selectedRecipientId
-    }
-  }, [selectedRecipientId])
 
   // @mention picker helpers
   const filteredAgents = mentionQuery
     ? agents.filter(a => a.name.toLowerCase().includes(mentionQuery.toLowerCase()))
     : agents
 
-  const openMentionPicker = useCallback((mentionAtIdx: number, query: string, top: number, left: number) => {
+  const openMentionPicker = useCallback((mentionAtIdx: number, query: string) => {
     setMentionPickerOpen(true)
     setMentionQuery(query)
     setMentionStartIdx(mentionAtIdx)
     setMentionHighlightIdx(0)
-    mentionPositionRef.current = { top, left: Math.max(0, Math.min(left, typeof window !== 'undefined' ? window.innerWidth - 240 : left)) }
   }, [])
 
   const closeMentionPicker = useCallback(() => {
@@ -577,8 +564,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     // F0042: 选中该 agent 作为接收人
     const target = agents.find(a => a.name === agentName)
     if (target) {
-      recipientIdRef.current = target.id
       setSelectedRecipientId(target.id)
+      telemetry('ui:mention:pick', { roomId, agentName, agentId: target.id, agentRole: target.role })
     }
     // Restore focus and cursor after the inserted text
     setTimeout(() => {
@@ -605,17 +592,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       const atPos = lineStart + lastAt
       const charBefore = atPos > 0 ? val[atPos - 1] : ''
       if (charBefore === '' || charBefore === ' ' || charBefore === '\n') {
-        // Position the popover ABOVE the textarea, clamping to viewport top
-        const rect = textareaRef.current?.getBoundingClientRect()
-        if (rect) {
-          const PANEL_HEIGHT = 280
-          const rawTop = rect.top - PANEL_HEIGHT - 4
-          const top = typeof window !== 'undefined' ? Math.max(8, rawTop) : rawTop
-          const left = rect.left
-          openMentionPicker(atPos, query, top, left)
-        } else {
-          openMentionPicker(atPos, query, 50, 50)
-        }
+        openMentionPicker(atPos, query)
         return
       }
     }
@@ -663,8 +640,30 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     setMentionPickerOpen(false)
     setSending(true)
     const content = userInput.trim()
-    // F0042: 用 ref 保证读到最新值（避免 setState 异步导致的闭包陈旧）
-    const recipientId = recipientIdRef.current
+    // F0042: 发送目标优先级
+    // 1) 文本中的首个 @name（支持手动输入，不依赖必须点选候选）
+    // 2) 当前选中的接收人
+    // 3) MANAGER 兜底
+    const mentionMatch = content.match(/(?:^|\s)[@＠]([^\s@＠]{1,40})/)
+    const mentionName = mentionMatch?.[1]?.trim()
+    const mentionedAgent = mentionName
+      ? agents.find(a => a.name.toLowerCase() === mentionName.toLowerCase())
+      : undefined
+    const managerId = agents.find(a => a.role === 'MANAGER')?.id ?? null
+    const recipientId = mentionedAgent?.id ?? selectedRecipientId ?? managerId
+    const recipientName = agents.find(a => a.id === recipientId)?.name ?? '主持人'
+
+    // 用户旅程埋点
+    telemetry('ui:msg:send', {
+      roomId,
+      contentLength: content.length,
+      contentSnippet: content.length > 80 ? content.slice(0, 80) + '…' : content,
+      toAgentId: recipientId,
+      toAgentName: recipientName,
+      toAgentRole: mentionedAgent ? 'WORKER' : (recipientId === managerId ? 'MANAGER' : 'WORKER'),
+      mentionText: mentionName ?? null,
+    })
+
     setUserInput('')
     try {
       const res = await fetch(`http://localhost:7001/api/rooms/${roomId}/messages`, {
@@ -674,13 +673,13 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       })
       if (!res.ok) {
         const err = await res.text()
-        console.error('[RoomView] POST /messages failed:', res.status, err)
+        logError('msg:send_error', { roomId, status: res.status, error: err })
         setUserInput(content)
         setSendError('发送失败，请重试')
         setTimeout(() => setSendError(null), 4000)
       }
     } catch (e) {
-      console.error('[RoomView] POST /messages network error:', e)
+      logError('msg:send_error', { roomId, error: String(e) })
       setUserInput(content)
       setSendError('发送失败，请检查网络')
       setTimeout(() => setSendError(null), 4000)
@@ -983,7 +982,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                   highlightIndex={mentionHighlightIdx}
                   onSelect={selectMentionAgent}
                   onHighlight={setMentionHighlightIdx}
-                  position={mentionPositionRef.current}
                 />
               )}
               <div className="flex gap-3">

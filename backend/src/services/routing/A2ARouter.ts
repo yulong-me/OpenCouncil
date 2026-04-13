@@ -114,19 +114,6 @@ export function routeFromMessage(
 }
 
 /**
- * 构建 Manager 兜底 prompt（当达到深度上限时）
- *
- * @deprecated F004: 此函数已弃用。达到深度上限时，现在直接截断协作链，
- * 不再调用 Manager 接管决策。
- */
-export function buildManagerFallbackPrompt(
-  _callChain: string[],
-  _taskSummary: string
-): string {
-  return `【A2A 调用链已达上限】请等待用户下一步指令。`;
-}
-
-/**
  * 更新 Room 的 A2A 追踪状态
  */
 export function updateA2AContext(roomId: string, depth: number, callChain: string[]): void {
