@@ -77,8 +77,9 @@ function appendMessageContent(roomId: string, messageId: string, extra: string) 
   if (msg) {
     messagesRepo.updateContent(messageId, msg.content + extra);
   }
-  // Sync updatedAt to DB so roomsRepo.list() reflects recent activity order
-  roomsRepo.update(roomId, {});
+  // Note: do NOT sync updatedAt here — each token delta would cause DB write amplification.
+  // updatedAt is synced when a new message is added (addMessage), which is sufficient
+  // for "recent activity" ordering since the list only reorders on new message arrival.
 }
 
 function updateAgentStatus(
@@ -390,11 +391,18 @@ export async function a2aOrchestrate(
   const room = store.get(roomId);
   if (!room) return;
 
-  const mentions = scanForA2AMentions(outputText);
+  let mentions = scanForA2AMentions(outputText);
   console.log(
     `[DEBUG] a2a_scan from=${fromAgentName} mentions=${JSON.stringify(mentions)} room=${roomId}`,
   );
   if (mentions.length === 0) return;
+
+  // Output guard: if output has a question AND multiple @mentions, downgrade to single @ (Clarify mode)
+  const hasQuestion = /[？?]/.test(outputText);
+  if (hasQuestion && mentions.length > 1) {
+    console.log(`[DEBUG] a2a_guard: question + ${mentions.length} mentions → keeping only first (@${mentions[0]})`);
+    mentions = [mentions[0]];
+  }
 
   const currentDepth = room.a2aDepth ?? 0;
   const currentChain = room.a2aCallChain ?? [];

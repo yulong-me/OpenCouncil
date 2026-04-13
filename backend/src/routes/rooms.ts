@@ -47,6 +47,9 @@ roomsRouter.post('/', (req, res) => {
   if (managerCfg.role !== 'MANAGER') {
     return res.status(400).json({ error: `Agent ${managerId} is not a MANAGER` });
   }
+  if (!managerCfg.enabled) {
+    return res.status(400).json({ error: `Manager ${managerId} is disabled` });
+  }
 
   // Resolve workers (with role + enabled validation)
   const invalid = workerIds.filter(id => !getAgent(id));
