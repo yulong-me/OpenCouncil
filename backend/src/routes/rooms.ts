@@ -13,7 +13,7 @@ import { v4 as uuid } from 'uuid';
 import { store } from '../store.js';
 import type { DiscussionRoom } from '../types.js';
 import { handleUserMessage, routeToAgent } from '../services/stateMachine.js';
-import { roomsRepo } from '../db/index.js';
+import { roomsRepo, sessionsRepo } from '../db/index.js';
 import { auditRepo } from '../db/index.js';
 import { getAgent } from '../config/agentConfig.js';
 
@@ -155,5 +155,19 @@ roomsRouter.post('/:id/messages', async (req, res) => {
     error('route:msg_error', { roomId: req.params.id, error: String(err) });
   });
 
+  res.json({ status: 'ok' });
+});
+
+// DELETE /api/rooms/:id — 删除讨论室
+roomsRouter.delete('/:id', (req, res) => {
+  const { id } = req.params;
+  const room = store.get(id);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+
+  roomsRepo.delete(id);
+  sessionsRepo.deleteByRoom(id);
+  store.delete(id);
+
+  auditRepo.log('room:delete', room.topic, undefined, { roomId: id });
   res.json({ status: 'ok' });
 });

@@ -452,6 +452,12 @@ const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
           roomsLastToAgentMap={roomsLastToAgentMap}
           onNewRoom={() => setIsCreateModalOpen(true)}
           onSelectRoom={id => router.push(`/room/${id}`)}
+          onDeleteRoom={async (id) => {
+            if (!confirm('确定删除此讨论？')) return
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/rooms/${id}`, { method: 'DELETE' })
+            if (id === roomId) router.push('/')
+            else setRooms(rooms => rooms.filter(r => r.id !== id))
+          }}
         />
 
         {/* Mobile menu overlay */}
@@ -462,6 +468,12 @@ const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
           roomsLastToAgentMap={roomsLastToAgentMap}
           onNewRoom={() => setIsCreateModalOpen(true)}
           onSelectRoom={id => router.push(`/room/${id}`)}
+          onDeleteRoom={async (id) => {
+            if (!confirm('确定删除此讨论？')) return
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/rooms/${id}`, { method: 'DELETE' })
+            if (id === roomId) router.push('/')
+            else setRooms(rooms => rooms.filter(r => r.id !== id))
+          }}
           mobileMenuOpen={mobileMenuOpen}
           onToggleMobileMenu={toggleMobileMenu}
           onCloseMobileMenu={() => setMobileMenuOpen(false)}

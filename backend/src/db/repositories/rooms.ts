@@ -72,6 +72,11 @@ export const roomsRepo = {
     const rows = db.prepare('SELECT id FROM rooms ORDER BY updated_at DESC').all() as { id: string }[];
     return rows.map(r => this.get(r.id)!);
   },
+
+  delete(id: string): void {
+    db.prepare('DELETE FROM messages WHERE room_id = ?').run(id);
+    db.prepare('DELETE FROM rooms WHERE id = ?').run(id);
+  },
 };
 
 /** Messages CRUD */

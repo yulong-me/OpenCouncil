@@ -1,6 +1,7 @@
 'use client'
 
-import { Plus, MessageSquare, X } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, MessageSquare, X, Trash2 } from 'lucide-react'
 import {
   AGENT_COLORS,
   DEFAULT_AGENT_COLOR,
@@ -23,6 +24,7 @@ interface RoomListSidebarProps {
   roomsLastToAgentMap: Record<string, string | undefined>
   onNewRoom: () => void
   onSelectRoom: (roomId: string) => void
+  onDeleteRoom: (roomId: string) => void
   mobileMenuOpen?: boolean
   onToggleMobileMenu?: () => void
   onCloseMobileMenu?: () => void
@@ -34,13 +36,16 @@ function RoomItem({
   roomsAgentsMap,
   roomsLastToAgentMap,
   onClick,
+  onDelete,
 }: {
   room: SidebarRoom
   isActive: boolean
   roomsAgentsMap: Record<string, Agent[]>
   roomsLastToAgentMap: Record<string, string | undefined>
   onClick: () => void
+  onDelete: (roomId: string) => void
 }) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const lastToAgentId = roomsLastToAgentMap[room.id]
   const roomAgents = roomsAgentsMap[room.id] || []
   const lastRecipient = lastToAgentId ? roomAgents.find(a => a.id === lastToAgentId) : null
@@ -48,45 +53,87 @@ function RoomItem({
     ? AGENT_COLORS[lastRecipient.name] || DEFAULT_AGENT_COLOR
     : null
 
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setConfirmOpen(true)
+  }
+
+  const confirmDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setConfirmOpen(false)
+    onDelete(room.id)
+  }
+
   return (
-    <div
-      onClick={onClick}
-      className={`p-3.5 rounded-xl mb-2 cursor-pointer transition-colors border ${
-        isActive ? 'bg-surface-muted border-line' : 'border-transparent hover:bg-surface-muted/50'
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[14px] font-medium text-ink truncate flex-1 flex items-center gap-2">
-          <MessageSquare className="w-3.5 h-3.5 opacity-60 flex-shrink-0" />
-          {room.topic}
-        </p>
-        <span
-          className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-            room.state === 'RUNNING'
-              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-              : 'bg-ink-soft/10 text-ink-soft'
+    <div className="relative">
+      {confirmOpen ? (
+        <div className="p-3.5 rounded-xl mb-2 border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30">
+          <p className="text-[13px] font-medium text-red-600 dark:text-red-400 mb-2">确定删除此讨论？</p>
+          <div className="flex gap-2">
+            <button
+              onClick={confirmDelete}
+              className="px-3 py-1.5 text-xs rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors font-medium"
+            >
+              删除
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmOpen(false) }}
+              className="px-3 py-1.5 text-xs rounded-lg bg-surface-muted text-ink hover:bg-line transition-colors"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          onClick={onClick}
+          className={`p-3.5 rounded-xl mb-2 cursor-pointer transition-colors border group ${
+            isActive ? 'bg-surface-muted border-line' : 'border-transparent hover:bg-surface-muted/50'
           }`}
         >
-          {room.state === 'RUNNING' ? '进行中' : '已完成'}
-        </span>
-      </div>
-      {lastRecipient && lastRecipientColors && (
-        <div className="mt-1.5 flex items-center gap-1 ml-5.5">
-          <span className="text-[10px] text-ink-soft">正在和</span>
-          <img
-            src={lastRecipientColors.avatar}
-            alt=""
-            className="w-3.5 h-3.5 rounded-full"
-          />
-          <span className="text-[10px] font-medium" style={{ color: lastRecipientColors.bg }}>
-            {lastRecipient.name}
-          </span>
-          <span className="text-[10px] text-ink-soft">对话</span>
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-[14px] font-medium text-ink truncate flex-1 flex items-center gap-2">
+              <MessageSquare className="w-3.5 h-3.5 opacity-60 flex-shrink-0" />
+              {room.topic}
+            </p>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                  room.state === 'RUNNING'
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-ink-soft/10 text-ink-soft'
+                }`}
+              >
+                {room.state === 'RUNNING' ? '进行中' : '已完成'}
+              </span>
+              <button
+                onClick={handleDelete}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-ink-soft hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/50 transition-all"
+                title="删除"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          {lastRecipient && lastRecipientColors && (
+            <div className="mt-1.5 flex items-center gap-1 ml-5.5">
+              <span className="text-[10px] text-ink-soft">正在和</span>
+              <img
+                src={lastRecipientColors.avatar}
+                alt=""
+                className="w-3.5 h-3.5 rounded-full"
+              />
+              <span className="text-[10px] font-medium" style={{ color: lastRecipientColors.bg }}>
+                {lastRecipient.name}
+              </span>
+              <span className="text-[10px] text-ink-soft">对话</span>
+            </div>
+          )}
+          <p className="text-[11px] text-ink-soft mt-1 ml-5.5">
+            {formatRelativeTime(room.createdAt)}
+          </p>
         </div>
       )}
-      <p className="text-[11px] text-ink-soft mt-1 ml-5.5">
-        {formatRelativeTime(room.createdAt)}
-      </p>
     </div>
   )
 }
@@ -100,6 +147,7 @@ export function RoomListSidebarDesktop({
   roomsLastToAgentMap,
   onNewRoom,
   onSelectRoom,
+  onDeleteRoom,
 }: Omit<RoomListSidebarProps, 'mobileMenuOpen' | 'onToggleMobileMenu' | 'onCloseMobileMenu'>) {
   return (
     <div className="hidden md:flex w-[280px] bg-surface border-r border-line flex-col z-20">
@@ -122,6 +170,7 @@ export function RoomListSidebarDesktop({
             roomsAgentsMap={roomsAgentsMap}
             roomsLastToAgentMap={roomsLastToAgentMap}
             onClick={() => onSelectRoom(room.id)}
+            onDelete={onDeleteRoom}
           />
         ))}
         {rooms.length === 0 && (
@@ -141,6 +190,7 @@ export function RoomListSidebarMobile({
   roomsLastToAgentMap,
   onNewRoom,
   onSelectRoom,
+  onDeleteRoom,
   mobileMenuOpen,
   onToggleMobileMenu,
   onCloseMobileMenu,
@@ -181,6 +231,7 @@ export function RoomListSidebarMobile({
               roomsAgentsMap={roomsAgentsMap}
               roomsLastToAgentMap={roomsLastToAgentMap}
               onClick={() => { onSelectRoom(room.id); onCloseMobileMenu?.() }}
+              onDelete={onDeleteRoom}
             />
           ))}
         </div>

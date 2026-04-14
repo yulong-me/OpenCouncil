@@ -20,4 +20,7 @@ export const store = {
   list(): DiscussionRoom[] {
     return Array.from(rooms.values());
   },
+  delete(id: string): void {
+    rooms.delete(id);
+  },
 };
