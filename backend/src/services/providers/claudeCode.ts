@@ -48,10 +48,8 @@ export async function* streamClaudeCodeProvider(
   const args = ['-p', prompt, '--verbose', '--output-format=stream-json', '--include-partial-messages'];
   // Default all permissions
   args.push('--dangerously-skip-permissions');
-  debug('provider:sessionId', {sessionId})
 
   if (sessionId) args.splice(1, 0, '--resume', sessionId);
-  debug('provider:sessionId', {sessionId})
 
   if (workspace) {
     args.push('--add-dir', workspace);
@@ -63,8 +61,13 @@ export async function* streamClaudeCodeProvider(
     agentId: agentName ?? agentId,
     command,
     provider: 'claude-code',
+    workspace,
     cwd: workspace ?? process.cwd(),
-    spawnOpts: { cwd: workspace ?? process.cwd(), timeout, env, stdio: ['ignore', 'pipe', 'pipe'] },
+    sessionId: sessionId ?? null,
+    timeout,
+    envKeys: Object.keys(env ?? {}),
+    spawnOpts: { cwd: workspace ?? process.cwd(), timeout, stdio: ['ignore', 'pipe', 'pipe'] },
+    promptPreview: prompt.slice(0, 100),
   });
 
   const proc = spawn(cliPath, args, {

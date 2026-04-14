@@ -71,10 +71,16 @@ export async function* streamOpenCodeProvider(
     roomId,
     agentId: agentName ?? agentId,
     command,
-    workspace,
     provider: 'opencode',
+    workspace,
     cwd: workspace ?? '/tmp',
+    sessionId: sessionId ?? null,
+    thinking,
+    timeout,
+    cliPath,
+    envKeys: Object.keys(env),
     spawnOpts: { cwd: workspace ?? '/tmp', timeout, stdio: ['ignore', 'pipe', 'pipe'] },
+    promptPreview: prompt.slice(0, 100),
   });
 
   const proc = spawn(cliPath, args, { timeout, env, cwd: workspace ?? '/tmp', stdio: ['ignore', 'pipe', 'pipe'] });
