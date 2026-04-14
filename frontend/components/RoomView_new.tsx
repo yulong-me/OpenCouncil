@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTheme } from 'next-themes'
 import ReactMarkdown from 'react-markdown'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:7001'
@@ -10,7 +11,7 @@ import remarkBreaks from 'remark-breaks'
 import { io, type Socket } from 'socket.io-client'
 import {
   Menu, X, Plus, Download, MessageSquare,
-  ChevronDown, ChevronUp, BrainCircuit, Settings,
+  ChevronDown, ChevronUp, BrainCircuit, Settings, Moon, Sun,
 } from 'lucide-react'
 import {
   AGENT_COLORS, DEFAULT_AGENT_COLOR, STATE_LABELS,
@@ -56,6 +57,9 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionStartIdx, setMentionStartIdx] = useState(-1)
   const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0)
+  const [mounted, setMounted] = useState(false)
+
+  const { theme, setTheme } = useTheme()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollStateRef = useRef<{ state: DiscussionState; agents: Agent[] }>({ state: 'RUNNING' as DiscussionState, agents: [] as Agent[] })
@@ -91,6 +95,9 @@ const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
 
   useEffect(() => { scrollToBottom() }, [messages])
 
+  // Hydration fix for next-themes
+  useEffect(() => setMounted(true), [])
+
   // Sync debug logs from logger store to state every 500ms
   useEffect(() => {
     const sync = () => setDebugLogs(getDebugLog())
@@ -105,7 +112,7 @@ const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
 
   // ─── Socket ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const socket = io('${API}', { transports: ['websocket', 'polling'] })
+    const socket = io(`${API}`, { transports: ['websocket', 'polling'] })
     socketRef.current = socket
 
     socket.on('connect', () => telemetry('socket:connect'))
@@ -242,7 +249,7 @@ const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
   // ─── Room list ───────────────────────────────────────────────────────────────
   useEffect(() => {
     telemetry('room:list:load')
-    fetch('${API}/api/rooms').then(r => r.ok ? r.json() : []).then((data: any[]) => {
+    fetch(`${API}/api/rooms`).then(r => r.ok ? r.json() : []).then((data: any[]) => {
       setRooms(data.map((room: any) => ({ id: room.id, topic: room.topic, createdAt: room.createdAt, state: room.state as DiscussionState })))
       const agentsMap: Record<string, Agent[]> = {}
       const toAgentMap: Record<string, string | undefined> = {}
@@ -505,6 +512,15 @@ const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
               >
                 <Settings className="w-5 h-5" />
               </button>
+              {mounted && (
+                <button
+                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                  className="p-2 text-ink-soft hover:text-ink transition-colors"
+                  title={theme === 'dark' ? '切换亮色模式' : '切换暗色模式'}
+                >
+                  {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                </button>
+              )}
             </div>
           </div>
 
@@ -536,7 +552,7 @@ const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
                           </span>
                         )}
                       </div>
-                      <div className="rounded-2xl rounded-tr-sm px-4 py-3.5 bg-accent/10 border border-accent/20 shadow-sm">
+                      <div className="rounded-2xl rounded-tr-sm px-4 py-3.5 bg-surface border border-line shadow-sm">
                         <div className="text-[14px] break-words leading-relaxed text-ink">
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm, remarkBreaks]}
