@@ -19,23 +19,28 @@ export function initSchema(): void {
   const schemaPath = path.join(__dirname, 'schema.sql');
   const sql = fs.readFileSync(schemaPath, 'utf-8');
 
-  // Migration: add tags column to agents table if it doesn't exist (existing DBs)
-  try {
-    db.exec("ALTER TABLE agents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
-    log('INFO', 'db:schema:migrate:agents:tags');
-  } catch {
-    // Column already exists — safe to ignore
-  }
+  // Check if tables exist (new users may have empty DB)
+  const agentsExists = (db.prepare("SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='agents'").get() as { cnt: number }).cnt > 0;
 
-  // Normalize existing agent roles: AGENT→WORKER, HOST→MANAGER (always run)
-  db.exec("UPDATE agents SET role = 'WORKER' WHERE role = 'AGENT'");
-  db.exec("UPDATE agents SET role = 'MANAGER' WHERE role = 'HOST'");
-  log('INFO', 'db:schema:migrate:agents:role_normalized');
+  if (agentsExists) {
+    // Migration: add tags column to agents table if it doesn't exist (existing DBs)
+    try {
+      db.exec("ALTER TABLE agents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
+      log('INFO', 'db:schema:migrate:agents:tags');
+    } catch {
+      // Column already exists — safe to ignore
+    }
 
-  // Startup warning: check for any remaining legacy roles
-  const legacy = db.prepare("SELECT COUNT(*) as cnt FROM agents WHERE role IN ('AGENT','HOST')").get() as { cnt: number };
-  if (legacy.cnt > 0) {
-    log('WARN', `db:agents:legacy_roles_remaining=${legacy.cnt}`);
+    // Normalize existing agent roles: AGENT→WORKER, HOST→MANAGER
+    db.exec("UPDATE agents SET role = 'WORKER' WHERE role = 'AGENT'");
+    db.exec("UPDATE agents SET role = 'MANAGER' WHERE role = 'HOST'");
+    log('INFO', 'db:schema:migrate:agents:role_normalized');
+
+    // Startup warning: check for any remaining legacy roles
+    const legacy = db.prepare("SELECT COUNT(*) as cnt FROM agents WHERE role IN ('AGENT','HOST')").get() as { cnt: number };
+    if (legacy.cnt > 0) {
+      log('WARN', `db:agents:legacy_roles_remaining=${legacy.cnt}`);
+    }
   }
 
   // Migration: add agent_ids column to rooms table for persistent agent membership

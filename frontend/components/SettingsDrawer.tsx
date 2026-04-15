@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Play, Server, Users, Trash2, Edit2, Check, CheckCircle2 } from 'lucide-react'
+import { X, Play, Server, Users, Trash2, Edit2, Check, CheckCircle2, Save, XCircle } from 'lucide-react'
 
 const API = 'http://localhost:7001'
 
@@ -79,7 +79,11 @@ function ProviderTab({ onClose }: { onClose: () => void }) {
 
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
         {current ? (
-          <ProviderForm key={current.name} provider={current} />
+          <ProviderForm
+            key={current.name}
+            provider={current}
+            onUpdate={(updated) => setProviders(prev => ({ ...prev, [updated.name]: updated }))}
+          />
         ) : (
           <div className="h-full flex items-center justify-center text-ink-soft text-[14px]">
             请在左侧选择一个 Provider
@@ -90,11 +94,16 @@ function ProviderTab({ onClose }: { onClose: () => void }) {
   )
 }
 
-function ProviderForm({ provider }: { provider: ProviderConfig }) {
+function ProviderForm({ provider, onUpdate }: { provider: ProviderConfig; onUpdate?: (p: ProviderConfig) => void }) {
   const [testDetail, setTestDetail] = useState<{ cli: string; output?: string; error?: string } | null>(null)
   const [testing, setTesting] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editCliPath, setEditCliPath] = useState(provider.cliPath)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => { setTestDetail(null) }, [provider])
+  useEffect(() => { setEditCliPath(provider.cliPath) }, [provider])
 
   function handleTest() {
     setTesting(true)
@@ -110,12 +119,97 @@ function ProviderForm({ provider }: { provider: ProviderConfig }) {
       })
   }
 
+  async function handleSave() {
+    setSaveError('')
+    setSaving(true)
+    try {
+      const res = await fetch(`${API}/api/providers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: provider.name,
+          label: provider.label,
+          cliPath: editCliPath,
+          defaultModel: provider.defaultModel,
+          apiKey: provider.apiKey,
+          baseUrl: provider.baseUrl,
+          timeout: provider.timeout,
+          thinking: provider.thinking,
+        }),
+      })
+      const data = await res.json() as ProviderConfig
+      if (!res.ok) throw new Error(data.lastTestResult?.error || '保存失败')
+      onUpdate?.(data)
+      setTestDetail(null)
+      setEditing(false)
+    } catch (err) {
+      setSaveError((err as Error).message || '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleCancel() {
+    setEditing(false)
+    setEditCliPath(provider.cliPath)
+    setSaveError('')
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="bg-surface rounded-xl border border-line p-5">
-        <h3 className="text-[15px] font-bold text-ink mb-1">{provider.label}</h3>
-        <p className="text-[13px] text-ink-soft mb-4">测试基础连接和流式输出。</p>
-        
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-[15px] font-bold text-ink">{provider.label}</h3>
+            <p className="text-[12px] text-ink-soft">{provider.name}</p>
+          </div>
+          {!editing && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-[12px] text-accent hover:text-accent-deep flex items-center gap-1.5 transition-colors"
+            >
+              <Edit2 className="w-3.5 h-3.5" aria-hidden/> 编辑
+            </button>
+          )}
+        </div>
+
+        <div className="mb-4">
+          <p className="text-[11px] font-bold text-ink-soft uppercase mb-1.5">CLI 路径</p>
+          {editing ? (
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={editCliPath}
+                onChange={e => setEditCliPath(e.target.value)}
+                placeholder="claude"
+                className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-[13px] text-ink font-mono focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+              />
+              {saveError && <p className="text-[12px] text-red-500">{saveError}</p>}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={saving}
+                  className="flex-1 py-2 text-[13px] text-ink-soft hover:text-ink hover:bg-surface-muted rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <XCircle className="w-4 h-4" aria-hidden/> 取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving || editCliPath === provider.cliPath}
+                  className="flex-1 py-2 text-[13px] font-bold bg-accent text-white rounded-lg hover:bg-accent-deep disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Save className="w-4 h-4" aria-hidden/> {saving ? '保存中…' : '保存'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[13px] text-ink font-mono bg-bg border border-line rounded-lg px-3 py-2">{provider.cliPath}</p>
+          )}
+        </div>
+
         <button onClick={handleTest} disabled={testing}
           className="w-full py-3 text-[14px] bg-ink text-bg rounded-xl hover:opacity-90 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2 shadow-sm active:scale-[0.99]">
           <Play className="w-4 h-4 fill-current" />

@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { spawn } from 'child_process'
+import { Transform, type Readable } from 'stream'
 import {
   getAllProviders,
   getProvider,
@@ -9,6 +10,26 @@ import {
   type ProviderConfig,
 } from '../config/providerConfig.js'
 import { debug } from '../lib/logger.js'
+
+/**
+ * Normalize subprocess stdout to UTF-8 text stream.
+ * Uses TextDecoder with auto-detection to handle:
+ * - UTF-16LE BOM from Windows CLI tools (opencode)
+ * - UTF-8 from Unix CLI tools
+ * The decoder is created with fatal:false so partial/invalid sequences are replaced
+ * with the replacement character rather than throwing.
+ */
+function toUtf8(input: Readable): Readable {
+  const decoder = new TextDecoder('utf-8', { fatal: false })
+  return input.pipe(new Transform({
+    transform(chunk, _encoding, callback) {
+      const buf = chunk instanceof Buffer ? chunk : Buffer.from(chunk)
+      // TextDecoder auto-detects UTF-16LE BOM (FF FE) and handles it transparently
+      const utf8 = decoder.decode(buf, { stream: true })
+      callback(null, utf8)
+    },
+  }))
+}
 
 const router = Router()
 
@@ -105,14 +126,14 @@ router.post('/:name/test', (req, res) => {
   if (p.name === 'claude-code') {
     args = ['-p', testPrompt, '--verbose', '--output-format=stream-json', '--include-partial-messages']
     args.push('--dangerously-skip-permissions')
-    resultCli = `claude ${args.join(' ')}`
+    resultCli = `${cliPath} ${args.join(' ')}`
   } else if (p.name === 'opencode') {
     args = ['run']
     if (p.thinking) args.push('--thinking')
     args.push('--dangerously-skip-permissions')
     // no -m flag: let opencode use its default model
     args.push('--format', 'json', '--', testPrompt)
-    resultCli = `opencode ${args.join(' ')}`
+    resultCli = `${cliPath} ${args.join(' ')}`
   } else {
     return res.status(400).json({ error: 'Unknown provider type' })
   }
@@ -123,7 +144,10 @@ router.post('/:name/test', (req, res) => {
   let outputLines: string[] = []
   let capturedOutput = ''
 
-  proc.stdout?.on('data', (d: Buffer) => {
+  // Normalize subprocess stdout to UTF-8 via TextDecoder auto-detection (handles UTF-16LE on Windows)
+  const stdoutStream = toUtf8(proc.stdout!)
+
+  stdoutStream.on('data', (d: Buffer) => {
     const text = d.toString()
     stdout += text
     if (p.name === 'opencode') {
@@ -159,6 +183,13 @@ router.post('/:name/test', (req, res) => {
 
   proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
 
+  let responded = false
+  function respond(data: Record<string, unknown>) {
+    if (responded) return
+    responded = true
+    res.json(data)
+  }
+
   proc.on('close', (code) => {
     const success = code === 0
     const result = {
@@ -169,13 +200,13 @@ router.post('/:name/test', (req, res) => {
       error: success ? undefined : stderr.trim().slice(0, 300),
     }
     updateTestResult(req.params.name, { success, version: capturedOutput.slice(0, 50) || `exit ${code}` })
-    res.json(result)
+    respond(result)
   })
 
   proc.on('error', (err) => {
     const result = { success: false, cli: resultCli, output: undefined, rawOutput: undefined, error: err.message }
     updateTestResult(req.params.name, { success: false, error: err.message })
-    res.json(result)
+    respond(result)
   })
 })
 

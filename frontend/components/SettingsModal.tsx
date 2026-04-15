@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Bot, Server, CheckCircle2, Trash2, Edit2, Save, Plus, Loader2, Play } from 'lucide-react'
+import { X, Bot, Server, CheckCircle2, Trash2, Edit2, Save, Plus, Loader2, Play, XCircle } from 'lucide-react'
 
 const API = 'http://localhost:7001'
 
@@ -167,11 +167,16 @@ function AgentRow({ agent, onSave, onDeleteRequest, saving }: {
 
 // ── Provider Tab ────────────────────────────────────────────────────────────────
 
-function ProviderDetail({ provider }: { provider: ProviderConfig }) {
+function ProviderDetail({ provider, onUpdate }: { provider: ProviderConfig; onUpdate?: (p: ProviderConfig) => void }) {
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState(provider.lastTestResult)
+  const [editing, setEditing] = useState(false)
+  const [editCliPath, setEditCliPath] = useState(provider.cliPath)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => { setResult(provider.lastTestResult) }, [provider])
+  useEffect(() => { setEditCliPath(provider.cliPath) }, [provider])
 
   function handleTest() {
     setTesting(true)
@@ -179,6 +184,42 @@ function ProviderDetail({ provider }: { provider: ProviderConfig }) {
       .then(r => r.json())
       .then((r: ProviderConfig['lastTestResult']) => { setResult(r); setTesting(false) })
       .catch(e => { setResult({ success: false, error: e.message }); setTesting(false) })
+  }
+
+  async function handleSave() {
+    setSaveError('')
+    setSaving(true)
+    try {
+      const res = await fetch(`${API}/api/providers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: provider.name,
+          label: provider.label,
+          cliPath: editCliPath,
+          defaultModel: provider.defaultModel,
+          apiKey: provider.apiKey,
+          baseUrl: provider.baseUrl,
+          timeout: provider.timeout,
+          thinking: provider.thinking,
+        }),
+      })
+      const updated = await res.json() as ProviderConfig
+      if (!res.ok) throw new Error(updated.lastTestResult?.error || '保存失败')
+      onUpdate?.(updated)
+      setResult(null)
+      setEditing(false)
+    } catch (err) {
+      setSaveError((err as Error).message || '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleCancel() {
+    setEditing(false)
+    setEditCliPath(provider.cliPath)
+    setSaveError('')
   }
 
   return (
@@ -194,8 +235,50 @@ function ProviderDetail({ provider }: { provider: ProviderConfig }) {
         </div>
       </div>
       <div>
-        <p className="text-[11px] font-bold text-ink-soft uppercase mb-1.5">CLI 路径</p>
-        <p className="text-[12px] text-ink font-mono bg-bg border border-line rounded-lg px-3 py-2">{provider.cliPath}</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[11px] font-bold text-ink-soft uppercase">CLI 路径</p>
+          {!editing && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-[11px] text-accent hover:text-accent-deep flex items-center gap-1 transition-colors"
+            >
+              <Edit2 className="w-3 h-3" aria-hidden/> 编辑
+            </button>
+          )}
+        </div>
+        {editing ? (
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={editCliPath}
+              onChange={e => setEditCliPath(e.target.value)}
+              placeholder="claude"
+              className="w-full bg-bg border border-line rounded-lg px-3 py-2 text-[12px] text-ink font-mono focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
+            />
+            {saveError && <p className="text-[11px] text-red-500">{saveError}</p>}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={saving}
+                className="flex-1 py-1.5 text-[12px] text-ink-soft hover:text-ink hover:bg-surface-muted rounded-lg transition-colors flex items-center justify-center gap-1"
+              >
+                <XCircle className="w-3.5 h-3.5" aria-hidden/> 取消
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || editCliPath === provider.cliPath}
+                className="flex-1 py-1.5 text-[12px] font-bold bg-accent text-white rounded-lg hover:bg-accent-deep disabled:opacity-50 transition-all flex items-center justify-center gap-1"
+              >
+                <Save className="w-3.5 h-3.5" aria-hidden/> {saving ? '保存中…' : '保存'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-[12px] text-ink font-mono bg-bg border border-line rounded-lg px-3 py-2">{provider.cliPath}</p>
+        )}
       </div>
       <button type="button" onClick={handleTest} disabled={testing}
         className="w-full py-2.5 text-[13px] bg-ink text-bg rounded-xl hover:opacity-90 disabled:opacity-50 transition-all font-bold flex items-center justify-center gap-2">
@@ -422,7 +505,10 @@ export default function SettingsModal({ isOpen, onClose, initialTab = 'agent' }:
                 {/* Provider detail */}
                 {currentProvider && (
                   <div className="bg-surface rounded-2xl border border-line p-5">
-                    <ProviderDetail provider={currentProvider}/>
+                    <ProviderDetail
+                      provider={currentProvider}
+                      onUpdate={(updated) => setProviders(prev => ({ ...prev, [updated.name]: updated }))}
+                    />
                   </div>
                 )}
               </div>

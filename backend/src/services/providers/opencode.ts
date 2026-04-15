@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
+import { Readable, Transform } from 'stream';
 import { ClaudeEvent } from './index.js';
 import { getProvider } from '../../config/providerConfig.js';
 import { debug, error } from '../../lib/logger.js';
@@ -7,6 +8,26 @@ import { debug, error } from '../../lib/logger.js';
 function shellQuote(arg: string): string {
   if (arg === '') return "''";
   return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Normalize subprocess stdout to UTF-8 text stream.
+ * Uses TextDecoder with auto-detection to handle:
+ * - UTF-16LE BOM from Windows CLI tools (opencode)
+ * - UTF-8 from Unix CLI tools
+ * The decoder is created with fatal:false so partial/invalid sequences are replaced
+ * with the replacement character rather than throwing.
+ */
+function toUtf8(input: Readable): Readable {
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+  return input.pipe(new Transform({
+    transform(chunk, _encoding, callback) {
+      const buf = chunk instanceof Buffer ? chunk : Buffer.from(chunk);
+      // TextDecoder auto-detects UTF-16LE BOM (FF FE) and handles it transparently
+      const utf8 = decoder.decode(buf, { stream: true });
+      callback(null, utf8);
+    },
+  }));
 }
 
 export async function* streamOpenCodeProvider(
@@ -88,7 +109,9 @@ export async function* streamOpenCodeProvider(
   let stderrBuffer = '';
   proc.stderr?.on('data', (d: Buffer) => { stderrBuffer += d.toString(); });
 
-  const rl = createInterface({ input: proc.stdout!, crlfDelay: Infinity });
+  // Windows opencode outputs UTF-16LE; normalize to UTF-8 via TextDecoder
+  const stdoutStream = toUtf8(proc.stdout!);
+  const rl = createInterface({ input: stdoutStream, crlfDelay: Infinity });
   let capturedSessionId = sessionId ?? '';
 
   for await (const rawLine of rl) {

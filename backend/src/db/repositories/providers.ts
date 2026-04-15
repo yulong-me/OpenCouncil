@@ -44,10 +44,9 @@ export const providersRepo = {
   },
 
   upsert(name: string, data: Omit<ProviderConfig, 'name' | 'lastTested' | 'lastTestResult'>): void {
-    const existing = this.get(name);
     db.prepare(`
       INSERT OR REPLACE INTO providers (name, label, cli_path, default_model, api_key, base_url, timeout, thinking, last_tested, last_test_result)
-      VALUES (@name, @label, @cliPath, @defaultModel, @apiKey, @baseUrl, @timeout, @thinking, @lastTested, @lastTestResult)
+      VALUES (@name, @label, @cliPath, @defaultModel, @apiKey, @baseUrl, @timeout, @thinking, NULL, NULL)
     `).run({
       name,
       label: data.label ?? name,
@@ -57,8 +56,6 @@ export const providersRepo = {
       baseUrl: data.baseUrl,
       timeout: data.timeout,
       thinking: data.thinking ? 1 : 0,
-      lastTested: existing?.lastTested ?? null,
-      lastTestResult: existing?.lastTestResult ? JSON.stringify(existing.lastTestResult) : null,
     });
   },
 
