@@ -87,6 +87,12 @@ function RoomItem({
         </div>
       ) : (
         <div
+          onClick={onClick}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === 'Space') onClick()
+          }}
           className={`p-3.5 rounded-xl mb-2 cursor-pointer transition-colors border group ${
             isActive ? 'bg-surface-muted border-line' : 'border-transparent hover:bg-surface-muted/50'
           }`}
@@ -96,7 +102,7 @@ function RoomItem({
               <MessageSquare className="w-3.5 h-3.5 opacity-60 flex-shrink-0" />
               <button
                 type="button"
-                onClick={onClick}
+                onClick={(e) => { e.stopPropagation(); onClick(); }}
                 className="truncate text-left"
                 aria-pressed={isActive}
                 aria-label={`进入讨论：${room.topic}`}
