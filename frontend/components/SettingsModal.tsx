@@ -334,25 +334,7 @@ export default function SettingsModal({ isOpen, onClose, initialTab = 'agent' }:
               <div className="flex justify-center items-center h-40"><span className="text-ink-soft text-[13px] animate-pulse">加载中…</span></div>
             ) : tab === 'agent' ? (
               <div className="space-y-4">
-                {/* Table */}
-                <div className="bg-surface rounded-2xl border border-line overflow-hidden">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="border-b border-line bg-surface-muted/50">
-                        <th className="px-4 py-3 text-[11px] font-bold text-ink-soft uppercase">名称</th>
-                        <th className="px-4 py-3 text-[11px] font-bold text-ink-soft uppercase">Provider</th>
-                        <th className="px-4 py-3 text-[11px] font-bold text-ink-soft uppercase">标签</th>
-                        <th className="px-4 py-3 text-[11px] font-bold text-ink-soft uppercase">推理</th>
-                        <th className="px-4 py-3 text-[11px] font-bold text-ink-soft uppercase text-right">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-bg">
-                      {agents.map(a => <AgentRow key={a.id} agent={a} onSave={handleAgentSave} onDeleteRequest={setPendingDelete} saving={saving}/>)}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Add form */}
+                {/* Add form — above table */}
                 {addOpen ? (
                   <div className="bg-surface rounded-2xl border border-dashed border-line p-5 space-y-3">
                     <p className="text-[13px] font-bold text-ink flex items-center gap-1.5"><Plus className="w-4 h-4 text-accent" aria-hidden/>新增 Agent</p>
@@ -400,6 +382,24 @@ export default function SettingsModal({ isOpen, onClose, initialTab = 'agent' }:
                     <Plus className="w-4 h-4" aria-hidden/>新增 Agent
                   </button>
                 )}
+
+                {/* Table */}
+                <div className="bg-surface rounded-2xl border border-line overflow-hidden">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-line bg-surface-muted/50">
+                        <th className="px-4 py-3 text-[11px] font-bold text-ink-soft uppercase">名称</th>
+                        <th className="px-4 py-3 text-[11px] font-bold text-ink-soft uppercase">Provider</th>
+                        <th className="px-4 py-3 text-[11px] font-bold text-ink-soft uppercase">标签</th>
+                        <th className="px-4 py-3 text-[11px] font-bold text-ink-soft uppercase">推理</th>
+                        <th className="px-4 py-3 text-[11px] font-bold text-ink-soft uppercase text-right">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-bg">
+                      {agents.map(a => <AgentRow key={a.id} agent={a} onSave={handleAgentSave} onDeleteRequest={setPendingDelete} saving={saving}/>)}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
