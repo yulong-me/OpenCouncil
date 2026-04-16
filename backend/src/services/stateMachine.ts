@@ -807,3 +807,15 @@ function isReportRequest(text: string): boolean {
   const keywords = ['生成报告', '输出报告', '整理报告', '导出报告', '总结报告', 'report'];
   return keywords.some(k => text.toLowerCase().includes(k));
 }
+
+// ─── Room Busy Helper ────────────────────────────────────────────────────────
+
+/**
+ * F015: Returns true if any agent in the room is currently executing.
+ * Used by the backend 409 guard to prevent concurrent message dispatch.
+ */
+export function isRoomBusy(roomId: string): boolean {
+  const room = store.get(roomId);
+  if (!room) return false;
+  return room.agents.some(a => a.status === 'thinking' || a.status === 'waiting');
+}

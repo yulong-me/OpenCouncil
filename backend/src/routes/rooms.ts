@@ -128,6 +128,12 @@ roomsRouter.post('/:id/messages', async (req, res) => {
     return res.status(400).json({ error: 'Room already done' });
   }
 
+  // F015: room busy guard — prevents concurrent dispatch (multi-tab safety net)
+  const roomBusy = room.agents.some(a => a.status === 'thinking' || a.status === 'waiting');
+  if (roomBusy) {
+    return res.status(409).json({ code: 'ROOM_BUSY', error: 'Room has an Agent currently executing' });
+  }
+
   const { content, toAgentId } = req.body as { content?: string; toAgentId?: string };
   if (!content?.trim()) {
     return res.status(400).json({ error: 'content required' });
