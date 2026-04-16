@@ -363,12 +363,7 @@ socket.on('agent_status', (data: any) => {
     a.click()
   }
 
-  // F013: Default to first WORKER agent (no MANAGER in room after F012)
-  useEffect(() => {
-    if (!roomId || agents.length === 0) return
-    const worker = agents.find(a => a.role === 'WORKER')
-    if (worker) setSelectedRecipientId(prev => prev ?? worker.id)
-  }, [roomId, agents])
+  // F013: No implicit default recipient — send is blocked by lack of @ mention in content
 
   // ─── @mention helpers ────────────────────────────────────────────────────────
   const filteredAgents = useMemo(
@@ -489,8 +484,8 @@ socket.on('agent_status', (data: any) => {
 
   const handleSendMessage = async () => {
     if (!roomId || !userInput.trim() || sending) return
-    // F013: Block send if no recipient selected — open picker instead
-    if (!selectedRecipientId) {
+    // F013: Block send if no @ mention in content — open picker to insert one
+    if (extractMentions(userInput).length === 0) {
       setRecipientPickerOpen(true)
       return
     }
@@ -789,42 +784,38 @@ socket.on('agent_status', (data: any) => {
                     onHighlight={setMentionHighlightIdx}
                   />
                 )}
-                {/* Issue-1: 显式收件人选择器 */}
+                {/* F013: @ insert helper — opens picker to insert @专家 into message */}
                 <div className="relative" data-recipient-picker="1">
                   <button
                     type="button"
                     onClick={() => setRecipientPickerOpen(o => !o)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface border text-[12px] text-ink-soft hover:border-accent/40 transition-colors ${!selectedRecipientId ? 'border-red-400/50' : 'border-line'}`}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface border border-line text-[12px] text-ink-soft hover:border-accent/40 transition-colors"
                   >
-                    <span className="text-[11px] text-ink-soft/60">发送给</span>
-                    {(() => {
-                      const rec = agents.find(a => a.id === selectedRecipientId)
-                      const color = rec ? AGENT_COLORS[rec.name]?.bg || DEFAULT_AGENT_COLOR.bg : '#ef4444'
-                      return (
-                        <>
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                          <span className="font-semibold" style={{ color: rec ? color : undefined }}>
-                            {rec ? rec.name : '请选择'}
-                          </span>
-                          <ChevronDown className={`w-3 h-3 text-ink-soft/50 transition-transform ${recipientPickerOpen ? 'rotate-180' : ''}`} />
-                        </>
-                      )
-                    })()}
+                    <span className="text-[11px] text-ink-soft/60">插入 @</span>
+                    <ChevronDown className={`w-3 h-3 text-ink-soft/50 transition-transform ${recipientPickerOpen ? 'rotate-180' : ''}`} />
                   </button>
                   {recipientPickerOpen && (
                     <div className="absolute bottom-full left-0 mb-1.5 bg-bg border border-line rounded-xl shadow-lg py-1 z-30 min-w-[160px]">
                       {agents.filter(a => a.role !== 'MANAGER').map(agent => {
-                        const isSelected = agent.id === selectedRecipientId
                         const color = AGENT_COLORS[agent.name]?.bg || DEFAULT_AGENT_COLOR.bg
                         return (
                           <button
                             key={agent.id}
                             type="button"
-                            onClick={() => { setSelectedRecipientId(agent.id); setRecipientPickerOpen(false) }}
-                            className={`w-full flex items-center gap-2 px-3 py-2 text-[13px] hover:bg-surface-muted transition-colors ${isSelected ? 'bg-surface-muted font-semibold' : ''}`}
+                            onClick={() => {
+                              // F013: insert @name at cursor, update selectedRecipientId for telemetry/display
+                              const ta = textareaRef.current
+                              const cursor = ta?.selectionStart ?? userInput.length
+                              const newInput = userInput.slice(0, cursor) + '@' + agent.name + ' ' + userInput.slice(cursor)
+                              setUserInput(newInput)
+                              setSelectedRecipientId(agent.id)
+                              setRecipientPickerOpen(false)
+                              ta?.focus()
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] hover:bg-surface-muted transition-colors"
                           >
                             <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
-                            <span style={{ color: isSelected ? color : undefined }}>{agent.name}</span>
+                            <span>{agent.name}</span>
                             <span className="text-[10px] text-ink-soft/60 ml-auto">{agent.domainLabel}</span>
                           </button>
                         )
@@ -848,7 +839,7 @@ socket.on('agent_status', (data: any) => {
                     type="button"
                     className="app-islands-item bg-accent text-white font-semibold px-5 py-3 rounded-xl hover:bg-accent-deep transition-all disabled:opacity-50 text-[14px] shadow-sm self-end"
                     onClick={handleSendMessage}
-                    disabled={sending || !userInput.trim() || !selectedRecipientId}
+                    disabled={sending || !userInput.trim()}
                   >
                     {sending ? '发送中…' : '发送'}
                   </button>
