@@ -411,16 +411,14 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
             recoveredMissedStreamEnd = true
           }
         }
-        if (recoveredMissedStreamEnd) {
-          streamingCountRef.current = streamingMessagesRef.current.size
-          setStreamingAgentIds(new Set(streamingAgentIdsRef.current))
-          // F015 P1-fix: poll recovered a missed stream_end — if room is now idle,
-          // trigger drain so queued messages get sent
-          const nowIdle = streamingAgentIdsRef.current.size === 0 &&
-            !newAgents.some((a: Agent) => a.status === 'thinking' || a.status === 'waiting')
-          if (nowIdle) {
-            setTimeout(() => drainQueue(), 100)
-          }
+        const nowIdle = streamingAgentIdsRef.current.size === 0 &&
+          !newAgents.some((a: Agent) => a.status === 'thinking' || a.status === 'waiting')
+        if (nowIdle && outgoingQueueRef.current.length > 0) {
+          // F015 Codex-fix: trigger drain whenever room becomes idle AND queue
+          // has pending items — don't require recoveredMissedStreamEnd to be true.
+          // This covers the case where all streaming records were already flushed
+          // but the queue still has items that need to be sent.
+          setTimeout(() => drainQueue(), 100)
         }
         const fetchedErrors = fetchedMessages.filter(m => m.runError)
         if (fetchedErrors.length > 0) {
@@ -642,7 +640,17 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
         // F015: 409 means room became busy concurrently — enqueue the message
         if (res.status === 409) {
           setSending(false)
-          enqueueMessage(content, recipientId!, targetName!)
+          // F015 Codex-fix: still validate recipientId before enqueuing.
+          // Without this, invalid @mention + 409 causes the queue entry to be
+          // created with recipientId=null, and the subsequent drain will 400
+          // and drop the item — user sees the message "disappear".
+          if (!recipientId) {
+            setUserInput(content)
+            setSendError('未找到指定专家，请检查 @ 后的名字')
+            setTimeout(() => setSendError(null), 4000)
+            return
+          }
+          enqueueMessage(content, recipientId, targetName!)
           return
         }
         setUserInput(content)
