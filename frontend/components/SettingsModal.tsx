@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Bot, Server, CheckCircle2, Trash2, Edit2, Save, Plus, Loader2, Play, XCircle } from 'lucide-react'
+import { X, Bot, Server, CheckCircle2, Trash2, Edit2, Save, Plus, Loader2, Play, XCircle, BrainCircuit } from 'lucide-react'
 
 const API = 'http://localhost:7001'
 
@@ -12,6 +12,11 @@ interface AgentConfig {
   id: string; name: string; roleLabel: string; role: 'MANAGER' | 'WORKER'
   provider: ProviderName; providerOpts: { thinking?: boolean; [k: string]: unknown }
   systemPrompt: string; enabled: boolean; tags: string[]
+}
+
+interface SceneConfig {
+  id: string; name: string; description?: string; prompt: string; builtin: boolean
+  canDelete: boolean; canEditName: boolean; canEditPrompt: boolean
 }
 
 interface ProviderConfig {
@@ -299,14 +304,208 @@ function ProviderDetail({ provider, onUpdate }: { provider: ProviderConfig; onUp
   )
 }
 
+// ── Scene Create Form ─────────────────────────────────────────────────────────
+
+function SceneCreateForm({ onCreated }: { onCreated: (s: SceneConfig) => void }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ name: '', description: '', prompt: '' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  function handleCreate() {
+    if (!form.name.trim()) { setError('名称必填'); return }
+    if (!form.prompt.trim()) { setError('Prompt模板必填'); return }
+    setSaving(true)
+    fetch(`${API}/api/scenes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form),
+    }).then(r => {
+      if (!r.ok) return r.json().then(err => { throw new Error(err.error || `HTTP ${r.status}`) })
+      return r.json()
+    }).then(s => {
+      onCreated(s)
+      setForm({ name: '', description: '', prompt: '' })
+      setOpen(false)
+      setError('')
+    }).catch(e => { setError(e.message) }).finally(() => { setSaving(false) })
+  }
+
+  return (
+    <div className="settings-surface rounded-xl p-5">
+      {!open ? (
+        <button type="button" onClick={() => setOpen(true)}
+          className="w-full py-3 text-[13px] font-bold text-ink-soft border border-dashed border-white/10 rounded-xl hover:border-accent/50 hover:text-accent transition-colors flex items-center justify-center gap-2">
+          <Plus className="w-4 h-4" aria-hidden/>新建场景
+        </button>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <p className="text-[13px] font-bold text-ink flex items-center gap-1.5"><Plus className="w-4 h-4 text-accent" aria-hidden/>新建场景</p>
+          <div>
+            <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">名称</label>
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="我的自定义场景"
+              className="w-full settings-input rounded-xl px-3 py-2 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-ink-soft/40"/>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">描述（可选）</label>
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="简短描述该场景的用途…"
+              className="w-full settings-input rounded-xl px-3 py-2 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-ink-soft/40"/>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">Prompt 模板</label>
+            <textarea value={form.prompt} onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))} rows={4}
+              placeholder="【场景模式：xxx】&#10;定义该场景下所有 agent 的行为约束…"
+              className="w-full settings-input rounded-xl px-3 py-2 text-[12px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 resize-none font-mono placeholder:text-ink-soft/40"/>
+          </div>
+          {error && <p className="text-[12px] text-red-400 bg-red-500/10 px-3 py-1.5 rounded-xl">{error}</p>}
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => { setOpen(false); setError('') }} className="px-4 py-1.5 text-[12px] text-ink-soft hover:text-ink hover:bg-white/5 rounded-xl transition-colors">取消</button>
+            <button type="button" onClick={handleCreate} disabled={saving}
+              className="px-4 py-1.5 text-[12px] font-bold bg-accent text-white rounded-xl hover:bg-accent-deep disabled:opacity-50 transition-all flex items-center gap-1.5">
+              <Plus className="w-3.5 h-3.5" aria-hidden/>{saving ? '创建中…' : '创建'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Scene Row ─────────────────────────────────────────────────────────────────
+
+function SceneRow({ scene, onUpdate, onDelete }: {
+  scene: SceneConfig;
+  onUpdate: (s: SceneConfig) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({ name: scene.name, description: scene.description ?? '', prompt: scene.prompt })
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => { if (!editing) setForm({ name: scene.name, description: scene.description ?? '', prompt: scene.prompt }) }, [scene, editing])
+
+  async function handleSave() {
+    setSaveError('')
+    setSaving(true)
+    try {
+      const res = await fetch(`${API}/api/scenes/${scene.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || '保存失败')
+      }
+      const updated = await res.json() as SceneConfig
+      onUpdate(updated)
+      setEditing(false)
+    } catch (err) {
+      setSaveError((err as Error).message || '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true)
+    try {
+      const res = await fetch(`${API}/api/scenes/${scene.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || '删除失败')
+      }
+      onDelete(scene.id)
+    } catch (err) {
+      alert((err as Error).message || '删除失败')
+      setDeleting(false)
+    }
+  }
+
+  const canEditName = scene.canEditName && !scene.builtin
+  const canDelete = scene.canDelete && !scene.builtin
+
+  return (
+    <div className="settings-surface rounded-xl p-5">
+      {editing ? (
+        <div className="flex flex-col gap-3">
+          <p className="text-[13px] font-bold text-ink">编辑场景 <span className="text-ink-soft font-normal ml-1">编辑中…</span></p>
+          {canEditName && (
+            <div>
+              <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">名称</label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                className="w-full settings-input rounded-xl px-3 py-2 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50"/>
+            </div>
+          )}
+          <div>
+            <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">描述</label>
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              className="w-full settings-input rounded-xl px-3 py-2 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50"/>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">Prompt 模板</label>
+            <textarea value={form.prompt} onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))} rows={4}
+              className="w-full settings-input rounded-xl px-3 py-2 text-[12px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 resize-none font-mono"/>
+          </div>
+          {saveError && <p className="text-[12px] text-red-400 bg-red-500/10 px-3 py-1.5 rounded-xl">{saveError}</p>}
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setEditing(false)} className="px-4 py-1.5 text-[12px] text-ink-soft hover:text-ink hover:bg-white/5 rounded-xl transition-colors">取消</button>
+            <button type="button" onClick={handleSave} disabled={saving}
+              className="px-4 py-1.5 text-[12px] font-bold bg-accent text-white rounded-xl hover:bg-accent-deep disabled:opacity-50 transition-all flex items-center gap-1.5">
+              <Save className="w-3.5 h-3.5" aria-hidden/> {saving ? '保存中…' : '保存'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+                <BrainCircuit className="w-4 h-4 text-accent" aria-hidden/>
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-[14px] font-bold text-ink">{scene.name}</p>
+                  {scene.builtin && <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20 text-accent font-bold">内置</span>}
+                </div>
+                {scene.description && <p className="text-[11px] text-ink-soft mt-0.5">{scene.description}</p>}
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setEditing(true)} aria-label="编辑" className="p-1.5 text-ink-soft hover:text-ink hover:bg-white/5 rounded-md transition-colors">
+                <Edit2 className="w-3.5 h-3.5" aria-hidden/>
+              </button>
+              {canDelete && (
+                <button onClick={handleDelete} disabled={deleting} aria-label="删除" className="p-1.5 text-ink-soft hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors">
+                  {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden/> : <Trash2 className="w-3.5 h-3.5" aria-hidden/>}
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="bg-white/[0.03] rounded-xl px-3 py-2 border border-white/[0.05]">
+            <p className="text-[10px] font-bold text-ink-soft uppercase mb-1">Prompt</p>
+            <p className="text-[11px] text-ink font-mono whitespace-pre-wrap">{scene.prompt.slice(0, 120)}{scene.prompt.length > 120 ? '…' : ''}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Modal ────────────────────────────────────────────────────────────────
 
-export default function SettingsModal({ isOpen, onClose, initialTab = 'agent' }: { isOpen: boolean; onClose: () => void; initialTab?: 'agent' | 'provider' }) {
-  const [tab, setTab] = useState<'agent' | 'provider'>(initialTab)
+export default function SettingsModal({ isOpen, onClose, initialTab = 'agent' }: { isOpen: boolean; onClose: () => void; initialTab?: 'agent' | 'provider' | 'scene' }) {
+  const [tab, setTab] = useState<'agent' | 'provider' | 'scene'>(initialTab)
   const [agents, setAgents] = useState<AgentConfig[]>([])
   const [providers, setProviders] = useState<Record<string, ProviderConfig>>({})
+  const [scenes, setScenes] = useState<SceneConfig[]>([])
   const [selProvider, setSelProvider] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadingScenes, setLoadingScenes] = useState(false)
   const [saving, setSaving] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<AgentConfig | null>(null)
   const [addOpen, setAddOpen] = useState(false)
@@ -328,9 +527,11 @@ export default function SettingsModal({ isOpen, onClose, initialTab = 'agent' }:
     Promise.all([
       fetch(`${API}/api/agents`).then(r => r.json()),
       fetch(`${API}/api/providers`).then(r => r.json()),
-    ]).then(([ag, pr]) => {
+      fetch(`${API}/api/scenes`).then(r => r.json()),
+    ]).then(([ag, pr, sc]) => {
       setAgents(ag)
       setProviders(pr)
+      setScenes(sc)
       if (!selProvider && Object.keys(pr).length > 0) setSelProvider(Object.keys(pr)[0])
       setLoading(false)
     }).catch(() => setLoading(false))
@@ -404,6 +605,10 @@ export default function SettingsModal({ isOpen, onClose, initialTab = 'agent' }:
               <button onClick={() => setTab('provider')}
                 className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5 ${tab === 'provider' ? 'shadow-sm text-ink' : 'text-ink-soft hover:text-ink'}`}>
                 <Server className="w-3.5 h-3.5" aria-hidden/>CLI 连接
+              </button>
+              <button onClick={() => setTab('scene')}
+                className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5 ${tab === 'scene' ? 'shadow-sm text-ink' : 'text-ink-soft hover:text-ink'}`}>
+                <BrainCircuit className="w-3.5 h-3.5" aria-hidden/>场景
               </button>
             </div>
             <button onClick={onClose} aria-label="关闭设置" className="p-2 text-ink-soft hover:text-ink hover:bg-white/[0.06] rounded-full transition-colors">
@@ -482,6 +687,17 @@ export default function SettingsModal({ isOpen, onClose, initialTab = 'agent' }:
                       {agents.map(a => <AgentRow key={a.id} agent={a} onSave={handleAgentSave} onDeleteRequest={setPendingDelete} saving={saving}/>)}
                     </tbody>
                   </table>
+                </div>
+              </>
+            ) : tab === 'scene' ? (
+              <>
+                {/* New Scene */}
+                <SceneCreateForm onCreated={(s) => setScenes(prev => [...prev, s])}/>
+                {/* Scene list */}
+                <div className="flex flex-col gap-3">
+                  {scenes.map(scene => (
+                    <SceneRow key={scene.id} scene={scene} onUpdate={(updated) => setScenes(prev => prev.map(s => s.id === updated.id ? updated : s))} onDelete={(id) => setScenes(prev => prev.filter(s => s.id !== id))}/>
+                  ))}
                 </div>
               </>
             ) : (

@@ -120,3 +120,4 @@ export { sessionsRepo };
 export { auditRepo };
 export { agentsRepo };
 export { providersRepo };
+export { scenesRepo };

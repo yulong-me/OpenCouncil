@@ -33,6 +33,7 @@ import {
   MAX_A2A_DEPTH,
   updateA2AContext,
 } from './routing/A2ARouter.js';
+import { buildRoomScopedSystemPrompt } from './scenePromptBuilder.js';
 import { debug, info, warn, error } from '../lib/logger.js';
 
 function telemetry(event: string, meta: Record<string, unknown>) {
@@ -291,19 +292,15 @@ export async function handleUserMessage(
   const managerSystemPrompt = managerCfg?.systemPrompt ?? '专业主持人，负责热情接待、召集专家协作、管理讨论节奏';
 
   const workers = room.agents.filter(a => a.role === 'WORKER');
-  const recentMessages = room.messages
-    .slice(-10)
-    .map(m => `【${m.agentName}】${m.content}`)
-    .join('\n\n');
-
   const prompt = HOST_PROMPTS.MANAGER_ROUTE(room.topic, userContent, workers);
 
   // 3. Manager 流式输出（包含 A2A @mention）
+  // F016: recentMessages 由 streamingCallAgent 通过 buildRoomScopedSystemPrompt 自动从 room.messages 提取
   const managerOutput = await streamingCallAgent(
     {
       domainLabel: managerAgent.domainLabel,
       systemPrompt: managerSystemPrompt,
-      userMessage: `${prompt}\n\n## 最近对话记录\n${recentMessages || '（暂无）'}`,
+      userMessage: prompt,
     },
     roomId,
     managerAgent.id,
@@ -362,16 +359,11 @@ export async function routeToAgent(
   info('msg.user', { roomId, contentLength: content.length, toAgentId: target.id, toAgentName: target.name, toAgentRole: 'WORKER' });
 
   // 直接调用 Worker
-  const recentMessages = room.messages
-    .slice(-10)
-    .map(m => `【${m.agentName}】${m.content}`)
-    .join('\n\n');
-
   const workerOutput = await streamingCallAgent(
     {
       domainLabel: target.domainLabel,
       systemPrompt: `专业${target.domainLabel}，执行具体任务`,
-      userMessage: `议题：${room.topic}\n\n用户（直接发送给你）：${content}\n\n## 最近对话记录\n${recentMessages || '（暂无）'}`,
+      userMessage: `议题：${room.topic}\n\n用户（直接发送给你）：${content}`,
     },
     roomId,
     target.id,
@@ -557,10 +549,23 @@ async function streamingCallAgent(
     const systemPrompt = agentConfig?.systemPrompt ?? ctx.systemPrompt;
     const room = store.get(roomId);
     const workspace = await ensureWorkspace(roomId, room?.workspace);
-    const prompt = `【工作目录】${workspace}
-【角色】${ctx.domainLabel}（${systemPrompt}）
 
-${ctx.userMessage}`;
+    // F016: build scene-scoped prompt
+    const recentTranscript = room
+      ? room.messages
+          .slice(-10)
+          .map(m => `【${m.agentName}】${m.content}`)
+          .join('\n\n')
+      : undefined;
+
+    const basePrompt = `【角色】${ctx.domainLabel}（${systemPrompt}）`;
+    const prompt = buildRoomScopedSystemPrompt(roomId, basePrompt, {
+      userMessage: ctx.userMessage,
+      recentTranscript,
+      roomTopic: room?.topic,
+      a2aCallChain: room?.a2aCallChain,
+      workspace,
+    }) ?? `${basePrompt}\n\n${ctx.userMessage}`;
 
     const existingSessionId = room?.sessionIds[agentName];
     returnedSessionId = existingSessionId ?? '';

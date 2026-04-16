@@ -69,6 +69,9 @@ export default function CreateRoomModal({
   const [searchText, setSearchText] = useState('')
   const [errors, setErrors] = useState<{ topic?: string; agents?: string }>({})
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
+  const [scenes, setScenes] = useState<Array<{ id: string; name: string; description?: string }>>([])
+  const [sceneId, setSceneId] = useState('roundtable-forum')
+  const [loadingScenes, setLoadingScenes] = useState(false)
   const router = useRouter()
   const topicRef = useRef<HTMLInputElement>(null)
   const agentGridRef = useRef<HTMLDivElement>(null)
@@ -84,6 +87,15 @@ export default function CreateRoomModal({
         setLoadingAgents(false)
       })
       .catch(() => setLoadingAgents(false))
+    // F016: fetch scenes
+    setLoadingScenes(true)
+    fetch(`${API}/api/scenes`)
+      .then(r => r.json())
+      .then((data: Array<{ id: string; name: string; description?: string }>) => {
+        setScenes(data)
+        setLoadingScenes(false)
+      })
+      .catch(() => setLoadingScenes(false))
   }, [isOpen])
 
   useEffect(() => {
@@ -95,6 +107,7 @@ export default function CreateRoomModal({
       setSearchText('')
       setErrors({})
       setWorkspaceOpen(false)
+      setSceneId('roundtable-forum')
     }
   }, [isOpen])
 
@@ -136,6 +149,7 @@ export default function CreateRoomModal({
           topic: topic.trim() || `未命名讨论 ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`,
           workerIds: workers.filter(a => selected.has(a.id)).map(a => a.id),
           ...(workspacePath.trim() ? { workspacePath: workspacePath.trim() } : {}),
+          sceneId, // F016
         }),
       })
       if (!res.ok) {
@@ -215,6 +229,24 @@ export default function CreateRoomModal({
                 maxLength={100}
               />
               {errors.topic && <p className="text-xs text-red-400 mt-1.5">{errors.topic}</p>}
+            </div>
+
+            {/* F016: Scene Selector */}
+            <div className="px-6 md:px-8 pt-4 mb-1">
+              <p className="text-[11px] font-bold text-accent uppercase tracking-widest mb-2">讨论场景</p>
+              <select
+                value={sceneId}
+                onChange={e => setSceneId(e.target.value)}
+                disabled={loadingScenes}
+                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-[14px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all appearance-none cursor-pointer"
+              >
+                {scenes.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}{s.description ? ` — ${s.description}` : ''}
+                  </option>
+                ))}
+              </select>
+              {loadingScenes && <p className="text-[11px] text-ink-soft mt-1">加载场景中…</p>}
             </div>
 
             {/* Expert Section Header */}

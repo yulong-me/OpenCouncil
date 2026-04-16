@@ -83,6 +83,17 @@ export function initSchema(): void {
     // Column already exists — safe to ignore
   }
 
+  // F016: add scene_id column to rooms table
+  try {
+    db.exec("ALTER TABLE rooms ADD COLUMN scene_id TEXT NOT NULL DEFAULT 'roundtable-forum'");
+    log('INFO', 'db:schema:migrate:rooms:scene_id');
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
+  // F016: ensure builtin scenes exist (idempotent seed)
+  ensureBuiltinScenes();
+
   // F004 Migration: INIT/RESEARCH/DEBATE/CONVERGING → RUNNING, HOST → MANAGER, AGENT → WORKER
   try {
     const roomsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='rooms'").get() as { sql: string } | undefined;
@@ -117,8 +128,9 @@ export function initSchema(): void {
     // 迁移 rooms 数据: INIT/RESEARCH/DEBATE/CONVERGING → RUNNING, DONE → DONE
     // agent_ids: 旧 room 无存储，回填 ["host"]（主持人必定在）
     // deleted_at: 旧 room 全部为 NULL（未归档）
+    // scene_id: 旧 room 统一回填为 roundtable-forum
     db.exec(`
-      INSERT INTO rooms (id, topic, state, report, agent_ids, workspace, created_at, updated_at, deleted_at)
+      INSERT INTO rooms (id, topic, state, report, agent_ids, workspace, scene_id, created_at, updated_at, deleted_at)
       SELECT
         id, topic,
         CASE state
@@ -131,6 +143,7 @@ export function initSchema(): void {
         report,
         '["host"]',
         NULL,
+        'roundtable-forum',
         created_at, updated_at,
         NULL
       FROM rooms_backup`);
@@ -256,5 +269,51 @@ export function migrateFromJson(): void {
 
   if (!migrated) {
     log('INFO', 'db:migrate:skip', { reason: 'no json files found' });
+  }
+}
+
+// F016: Seed builtin scenes if they don't exist (idempotent)
+export function ensureBuiltinScenes(): void {
+  const builtinScenes = [
+    {
+      id: 'roundtable-forum',
+      name: '圆桌论坛',
+      description: '多专家平等讨论，各抒己见，最终收敛共识',
+      prompt: `【场景模式：圆桌论坛】
+
+你是一场圆桌讨论的主持人。请确保：
+- 所有参与者都有平等发言机会
+- 鼓励不同视角的碰撞
+- 适时归纳共同点，推动讨论深入
+- 保持专业、友好的讨论氛围`,
+      builtin: 1,
+    },
+    {
+      id: 'software-development',
+      name: '软件开发',
+      description: '以架构设计、代码实现、技术方案为核心目标',
+      prompt: `【场景模式：软件开发团队】
+
+你是一个专业技术团队的成员。请确保：
+- 关注架构设计与代码质量
+- 技术方案需有充分的理由支撑
+- 重视可维护性与扩展性
+- 鼓励提出具体的实现建议和替代方案`,
+      builtin: 1,
+    },
+  ];
+
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO scenes (id, name, description, prompt, builtin)
+    VALUES (@id, @name, @description, @prompt, @builtin)
+  `);
+
+  for (const scene of builtinScenes) {
+    try {
+      insert.run(scene);
+      log('INFO', 'db:scene:seed', { id: scene.id, name: scene.name });
+    } catch (err) {
+      log('WARN', 'db:scene:seed:failed', { id: scene.id, error: String(err) });
+    }
   }
 }

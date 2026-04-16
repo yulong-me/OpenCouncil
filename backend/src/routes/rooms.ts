@@ -32,9 +32,10 @@ roomsRouter.get('/sidebar', (_req, res) => {
 
 // POST /api/rooms — 创建讨论室（F012: 无 MANAGER，只有 WORKER）
 roomsRouter.post('/', async (req, res) => {
-  const { workerIds: rawWorkerIds, workspacePath } = req.body as {
+  const { workerIds: rawWorkerIds, workspacePath, sceneId } = req.body as {
     workerIds?: string[];
     workspacePath?: string; // F006: custom workspace directory
+    sceneId?: string; // F016: scene ID, defaults to roundtable-forum
   };
 
   const workerIds: string[] = rawWorkerIds ?? [];
@@ -84,6 +85,7 @@ roomsRouter.post('/', async (req, res) => {
     agents: workerEntries, // F012: no MANAGER in room
     messages: [],
     workspace: workspacePath,
+    sceneId: sceneId ?? 'roundtable-forum', // F016: default scene
     createdAt: Date.now(),
     updatedAt: Date.now(),
     sessionIds: {},
@@ -96,6 +98,7 @@ roomsRouter.post('/', async (req, res) => {
     roomId: room.id,
     workerCount: workerEntries.length,
     workers: workerEntries.map(w => w.name),
+    sceneId: room.sceneId,
   });
   res.json(room);
 });

@@ -96,6 +96,8 @@ export interface DiscussionRoom {
   report?: string;
   /** F006: 自定义工作目录，留空则使用 workspaces/room-{id}/ */
   workspace?: string;
+  /** F016: 场景 ID，默认为 roundtable-forum */
+  sceneId: string;
   createdAt: number;
   updatedAt: number;
   /** agentId → session ID for CLI resume/continue support */
@@ -105,3 +107,18 @@ export interface DiscussionRoom {
   /** A2A 调用链 */
   a2aCallChain: string[];
 }
+
+// F016: Scene 配置
+export interface SceneConfig {
+  id: string;
+  name: string;
+  description?: string;
+  prompt: string;
+  builtin: boolean;
+}
+
+// F016: 内置 Scene ID 常量
+export const BUILTIN_SCENE_IDS = {
+  ROUNDTABLE_FORUM: 'roundtable-forum',
+  SOFTWARE_DEVELOPMENT: 'software-development',
+} as const;

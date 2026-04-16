@@ -1,6 +1,16 @@
 -- F004: Manager Router - Simplified state machine
 -- State: RUNNING (active discussion) | DONE (report generated)
 
+-- F016: Scene — 讨论室场景配置
+CREATE TABLE IF NOT EXISTS scenes (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  description TEXT,
+  prompt      TEXT NOT NULL,
+  builtin     INTEGER NOT NULL DEFAULT 0
+);
+
+-- F016: Room Scene — scene_id references scenes.id
 CREATE TABLE IF NOT EXISTS rooms (
   id          TEXT PRIMARY KEY,
   topic       TEXT NOT NULL,
@@ -9,6 +19,7 @@ CREATE TABLE IF NOT EXISTS rooms (
   report      TEXT,
   agent_ids   TEXT NOT NULL DEFAULT '[]',
   workspace   TEXT,
+  scene_id    TEXT NOT NULL DEFAULT 'roundtable-forum',
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
   deleted_at  INTEGER
