@@ -795,7 +795,6 @@ socket.on('agent_status', (data: any) => {
                     className="app-islands-input flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-[14px] text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all resize-none min-h-12 max-h-48 leading-relaxed"
                     placeholder="输入消息，或 @mention 专家…"
                     value={userInput}
-                    onFocus={() => setRecipientPickerOpen(false)}
                     onChange={handleInputChange}
                     onKeyDown={handleInputKeyDown}
                     disabled={sending}
