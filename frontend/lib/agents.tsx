@@ -45,6 +45,15 @@ export interface Message {
   runError?: AgentRunErrorEvent
 }
 
+export interface OutgoingQueueItem {
+  id: string
+  content: string
+  toAgentId: string
+  toAgentName: string
+  createdAt: number
+  status: 'queued' | 'dispatching'
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const STATE_LABELS: Record<DiscussionState, string> = {
