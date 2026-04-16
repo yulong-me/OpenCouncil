@@ -492,15 +492,13 @@ socket.on('agent_status', (data: any) => {
     setMentionPickerOpen(false)
     setSending(true)
     const content = userInput.trim()
-    // Issue-1: recipient comes ONLY from explicit UI picker — no implicit @mention override
-    const managerId = agents.find(a => a.role === 'MANAGER')?.id ?? null
-    const recipientId = selectedRecipientId ?? managerId
-    const recipientName = agents.find(a => a.id === recipientId)?.name ?? '主持人'
+    // Issue-1: recipient comes ONLY from explicit UI picker
+    const recipientId = selectedRecipientId
     telemetry('ui:msg:send', {
       roomId, contentLength: content.length,
       contentSnippet: content.length > 80 ? content.slice(0, 80) + '…' : content,
-      toAgentId: recipientId, toAgentName: recipientName,
-      toAgentRole: recipientId === managerId ? 'MANAGER' : 'WORKER',
+      toAgentId: recipientId,
+      toAgentName: recipientId ? agents.find(a => a.id === recipientId)?.name : null,
     })
     setUserInput('')
     try {

@@ -195,7 +195,9 @@ export async function routeToAgent(
     return;
   }
   if (target.role !== 'WORKER') {
+    // F012: MANAGER should not exist in rooms; still save user message so it's visible
     warn('route.fallback', { roomId, toAgentId, toAgentName: target.name, toAgentRole: target.role, reason: 'not_worker' });
+    addUserMessage(roomId, content, target.id);
     return;
   }
   debug('route.to', { roomId, toAgentId, toAgentName: target.name, toAgentRole: 'WORKER', path: 'callWorker' });

@@ -31,18 +31,14 @@ roomsRouter.get('/sidebar', (_req, res) => {
   res.json(roomsRepo.listSidebar());
 });
 
-// POST /api/rooms — 创建讨论室
+// POST /api/rooms — 创建讨论室（F012: 无 MANAGER，只有 WORKER）
 roomsRouter.post('/', async (req, res) => {
-  const { managerId: rawManagerId, workerIds: rawWorkerIds, workspacePath } = req.body as {
-    managerId?: string;
+  const { workerIds: rawWorkerIds, workspacePath } = req.body as {
     workerIds?: string[];
-    agents?: string[]; // Legacy: flat agents array
     workspacePath?: string; // F006: custom workspace directory
   };
 
-  // Backward compat: accept legacy { agents: ['host', 'fs-dev', ...] }
-  const managerId = rawManagerId ?? 'host';
-  const workerIds: string[] = rawWorkerIds ?? (req.body as { agents?: string[] }).agents ?? [];
+  const workerIds: string[] = rawWorkerIds ?? [];
 
   // F006: Validate custom workspace path if provided
   if (workspacePath) {
@@ -57,18 +53,6 @@ roomsRouter.post('/', async (req, res) => {
     return res.status(400).json({ error: '至少选择 1 位专家' });
   }
 
-  // Resolve manager
-  const managerCfg = getAgent(managerId);
-  if (!managerCfg) {
-    return res.status(400).json({ error: `Manager not found: ${managerId}` });
-  }
-  if (managerCfg.role !== 'MANAGER') {
-    return res.status(400).json({ error: `Agent ${managerId} is not a MANAGER` });
-  }
-  if (!managerCfg.enabled) {
-    return res.status(400).json({ error: `Manager ${managerId} is disabled` });
-  }
-
   // Resolve workers (with role + enabled validation)
   const invalid = workerIds.filter(id => !getAgent(id));
   if (invalid.length > 0) {
@@ -81,15 +65,6 @@ roomsRouter.post('/', async (req, res) => {
   if (disabled.length > 0) {
     return res.status(400).json({ error: `Invalid workers (must be enabled WORKER): ${disabled.join(', ')}` });
   }
-
-  const managerEntry = {
-    id: uuid(),
-    role: 'MANAGER' as const,
-    name: managerCfg.name,
-    domainLabel: managerCfg.roleLabel,
-    configId: managerCfg.id,
-    status: 'idle' as const,
-  };
 
   const workerEntries = workerIds.map(id => {
     const cfg = getAgent(id)!;
@@ -107,7 +82,7 @@ roomsRouter.post('/', async (req, res) => {
     id: uuid(),
     topic: '自由讨论',
     state: 'RUNNING',
-    agents: [managerEntry, ...workerEntries],
+    agents: workerEntries, // F012: no MANAGER in room
     messages: [],
     workspace: workspacePath,
     createdAt: Date.now(),
@@ -120,7 +95,6 @@ roomsRouter.post('/', async (req, res) => {
   roomsRepo.create(room);
   auditRepo.log('room:create', room.topic, undefined, {
     roomId: room.id,
-    manager: managerEntry.name,
     workerCount: workerEntries.length,
     workers: workerEntries.map(w => w.name),
   });

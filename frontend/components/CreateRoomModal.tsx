@@ -62,7 +62,6 @@ export default function CreateRoomModal({
   const [allAgents, setAllAgents] = useState<AgentConfig[]>([])
   const [loadingAgents, setLoadingAgents] = useState(true)
   const [topic, setTopic] = useState('')
-  const [selectedManager, setSelectedManager] = useState<string>('host')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -74,7 +73,6 @@ export default function CreateRoomModal({
   const topicRef = useRef<HTMLInputElement>(null)
   const agentGridRef = useRef<HTMLDivElement>(null)
 
-  const managers = allAgents.filter(a => a.role === 'MANAGER' && a.enabled)
   const workers = allAgents.filter(a => a.role === 'WORKER' && a.enabled)
 
   useEffect(() => {
@@ -90,7 +88,6 @@ export default function CreateRoomModal({
 
   useEffect(() => {
     if (!isOpen) {
-      setSelectedManager('host')
       setSelected(new Set())
       setActiveTag(null)
       setWorkspacePath('')
@@ -137,7 +134,6 @@ export default function CreateRoomModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic: topic.trim() || `未命名讨论 ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`,
-          managerId: selectedManager,
           workerIds: workers.filter(a => selected.has(a.id)).map(a => a.id),
           ...(workspacePath.trim() ? { workspacePath: workspacePath.trim() } : {}),
         }),
@@ -197,7 +193,7 @@ export default function CreateRoomModal({
                 <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
                   <BrainCircuit className="w-6 h-6 text-accent" aria-hidden/> 发起新讨论
                 </h1>
-                <p className="text-ink-soft mt-1 text-[14px]">选择主持人和专家，开启多智能体协作讨论</p>
+                <p className="text-ink-soft mt-1 text-[14px]">选择专家，开启多智能体协作讨论</p>
               </div>
               <button onClick={onClose} aria-label="关闭" className="p-2 text-ink-soft hover:text-ink hover:bg-white/[0.06] rounded-full transition-colors">
                 <X className="w-5 h-5" aria-hidden/>
@@ -219,43 +215,6 @@ export default function CreateRoomModal({
                 maxLength={100}
               />
               {errors.topic && <p className="text-xs text-red-400 mt-1.5">{errors.topic}</p>}
-            </div>
-
-            {/* Manager Selection */}
-            <div className="px-6 md:px-8 pt-4 mb-1">
-              <p className="text-[11px] font-bold text-accent uppercase tracking-widest mb-2">主持人</p>
-              {loadingAgents ? (
-                <p className="text-[13px] text-ink-soft py-2">加载中…</p>
-              ) : managers.length === 0 ? (
-                <p className="text-[13px] text-ink-soft py-2 italic">暂无可用主持人，将使用默认主持人</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {managers.map(m => {
-                    const isSelected = selectedManager === m.id
-                    const color = agentColor(m.name)
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setSelectedManager(m.id)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 transition-all ${
-                          isSelected
-                            ? 'border-accent bg-accent/5 shadow-sm'
-                            : 'border-white/[0.08] bg-white/[0.04] hover:border-accent/40'
-                        }`}
-                      >
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: color }}>
-                          {m.name.slice(0, 1)}
-                        </div>
-                        <div className="text-left">
-                          <p className="text-[13px] font-bold text-ink">{m.name}</p>
-                          <p className="text-[11px] text-ink-soft">{m.roleLabel}</p>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
             </div>
 
             {/* Expert Section Header */}
@@ -404,14 +363,6 @@ export default function CreateRoomModal({
             <div className="mb-3">
               <p className="text-[11px] font-bold text-accent uppercase tracking-widest mb-2">配置摘要</p>
               <div className="flex flex-wrap gap-2">
-                {managers.find(m => m.id === selectedManager) && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] bg-white/[0.04] border border-white/[0.08]">
-                    <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: agentColor(managers.find(m => m.id === selectedManager)!.name) }}>
-                      {managers.find(m => m.id === selectedManager)!.name.slice(0, 1)}
-                    </span>
-                    <span className="text-ink">主持：{managers.find(m => m.id === selectedManager)!.name}</span>
-                  </span>
-                )}
                 {selectedWorkers.length > 0 ? selectedWorkers.map(ag => (
                   <span key={ag.id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] bg-white/[0.04] border border-white/[0.08]">
                     <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: agentColor(ag.name) }}>
