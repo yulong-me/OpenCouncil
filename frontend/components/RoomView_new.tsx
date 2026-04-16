@@ -143,6 +143,11 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     streamingThinkingRef.current.clear()
     streamingCountRef.current = 0
     streamingAgentIdsRef.current.clear()
+    // F015: reset outgoing queue so items from previous room can't leak into new room
+    outgoingQueueRef.current = []
+    dispatchingRef.current = null
+    isDrainingRef.current = false
+    setOutgoingQueue([])
     userScrolledRef.current = false
     setShowScrollBtn(false)
   }, [roomId])
@@ -409,6 +414,13 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
         if (recoveredMissedStreamEnd) {
           streamingCountRef.current = streamingMessagesRef.current.size
           setStreamingAgentIds(new Set(streamingAgentIdsRef.current))
+          // F015 P1-fix: poll recovered a missed stream_end — if room is now idle,
+          // trigger drain so queued messages get sent
+          const nowIdle = streamingAgentIdsRef.current.size === 0 &&
+            !newAgents.some((a: Agent) => a.status === 'thinking' || a.status === 'waiting')
+          if (nowIdle) {
+            setTimeout(() => drainQueue(), 100)
+          }
         }
         const fetchedErrors = fetchedMessages.filter(m => m.runError)
         if (fetchedErrors.length > 0) {
@@ -599,9 +611,15 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     const recipientId = targetName
       ? agents.find(a => a.name === targetName)?.id ?? null
       : null
-    // F015: if room is busy, enqueue instead of sending immediately
-    if (isRoomBusy) {
-      enqueueMessage(content, recipientId!, targetName!)
+    // F015 P1-fix: use ref to avoid stale closure — read streamingAgentIds live at call time
+    const busyNow = streamingAgentIdsRef.current.size > 0 || agents.some(a => a.status === 'thinking' || a.status === 'waiting')
+    if (busyNow) {
+      if (!recipientId) {
+        setSendError('未找到指定专家，请检查 @ 后的名字')
+        setTimeout(() => setSendError(null), 4000)
+        return
+      }
+      enqueueMessage(content, recipientId, targetName!)
       return
     }
     setSending(true)
@@ -707,6 +725,10 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
           outgoingQueueRef.current = remaining
           dispatchingRef.current = null
           setOutgoingQueue(remaining)
+          // F015 P1-fix: give the backend time to mark agent as busy before sending next.
+          // Without this, two POSTs can arrive before either agent is marked busy,
+          // allowing concurrent execution which violates AC-3.
+          await new Promise(resolve => setTimeout(resolve, 300))
         } catch {
           dispatchingRef.current = null
           setOutgoingQueue(prev => prev.map(i => i.id === item.id ? { ...i, status: 'queued' } : i))

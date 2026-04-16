@@ -19,3 +19,4 @@ created: 2026-04-09
 | F011 | 会话列表 → 导航列表重构 | done | sonnet | [F011](docs/features/F011-room-list-navigation.md) |
 | F012 | 去 MANAGER 化：系统级路由与容错模型 | done | sonnet | [F012](docs/features/F012-decentralized-routing.md) |
 | F013 | 强制显式路由（Mandatory @-Mention）| done | sonnet | [F013](docs/features/F013-mandatory-mention-routing.md) |
+| F015 | 房间忙时消息阻断与出站队列 | spec | yulong | [F015](docs/features/F015-busy-room-send-queue.md) |
