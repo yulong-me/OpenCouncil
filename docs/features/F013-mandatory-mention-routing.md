@@ -76,13 +76,14 @@ sequenceDiagram
 
 - **前端 `RoomView_new.tsx`**（核心实现）：
   - `handleSendMessage` 前置校验：若 `extractMentions(userInput).length === 0`，打开 `@插入` picker 并 return，不发出请求。
-  - Send button 仅校验 `!userInput.trim()`，不禁用无收件人状态（`@` 即为收件人）。
+  - **路由单一真相源**：`toAgentId` 从 `extractMentions(content)` 派生（取第一个 mention name → 匹配 agent.id）。`selectedRecipientId` 仅用于遥测/展示，不参与路由。
+  - Send button 仅校验 `!userInput.trim()`，不禁用无收件人状态。
   - 无任何默认收件人（删除 MANAGER fallback 和 WORKER-first default）。
-  - `@插入` picker 过滤 `role !== 'MANAGER'`，选中时向 textarea 光标处插入 `@agentName `，同时更新 `selectedRecipientId` 供遥测/展示。
-  - 400 错误时显示"请先选择发送对象"。
+  - `@插入` picker 过滤 `role !== 'MANAGER'`，选中时向 textarea 光标处插入 `@agentName `。
+  - 400 错误时显示"未找到指定专家，请检查 @ 后的名字"。
 - **前端 `MentionQueue.tsx`**：
   - "主持人提名" → "邀请发言"（无 MANAGER 角色）。
 - **后端 `rooms.ts`**：
   - 移除 `lastActiveWorker` fallback 路径。
   - `!toAgentId` → HTTP 400 "Target Expert Required: toAgentId is mandatory"。
-  - `POST /api/rooms/:id/messages` 强制要求 `toAgentId` 必填，缺失 → HTTP 400。
+  - `target!.id` 非空断言（前置检查已保证 target 存在）。
