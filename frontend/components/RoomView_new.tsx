@@ -362,15 +362,26 @@ socket.on('agent_status', (data: any) => {
     a.click()
   }
 
-  // F013: No implicit default recipient — send is blocked by lack of @ mention in content
-
   // ─── @mention helpers ────────────────────────────────────────────────────────
-  const filteredAgents = useMemo(
-    () => (mentionQuery
+  // F013: derive last-active WORKER from message history (for mention picker sort)
+  const lastActiveWorkerId = useMemo(() => {
+    const workerMsgs = [...messages].reverse().filter(m => m.agentRole === 'WORKER')
+    return workerMsgs[0]?.agentName
+      ? agents.find(a => a.name === workerMsgs[0].agentName)?.id ?? null
+      : null
+  }, [messages, agents])
+
+  const filteredAgents = useMemo(() => {
+    const base = mentionQuery
       ? agents.filter(a => a.name.toLowerCase().includes(mentionQuery.toLowerCase()))
-      : agents),
-    [agents, mentionQuery],
-  )
+      : agents
+    // F013: put last-active WORKER at top of mention picker
+    if (!lastActiveWorkerId || mentionQuery) return base
+    return [
+      ...base.filter(a => a.id === lastActiveWorkerId),
+      ...base.filter(a => a.id !== lastActiveWorkerId),
+    ]
+  }, [agents, mentionQuery, lastActiveWorkerId])
   const sortedMessages = useMemo(
     () => [...messages].sort((a, b) => a.timestamp - b.timestamp),
     [messages],
@@ -405,8 +416,6 @@ socket.on('agent_status', (data: any) => {
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [mentionPickerOpen, closeMentionPicker])
-
-  // F013: no standalone recipient picker — @ mention picker handles all routing
 
   const selectMentionAgent = useCallback((agentName: string) => {
     const ta = textareaRef.current
@@ -472,10 +481,13 @@ socket.on('agent_status', (data: any) => {
 
   const handleSendMessage = async () => {
     if (!roomId || !userInput.trim() || sending) return
-    // F013: Block send if no @ mention — message must target an expert
+    // F013: no @ found — open mention picker at cursor, most-recent first
     if (extractMentions(userInput).length === 0) {
-      setSendError('请输入 @专家 来指定发送对象')
-      setTimeout(() => setSendError(null), 4000)
+      const cursor = textareaRef.current?.selectionStart ?? userInput.length
+      setMentionStartIdx(cursor)
+      setMentionQuery('')
+      setMentionHighlightIdx(0)
+      setMentionPickerOpen(true)
       return
     }
     setMentionPickerOpen(false)
