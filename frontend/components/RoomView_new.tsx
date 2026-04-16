@@ -413,6 +413,11 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
         }
         const nowIdle = streamingAgentIdsRef.current.size === 0 &&
           !newAgents.some((a: Agent) => a.status === 'thinking' || a.status === 'waiting')
+        if (recoveredMissedStreamEnd) {
+          // Sync React state with the refs we just cleaned up
+          streamingCountRef.current = streamingMessagesRef.current.size
+          setStreamingAgentIds(new Set(streamingAgentIdsRef.current))
+        }
         if (nowIdle && outgoingQueueRef.current.length > 0) {
           // F015 Codex-fix: trigger drain whenever room becomes idle AND queue
           // has pending items — don't require recoveredMissedStreamEnd to be true.
