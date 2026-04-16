@@ -111,6 +111,7 @@ export const roomsRepo = {
           SELECT content FROM messages m
           WHERE m.room_id = r.id
             AND m.agent_role != 'MANAGER'
+            AND m.type != 'system'
           ORDER BY timestamp DESC
           LIMIT 1
         ) AS preview,

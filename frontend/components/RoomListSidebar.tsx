@@ -128,13 +128,14 @@ function RoomItem({
             }`}>
               {room.state === 'RUNNING' ? '进行中' : '已完成'}
             </span>
-            {/* Delete — always visible */}
+            {/* Delete — always visible; stop Enter/Space from bubbling to outer role="button" */}
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation()
                 setShowDeleteConfirm(true)
               }}
+              onKeyDown={(e) => { e.stopPropagation() }}
               className="p-1 rounded-md text-ink-soft/60 hover:text-red-400 hover:bg-red-500/10 transition-all"
               aria-label={`删除讨论：${room.topic}`}
             >
@@ -173,6 +174,7 @@ function RoomItem({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setShowWorkspace(v => !v) }}
+              onKeyDown={(e) => { e.stopPropagation() }}
               className={`text-[10px] text-ink-soft/40 hover:text-ink-soft/70 transition-colors ${showWorkspace ? 'whitespace-normal break-all max-w-[200px]' : 'truncate max-w-[120px]'}`}
               title={showWorkspace ? undefined : room.workspace}
             >
