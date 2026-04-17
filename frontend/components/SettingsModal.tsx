@@ -336,7 +336,7 @@ function SceneCreateForm({ onCreated }: { onCreated: (s: SceneConfig) => void })
       setForm({ name: '', description: '', prompt: '' })
       setOpen(false)
       setError('')
-    }).catch(e => { setError(e.message) }).finally(() => { setSaving(false) })
+    }).catch(e => { setError(fmtErr(e, '创建失败')) }).finally(() => { setSaving(false) })
   }
 
   return (
@@ -347,7 +347,7 @@ function SceneCreateForm({ onCreated }: { onCreated: (s: SceneConfig) => void })
           <Plus className="w-4 h-4" aria-hidden/>新建场景
         </button>
       ) : (
-        <div className="flex flex-col gap-3">
+        <form className="flex flex-col gap-3" onSubmit={e => e.preventDefault()} noValidate>
           <p className="text-[13px] font-bold text-ink flex items-center gap-1.5"><Plus className="w-4 h-4 text-accent" aria-hidden/>新建场景</p>
           <div>
             <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">名称</label>
@@ -375,7 +375,7 @@ function SceneCreateForm({ onCreated }: { onCreated: (s: SceneConfig) => void })
               <Plus className="w-3.5 h-3.5" aria-hidden/>{saving ? '创建中…' : '创建'}
             </button>
           </div>
-        </div>
+        </form>
       )}
     </div>
   )
@@ -443,7 +443,7 @@ function SceneRow({ scene, onUpdate, onDelete }: {
   return (
     <div className="settings-surface rounded-xl p-5">
       {editing ? (
-        <div className="flex flex-col gap-3">
+        <form className="flex flex-col gap-3" onSubmit={e => e.preventDefault()} noValidate>
           <p className="text-[13px] font-bold text-ink">编辑场景 <span className="text-ink-soft font-normal ml-1">编辑中…</span></p>
           {canEditName && (
             <div>
@@ -470,7 +470,7 @@ function SceneRow({ scene, onUpdate, onDelete }: {
               <Save className="w-3.5 h-3.5" aria-hidden/> {saving ? '保存中…' : '保存'}
             </button>
           </div>
-        </div>
+        </form>
       ) : (
         <div>
           <div className="flex items-start justify-between mb-2">
