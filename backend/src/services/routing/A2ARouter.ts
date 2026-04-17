@@ -32,8 +32,8 @@ export function scanForA2AMentions(text: string): string[] {
     // 匹配行内 `code` 片段
     .replace(/`[^`]+`/g, '');
 
-  // 匹配行首的 @agentId（支持中文、英文、数字、连字符、下划线）
-  const matches = withoutCodeBlocks.match(/^@([\w\u4e00-\u9fff-]+)/gm);
+  // 匹配行首的 @agentId，正文说明不应被吞进名字里
+  const matches = withoutCodeBlocks.match(/^@([\w\u4e00-\u9fff·-]+)/gm);
   if (!matches) return [];
 
   // 去重

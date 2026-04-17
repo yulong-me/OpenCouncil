@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import {
   AGENT_COLORS, DEFAULT_AGENT_COLOR, STATE_LABELS,
-  mdComponents, extractMentions, TIME_FORMATTER,
+  mdComponents, extractMentions, extractUserMentions, findActiveMentionTrigger, insertMention, TIME_FORMATTER,
   type Agent, type Message, type DiscussionState,
   type OutgoingQueueItem,
 } from '../lib/agents'
@@ -536,10 +536,8 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     const ta = textareaRef.current
     if (!ta || mentionStartIdx < 0) return
     const cursor = ta.selectionStart ?? userInput.length
-    const before = userInput.slice(0, mentionStartIdx)
-    const after = userInput.slice(cursor)
-    const newInput = before + '@' + agentName + ' ' + after
-    setUserInput(newInput)
+    const { nextValue, nextCursor } = insertMention(userInput, mentionStartIdx, cursor, agentName)
+    setUserInput(nextValue)
     closeMentionPicker()
     const target = agents.find(a => a.name === agentName)
     if (target) {
@@ -547,31 +545,30 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
       telemetry('ui:mention:pick', { roomId, agentName, agentId: target.id, agentRole: target.role })
     }
     setTimeout(() => {
-      const newPos = mentionStartIdx + agentName.length + 2
       ta.focus()
-      ta.setSelectionRange(newPos, newPos)
+      ta.setSelectionRange(nextCursor, nextCursor)
     }, 0)
-  }, [userInput, mentionStartIdx, closeMentionPicker, agents])
+  }, [userInput, mentionStartIdx, closeMentionPicker, agents, roomId])
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value
     const cursor = e.target.selectionStart ?? val.length
     setUserInput(val)
-    const textBefore = val.slice(0, cursor)
-    const lineStart = textBefore.lastIndexOf('\n') + 1
-    const textOnLine = textBefore.slice(lineStart)
-    const lastAt = textOnLine.lastIndexOf('@')
-    if (lastAt >= 0) {
-      const query = textOnLine.slice(lastAt + 1)
-      const atPos = lineStart + lastAt
-      const charBefore = atPos > 0 ? val[atPos - 1] : ''
-      if (charBefore === '' || charBefore === ' ' || charBefore === '\n') {
-        openMentionPicker(atPos, query)
-        return
-      }
+    const activeMention = findActiveMentionTrigger(val, cursor)
+    if (activeMention) {
+      openMentionPicker(activeMention.start, activeMention.query)
+      return
     }
     closeMentionPicker()
   }, [openMentionPicker, closeMentionPicker])
+
+  useEffect(() => {
+    if (filteredAgents.length === 0) {
+      setMentionHighlightIdx(0)
+      return
+    }
+    setMentionHighlightIdx(current => Math.min(current, filteredAgents.length - 1))
+  }, [filteredAgents.length])
 
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!mentionPickerOpen) {
@@ -584,6 +581,11 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     const count = filteredAgents.length
     if (count === 0) {
       if (e.key === 'Escape') { e.preventDefault(); closeMentionPicker() }
+      else if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        closeMentionPicker()
+        sendMessageRef.current()
+      }
       return
     }
     if (e.key === 'ArrowDown') { e.preventDefault(); setMentionHighlightIdx(i => (i + 1) % count) }
@@ -599,7 +601,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     const content = rawContent.trim()
     if (!content) return
     // F013: no @ found — open mention picker at cursor, most-recent first
-    if (extractMentions(content).length === 0) {
+    if (extractUserMentions(content).length === 0) {
       const cursor = textareaRef.current?.selectionStart ?? content.length
       setMentionStartIdx(cursor)
       setMentionQuery('')
@@ -609,7 +611,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     }
     setMentionPickerOpen(false)
     // F013: @ is the single source of truth — derive toAgentId from mention text
-    const mentionNames = extractMentions(content)
+    const mentionNames = extractUserMentions(content)
     const targetName = mentionNames[0] ?? null
     const recipientId = targetName
       ? agents.find(a => a.name === targetName)?.id ?? null
@@ -916,6 +918,12 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
               const agentColor = AGENT_COLORS[msg.agentName]?.bg || DEFAULT_AGENT_COLOR.bg
               const agentAvatar = AGENT_COLORS[msg.agentName]?.avatar || DEFAULT_AGENT_COLOR.avatar
               const mentions = extractMentions(msg.content)
+              // Only show @点名 for agents that are actually in this room.
+              // This prevents "phantom routing" where the agent references someone
+              // not in the room (e.g. citing 【乔布斯】 from history but not routing to them).
+              const validMentions = isUser
+                ? [] // USER messages already show routing via toAgentId → toRecipient
+                : mentions.filter(name => agents.some(a => a.name === name))
               const formattedTime = TIME_FORMATTER.format(new Date(msg.timestamp))
 
               if (isUser) {
@@ -1018,10 +1026,10 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
                       <BubbleErrorBoundary agentName={msg.agentName}>
                         <BubbleSection label="思考过程" icon="brain" content={msg.thinking ?? ''} isStreaming={isStreaming} agentColor={agentColor} />
                         <BubbleSection label="回复" icon="output" content={msg.content} isStreaming={isStreaming} agentColor={agentColor} />
-                        {mentions.length > 0 && (
+                        {validMentions.length > 0 && (
                           <div className="flex items-center gap-1.5 text-xs font-medium flex-wrap" style={{ color: agentColor }}>
                             <span className="opacity-50 mr-0.5">@点名</span>
-                            {mentions.map(name => (
+                            {validMentions.map(name => (
                               <span key={name} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: `${agentColor}20`, color: agentColor }}>
                                 {name}
                               </span>
@@ -1123,8 +1131,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
                 {sendError && <div className="text-xs text-red-500 px-1">{sendError}</div>}
                 {mentionPickerOpen && (
                   <MentionPicker
-                    agents={agents}
-                    query={mentionQuery}
+                    agents={filteredAgents}
                     highlightIndex={mentionHighlightIdx}
                     onSelect={selectMentionAgent}
                     onHighlight={setMentionHighlightIdx}

@@ -1,4 +1,11 @@
 import { type Components } from 'react-markdown'
+export {
+  extractMessageMentions as extractMentions,
+  extractUserMentions,
+  findActiveMentionTrigger,
+  insertMention,
+  type ActiveMention,
+} from './mentions'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -93,26 +100,6 @@ export function formatRelativeTime(ts: number): string {
   if (day === 1) return '昨天'
   if (day < 7) return `${day}天前`
   return new Date(ts).toLocaleDateString('zh')
-}
-
-// Extract @mentioned agent names from markdown content
-// Matches patterns like "@哲学家" or "[@经济学家](url)" in markdown
-export function extractMentions(content: string): string[] {
-  const seen = new Set<string>()
-  const patterns = [
-    /\[@([^\]]+)\]\([^)]+\)/g, // [@name](url)
-    /@([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef_a-zA-Z0-9]{1,20})/g, // @name (Chinese + common chars)
-  ]
-  for (const pattern of patterns) {
-    let match
-    while ((match = pattern.exec(content)) !== null) {
-      const name = match[1].trim()
-      if (name && name.length > 0 && !seen.has(name)) {
-        seen.add(name)
-      }
-    }
-  }
-  return Array.from(seen)
 }
 
 // ─── Markdown components (shared) ───────────────────────────────────────────
