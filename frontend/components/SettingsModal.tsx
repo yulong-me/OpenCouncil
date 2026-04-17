@@ -347,24 +347,27 @@ function SceneCreateForm({ onCreated }: { onCreated: (s: SceneConfig) => void })
           <Plus className="w-4 h-4" aria-hidden/>新建场景
         </button>
       ) : (
-        <form className="flex flex-col gap-3" onSubmit={e => e.preventDefault()} noValidate>
+        <div className="flex flex-col gap-3">
           <p className="text-[13px] font-bold text-ink flex items-center gap-1.5"><Plus className="w-4 h-4 text-accent" aria-hidden/>新建场景</p>
           <div>
             <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">名称</label>
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               placeholder="我的自定义场景"
+              autoComplete="off"
               className="w-full settings-input rounded-xl px-3 py-2 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-ink-soft/40"/>
           </div>
           <div>
             <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">描述（可选）</label>
             <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               placeholder="简短描述该场景的用途…"
+              autoComplete="off"
               className="w-full settings-input rounded-xl px-3 py-2 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-ink-soft/40"/>
           </div>
           <div>
             <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">Prompt 模板</label>
             <textarea value={form.prompt} onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))} rows={4}
               placeholder="【场景模式：xxx】&#10;定义该场景下所有 agent 的行为约束…"
+              autoComplete="off"
               className="w-full settings-input rounded-xl px-3 py-2 text-[12px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 resize-none font-mono placeholder:text-ink-soft/40"/>
           </div>
           {error && <p className="text-[12px] text-red-400 bg-red-500/10 px-3 py-1.5 rounded-xl">{error}</p>}
@@ -375,7 +378,7 @@ function SceneCreateForm({ onCreated }: { onCreated: (s: SceneConfig) => void })
               <Plus className="w-3.5 h-3.5" aria-hidden/>{saving ? '创建中…' : '创建'}
             </button>
           </div>
-        </form>
+        </div>
       )}
     </div>
   )
@@ -443,23 +446,26 @@ function SceneRow({ scene, onUpdate, onDelete }: {
   return (
     <div className="settings-surface rounded-xl p-5">
       {editing ? (
-        <form className="flex flex-col gap-3" onSubmit={e => e.preventDefault()} noValidate>
+        <div className="flex flex-col gap-3">
           <p className="text-[13px] font-bold text-ink">编辑场景 <span className="text-ink-soft font-normal ml-1">编辑中…</span></p>
           {canEditName && (
             <div>
               <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">名称</label>
               <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                autoComplete="off"
                 className="w-full settings-input rounded-xl px-3 py-2 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50"/>
             </div>
           )}
           <div>
             <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">描述</label>
             <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              autoComplete="off"
               className="w-full settings-input rounded-xl px-3 py-2 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50"/>
           </div>
           <div>
             <label className="block text-[11px] font-bold text-ink-soft uppercase mb-1.5">Prompt 模板</label>
             <textarea value={form.prompt} onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))} rows={4}
+              autoComplete="off"
               className="w-full settings-input rounded-xl px-3 py-2 text-[12px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/50 resize-none font-mono"/>
           </div>
           {saveError && <p className="text-[12px] text-red-400 bg-red-500/10 px-3 py-1.5 rounded-xl">{saveError}</p>}
@@ -470,7 +476,7 @@ function SceneRow({ scene, onUpdate, onDelete }: {
               <Save className="w-3.5 h-3.5" aria-hidden/> {saving ? '保存中…' : '保存'}
             </button>
           </div>
-        </form>
+        </div>
       ) : (
         <div>
           <div className="flex items-start justify-between mb-2">
