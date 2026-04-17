@@ -2,6 +2,7 @@ import { type Components } from 'react-markdown'
 export {
   extractMessageMentions as extractMentions,
   extractUserMentions,
+  extractUserMentionsFromAgents,
   findActiveMentionTrigger,
   insertMention,
   type ActiveMention,

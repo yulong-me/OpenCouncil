@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import {
   AGENT_COLORS, DEFAULT_AGENT_COLOR, STATE_LABELS,
-  mdComponents, extractMentions, extractUserMentions, findActiveMentionTrigger, insertMention, TIME_FORMATTER,
+  mdComponents, extractMentions, extractUserMentionsFromAgents, findActiveMentionTrigger, insertMention, TIME_FORMATTER,
   type Agent, type Message, type DiscussionState,
   type OutgoingQueueItem,
 } from '../lib/agents'
@@ -554,13 +554,13 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     const val = e.target.value
     const cursor = e.target.selectionStart ?? val.length
     setUserInput(val)
-    const activeMention = findActiveMentionTrigger(val, cursor)
+    const activeMention = findActiveMentionTrigger(val, cursor, agents.map(a => a.name))
     if (activeMention) {
       openMentionPicker(activeMention.start, activeMention.query)
       return
     }
     closeMentionPicker()
-  }, [openMentionPicker, closeMentionPicker])
+  }, [openMentionPicker, closeMentionPicker, agents])
 
   useEffect(() => {
     if (filteredAgents.length === 0) {
@@ -600,8 +600,9 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     if (!roomId || sending) return
     const content = rawContent.trim()
     if (!content) return
+    const agentNames = agents.map(a => a.name)
     // F013: no @ found — open mention picker at cursor, most-recent first
-    if (extractUserMentions(content).length === 0) {
+    if (extractUserMentionsFromAgents(content, agentNames).length === 0) {
       const cursor = textareaRef.current?.selectionStart ?? content.length
       setMentionStartIdx(cursor)
       setMentionQuery('')
@@ -611,7 +612,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     }
     setMentionPickerOpen(false)
     // F013: @ is the single source of truth — derive toAgentId from mention text
-    const mentionNames = extractUserMentions(content)
+    const mentionNames = extractUserMentionsFromAgents(content, agentNames)
     const targetName = mentionNames[0] ?? null
     const recipientId = targetName
       ? agents.find(a => a.name === targetName)?.id ?? null

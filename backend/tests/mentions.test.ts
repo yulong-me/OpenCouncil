@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractMessageMentions,
   extractUserMentions,
+  extractUserMentionsFromAgents,
   findActiveMentionTrigger,
   insertMention,
 } from '../../frontend/lib/mentions.ts';
@@ -9,6 +10,12 @@ import {
 describe('@mention helpers', () => {
   it('extracts inline user mentions for send routing', () => {
     expect(extractUserMentions('帮我看看这个方案 @架构师')).toEqual(['架构师']);
+  });
+
+  it('matches room agents with spaces in their names', () => {
+    expect(
+      extractUserMentionsFromAgents('请 @Paul Graham 和 @Andrej Karpathy 看下', ['Paul Graham', 'Andrej Karpathy']),
+    ).toEqual(['Paul Graham', 'Andrej Karpathy']);
   });
 
   it('ignores inline and code-block mentions when parsing routed message mentions', () => {
@@ -24,11 +31,15 @@ describe('@mention helpers', () => {
   });
 
   it('keeps the picker active only while typing the mention token', () => {
-    expect(findActiveMentionTrigger('@架构师', '@架构师'.length)).toEqual({
+    expect(findActiveMentionTrigger('@架构师', '@架构师'.length, ['架构师'])).toEqual({
       query: '架构师',
       start: 0,
     });
-    expect(findActiveMentionTrigger('@架构师 继续说', '@架构师 继续说'.length)).toBeNull();
+    expect(findActiveMentionTrigger('@Paul Gr', '@Paul Gr'.length, ['Paul Graham'])).toEqual({
+      query: 'Paul Gr',
+      start: 0,
+    });
+    expect(findActiveMentionTrigger('@架构师 继续说', '@架构师 继续说'.length, ['架构师'])).toBeNull();
   });
 
   it('inserts a mention with a separating space when forced-picking from plain text', () => {
