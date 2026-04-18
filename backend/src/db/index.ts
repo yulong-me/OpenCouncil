@@ -29,7 +29,7 @@ export function initDB(): void {
       defaultModel: 'claude-sonnet-4-6',
       apiKey: '',
       baseUrl: '',
-      timeout: 90,
+      timeout: 1800,
       thinking: true,
     });
     providersRepo.upsert('opencode', {
@@ -38,7 +38,7 @@ export function initDB(): void {
       defaultModel: 'MiniMax-M2.7',
       apiKey: '',
       baseUrl: '',
-      timeout: 90,
+      timeout: 1800,
       thinking: true,
     });
     log('INFO', 'db:seed:providers:done');

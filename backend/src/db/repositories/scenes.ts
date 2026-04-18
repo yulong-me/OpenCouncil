@@ -33,6 +33,7 @@ export const scenesRepo = {
       description: (r.description as string) ?? undefined,
       prompt: r.prompt as string,
       builtin: Boolean(r.builtin),
+      maxA2ADepth: (r.max_a2a_depth as number) ?? 5,
     }));
   },
 
@@ -45,6 +46,7 @@ export const scenesRepo = {
       description: (r.description as string) ?? undefined,
       prompt: r.prompt as string,
       builtin: Boolean(r.builtin),
+      maxA2ADepth: (r.max_a2a_depth as number) ?? 5,
     };
   },
 
@@ -52,15 +54,15 @@ export const scenesRepo = {
   create(input: { name: string; description?: string; prompt: string }): SceneConfig {
     const id = generateUniqueId(input.name);
     db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin)
-      VALUES (@id, @name, @description, @prompt, 0)
+      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
+      VALUES (@id, @name, @description, @prompt, 0, 5)
     `).run({
       id,
       name: input.name,
       description: input.description ?? null,
       prompt: input.prompt,
     });
-    return { id, name: input.name, description: input.description, prompt: input.prompt, builtin: false };
+    return { id, name: input.name, description: input.description, prompt: input.prompt, builtin: false, maxA2ADepth: 5 };
   },
 
   /** Update scene fields. builtin scenes can only update prompt/description. */

@@ -7,8 +7,8 @@ import { v4 as uuid } from 'uuid';
 export const roomsRepo = {
   create(room: DiscussionRoom): DiscussionRoom {
     db.prepare(`
-      INSERT INTO rooms (id, topic, state, report, agent_ids, workspace, scene_id, created_at, updated_at)
-      VALUES (@id, @topic, @state, @report, @agentIds, @workspace, @sceneId, @createdAt, @updatedAt)
+      INSERT INTO rooms (id, topic, state, report, agent_ids, workspace, scene_id, created_at, updated_at, max_a2a_depth)
+      VALUES (@id, @topic, @state, @report, @agentIds, @workspace, @sceneId, @createdAt, @updatedAt, @maxA2ADepth)
     `).run({
       id: room.id,
       topic: room.topic,
@@ -19,6 +19,7 @@ export const roomsRepo = {
       sceneId: room.sceneId,
       createdAt: room.createdAt,
       updatedAt: room.updatedAt,
+      maxA2ADepth: room.maxA2ADepth ?? null,
     });
     return room;
   },
@@ -45,6 +46,7 @@ export const roomsRepo = {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
+      maxA2ADepth: (row.max_a2a_depth as number | null) ?? null,
     };
   },
 
@@ -57,7 +59,8 @@ export const roomsRepo = {
         state = @state,
         report = @report,
         agent_ids = @agentIds,
-        updated_at = @updatedAt
+        updated_at = @updatedAt,
+        max_a2a_depth = @maxA2ADepth
       WHERE id = @id
     `).run({
       id,
@@ -68,6 +71,7 @@ export const roomsRepo = {
         ? JSON.stringify(partial.agents.map(a => a.configId))
         : (existing.agent_ids as string),
       updatedAt: Date.now(),
+      maxA2ADepth: partial.maxA2ADepth !== undefined ? partial.maxA2ADepth : (existing.max_a2a_depth as number | null),
     });
     return this.get(id);
   },
@@ -132,7 +136,7 @@ export const roomsRepo = {
         agentCount = 0
       }
       const preview = r.preview
-        ? r.preview.slice(0, 80)
+        ? r.preview.slice(0, 120)
         : undefined
       return {
         id: r.id,

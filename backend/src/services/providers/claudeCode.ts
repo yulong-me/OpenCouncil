@@ -20,8 +20,8 @@ export async function* streamClaudeCodeProvider(
   const sessionId = opts.sessionId as string | undefined;
   const roomId = opts.roomId as string | undefined;
   const agentName = opts.agentName as string | undefined;
-  const firstTokenTimeoutMs = Number(opts.firstTokenTimeoutMs ?? 15000);
-  const idleTokenTimeoutMs = Number(opts.idleTokenTimeoutMs ?? 15000);
+  const firstTokenTimeoutMs = Number(opts.firstTokenTimeoutMs ?? 180000); // 3 min
+  const idleTokenTimeoutMs = Number(opts.idleTokenTimeoutMs ?? 180000);
   // Default all permissions: write, exec, network
 
   // Resolve CLI path (expand ~)

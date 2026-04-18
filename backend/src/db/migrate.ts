@@ -91,6 +91,30 @@ export function initSchema(): void {
     // Column already exists — safe to ignore
   }
 
+  // F016/F016-FIX: add description column to scenes table (may have been created before this column existed)
+  try {
+    db.exec("ALTER TABLE scenes ADD COLUMN description TEXT");
+    log('INFO', 'db:schema:migrate:scenes:description');
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
+  // F017: add max_a2a_depth column to rooms table (nullable, null=inherit scene default)
+  try {
+    db.exec("ALTER TABLE rooms ADD COLUMN max_a2a_depth INTEGER");
+    log('INFO', 'db:schema:migrate:rooms:max_a2a_depth');
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
+  // F017: add max_a2a_depth column to scenes table (default 5)
+  try {
+    db.exec("ALTER TABLE scenes ADD COLUMN max_a2a_depth INTEGER DEFAULT 5 NOT NULL");
+    log('INFO', 'db:schema:migrate:scenes:max_a2a_depth');
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
   // F004 Migration: INIT/RESEARCH/DEBATE/CONVERGING → RUNNING, HOST → MANAGER, AGENT → WORKER
   try {
     const roomsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='rooms'").get() as { sql: string } | undefined;
@@ -312,8 +336,33 @@ export function ensureBuiltinScenes(): void {
 - 单纯总结别人说的话（那是记录员的事，不是你的事）
 - 无条件同意他人的结论
 - 长时间不发言
-- 说"这个问题很好"然后没有然后了`,
+- 说"这个问题很好"然后没有然后了
+
+【A2A 交互规则（必须遵守）】
+
+当你被另一个专家 @ 提到时（不是用户 @ 你）：
+- **必须回复**：这是协作邀请，不是闲聊，直接回应对方的问题或观点
+- **回复格式**：先用 @对方 开头，再写你的观点（@ 必须放在行首）
+  - ✅ 正确：@马斯克 我不同意你的观点，理由是...
+  - ❌ 错误：我不同意你的观点，@马斯克你怎么看
+- **回复末尾**：如果想继续讨论，句末加 @对方 触发下一轮
+- **不要沉默**：被 @ 后不回复是失职，链条会断掉
+
+当你主动 @ 另一个专家时：
+- 在句末加 @专家名 触发对方接话
+- 等待对方回复，不要自己继续往下写长回复
+
+【引用 vs 点名（必须区分）】
+
+- **@名字** = 路由点名，希望对方响应
+  - 例：@乔布斯 你们当年对"信息分发"这个问题的答案是什么？
+- **【名字】** = 引用/提及历史观点，不触发路由
+  - 例：【乔布斯】说过："用户不知道自己要什么，直到你把它做出来给他们看"
+  - 例：【马斯克】你认为苹果还能做出下一个 iPhone 吗？
+
+引用他人发言或历史观点时，用【方括号】而不是@，这样系统不会把它误判为路由指令。`,
       builtin: 1,
+      maxA2ADepth: 5,
     },
     {
       id: 'software-development',
@@ -351,19 +400,44 @@ export function ensureBuiltinScenes(): void {
 【禁止行为】
 - 盲目点头同意："LGTM"（除非你真的给出了实质 review 意见）
 - 绕过 review 流程
-- 对明显有问题的代码视而不见`,
+- 对明显有问题的代码视而不见
+
+【A2A 交互规则（必须遵守）】
+
+当你被另一个专家 @ 提到时（不是用户 @ 你）：
+- **必须回复**：这是协作邀请，直接回应对方的质疑或问题
+- **回复格式**：先用 @对方 开头，再写你的观点（@ 必须放在行首）
+  - ✅ 正确：@架构师 你说的这个问题，我来解释下设计意图...
+  - ❌ 错误：我来解释下设计意图，@架构师你怎么看
+- **回复末尾**：如果想继续讨论，句末加 @对方 触发下一轮
+- **不要沉默**：被 @ 后不回复是失职，链条会断掉
+
+当你主动 @ 另一个专家时：
+- 在句末加 @专家名 触发对方接话
+- 等待对方回复，不要自己继续往下写长回复
+
+【引用 vs 点名（必须区分）】
+
+- **@名字** = 路由点名，希望对方响应
+  - 例：@架构师 你说的这个问题，我来解释下设计意图...
+- **【名字】** = 引用/提及历史观点，不触发路由
+  - 例：【架构师】在 PR 中提到需要添加单元测试，我认为应该先讨论测试覆盖率标准
+
+引用他人发言或历史观点时，用【方括号】而不是@，这样系统不会把它误判为路由指令。`,
       builtin: 1,
+      maxA2ADepth: 5,
     },
   ];
 
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO scenes (id, name, description, prompt, builtin)
-    VALUES (@id, @name, @description, @prompt, @builtin)
+  const upsert = db.prepare(`
+    INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
+    VALUES (@id, @name, @description, @prompt, @builtin, @maxA2ADepth)
+    ON CONFLICT(id) DO UPDATE SET prompt = @prompt, description = @description, builtin = @builtin, max_a2a_depth = @maxA2ADepth
   `);
 
   for (const scene of builtinScenes) {
     try {
-      insert.run(scene);
+      upsert.run(scene);
       log('INFO', 'db:scene:seed', { id: scene.id, name: scene.name });
     } catch (err) {
       log('WARN', 'db:scene:seed:failed', { id: scene.id, error: String(err) });

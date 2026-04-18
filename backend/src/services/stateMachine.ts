@@ -30,9 +30,9 @@ import { auditRepo } from '../db/index.js';
 import { ensureWorkspace } from './workspace.js';
 import {
   scanForA2AMentions,
-  MAX_A2A_DEPTH,
   updateA2AContext,
 } from './routing/A2ARouter.js';
+import { scenesRepo } from '../db/repositories/scenes.js';
 import { buildRoomScopedSystemPrompt } from './scenePromptBuilder.js';
 import { debug, info, warn, error } from '../lib/logger.js';
 
@@ -337,7 +337,8 @@ export async function routeToAgent(
   if (room.state === 'DONE') return;
 
   const contentSnippet = content.length > 80 ? content.slice(0, 80) + '…' : content;
-  const mentions = scanForA2AMentions(content);
+  const agentNames = room.agents.map(a => a.name);
+  const mentions = scanForA2AMentions(content, agentNames);
   info('msg:recv', { roomId, contentLength: content.length, contentSnippet, mentions, toAgentId });
 
   const target = room.agents.find(a => a.id === toAgentId);
@@ -575,8 +576,8 @@ async function streamingCallAgent(
       workspace,
       roomId,
       agentName,
-      firstTokenTimeoutMs: 15000,
-      idleTokenTimeoutMs: 15000,
+      firstTokenTimeoutMs: 180000,  // 3 min — generous for cold-start / long thinking
+      idleTokenTimeoutMs: 180000,
     };
 
     msg = addMessage(roomId, {
@@ -719,7 +720,7 @@ export async function a2aOrchestrate(
   const room = store.get(roomId);
   if (!room) return;
 
-  let mentions = scanForA2AMentions(outputText);
+  let mentions = scanForA2AMentions(outputText, room.agents.map(a => a.name));
   debug('a2a:scan', { roomId, fromAgentName, mentions });
   if (mentions.length === 0) return;
 
@@ -735,10 +736,15 @@ export async function a2aOrchestrate(
   const currentDepth = room.a2aDepth ?? 0;
   const currentChain = room.a2aCallChain ?? [];
 
+  // 有效深度：room 覆盖 > scene 默认 > 5
+  const effectiveMaxDepth = room.maxA2ADepth !== null
+    ? room.maxA2ADepth
+    : (scenesRepo.get(room.sceneId)?.maxA2ADepth ?? 5);
+
   telemetry('a2a:detected', { roomId, fromAgentName, mentions, depth: currentDepth });
 
 // 达深度上限 → 抛出 System 卡片，不再交给 Manager 收口
-  if (currentDepth >= MAX_A2A_DEPTH) {
+  if (effectiveMaxDepth > 0 && currentDepth >= effectiveMaxDepth) {
     telemetry('a2a:depth_limit', { roomId, depth: currentDepth, chain: currentChain });
     addSystemMessage(roomId, '[系统提醒] 业务内部探讨达到上限，请您介入引导方向');
     return;
@@ -760,7 +766,11 @@ export async function a2aOrchestrate(
     }
 
     // 跳过已在调用链中的 Agent（防止循环）
-    if (newChain.includes(targetAgent.name)) {
+    // 规则：只拦截"真正的循环"
+    // - A→B：允许
+    // - A→B→A（2人来回）：允许 — 直接对答不算循环
+    // - A→B→C→A（3人+循环）：拦截
+    if (newChain.length > 2 && newChain.includes(targetAgent.name)) {
       telemetry('a2a:skip_cycle', { roomId, target: targetAgent.name, chain: newChain });
       continue;
     }

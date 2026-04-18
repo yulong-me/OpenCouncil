@@ -97,6 +97,7 @@ roomsRouter.post('/', async (req, res) => {
     sessionIds: {},
     a2aDepth: 0,
     a2aCallChain: [],
+    maxA2ADepth: null, // F017: null = inherit from scene
   };
   store.create(room);
   roomsRepo.create(room);
@@ -116,6 +117,29 @@ roomsRouter.get('/:id', (req, res) => {
   res.json(room);
 });
 
+// PATCH /api/rooms/:id — 更新讨论室配置（F017: maxA2ADepth）
+roomsRouter.patch('/:id', (req, res) => {
+  const { id } = req.params;
+  const room = store.get(id);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+
+  const { maxA2ADepth } = req.body as { maxA2ADepth?: number | null };
+
+  // 有效值：3, 5, 10, 0(无限), null(继承scene)
+  const validValues = new Set([3, 5, 10, 0, null]);
+  if (maxA2ADepth !== undefined && !validValues.has(maxA2ADepth)) {
+    return res.status(400).json({ error: 'maxA2ADepth must be 3, 5, 10, 0, or null' });
+  }
+
+  const updated = roomsRepo.update(id, { maxA2ADepth });
+  if (!updated) return res.status(404).json({ error: 'Room not found' });
+
+  // 同步更新 in-memory store
+  store.update(id, { maxA2ADepth: updated.maxA2ADepth });
+
+  res.json(updated);
+});
+
 // GET /api/rooms/:id/messages — 轮询获取消息
 roomsRouter.get('/:id/messages', (req, res) => {
   const room = store.get(req.params.id);
@@ -126,6 +150,7 @@ roomsRouter.get('/:id/messages', (req, res) => {
     messages: room.messages,
     agents: room.agents,
     report: room.report,
+    maxA2ADepth: room.maxA2ADepth, // F017: effective depth (null = inherit scene)
   });
 });
 

@@ -113,7 +113,7 @@ router.post('/:name/test', (req, res) => {
   if (!p) return res.status(404).json({ error: 'Provider not found' })
 
   const cliPath = p.cliPath.replace(/^~/, process.env.HOME || '/root')
-  const timeout = Math.max((p.timeout ?? 90) * 1000, 30000)
+  const timeout = Math.max((p.timeout ?? 1800) * 1000, 30000)
   const testPrompt = '说一个简单的词，比如"你好"'
 
   const env: Record<string, string> = { ...(process.env as Record<string, string>) }

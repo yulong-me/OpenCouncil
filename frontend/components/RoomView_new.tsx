@@ -32,6 +32,38 @@ import { AgentAvatar } from './AgentAvatar'
 import { ErrorBubble, type AgentRunErrorEvent } from './ErrorBubble'
 import { BubbleErrorBoundary } from './BubbleErrorBoundary'
 
+// F017: A2A depth segmented control
+function DepthSwitcher({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
+  const options: { label: string; value: number | null; title: string }[] = [
+    { label: '浅', value: 3, title: '协作深度 3 层' },
+    { label: '中', value: 5, title: '协作深度 5 层（默认）' },
+    { label: '深', value: 10, title: '协作深度 10 层' },
+    { label: '∞', value: 0, title: '无深度限制' },
+  ]
+  // null means "inherit scene default" — we treat null as 5 (the scene default) for display
+  const effective = value ?? 5
+
+  return (
+    <div className="flex items-center gap-0.5 px-1 py-0.5 bg-surface-muted rounded-lg" title="A2A 协作深度">
+      {options.map(opt => (
+        <button
+          key={String(opt.value)}
+          type="button"
+          title={opt.title}
+          onClick={() => onChange(opt.value)}
+          className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-all duration-150 ${
+            effective === opt.value
+              ? 'bg-accent text-white shadow-sm'
+              : 'text-ink-soft hover:text-ink hover:bg-surface-muted/60'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 interface RoomViewProps { roomId?: string; defaultCreateOpen?: boolean }
 
 export default function RoomView_new({ roomId, defaultCreateOpen = false }: RoomViewProps) {
@@ -57,6 +89,8 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
   const [streamingAgentIds, setStreamingAgentIds] = useState<Set<string>>(new Set())
   const [messageErrorMap, setMessageErrorMap] = useState<Record<string, AgentRunErrorEvent>>({})
   const [orphanErrors, setOrphanErrors] = useState<AgentRunErrorEvent[]>([])
+  // F017: A2A depth config (null = inherit scene default)
+  const [maxA2ADepth, setMaxA2ADepth] = useState<number | null>(null)
 
   // F015: outgoing message queue state
   const [outgoingQueue, setOutgoingQueue] = useState<OutgoingQueueItem[]>([])
@@ -171,7 +205,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
       })
       // F0050: 用户消息含 @mention → 加入队列
       if (msg.agentRole === 'USER' && msg.content) {
-        const names = extractMentions(msg.content)
+        const names = extractMentions(msg.content, agentsRef.current.map(a => a.name))
         setMentionQueue(prev => {
           const existingIds = new Set(prev.map(m => m.agentId))
           const newEntries: QueuedMention[] = []
@@ -274,7 +308,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
       telemetry('socket:stream_end', { id: data.id, duration_ms: data.duration_ms })
       // F0050: Manager 响应结束，解析其内容中的 @mention 加入队列
       if (msg?.agentRole === 'MANAGER' && msg.content) {
-        const names = extractMentions(msg.content)
+        const names = extractMentions(msg.content, agentsRef.current.map(a => a.name))
         setMentionQueue(prev => {
           const existingIds = new Set(prev.map(m => m.agentId))
           const newEntries: QueuedMention[] = []
@@ -399,6 +433,10 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
         setState(newState)
         setAgents(newAgents)
         setReport(data.report || '')
+        // F017: read effective maxA2ADepth from poll response
+        if (data.maxA2ADepth !== undefined) {
+          setMaxA2ADepth(data.maxA2ADepth)
+        }
         const fetchedMessages = (data.messages || []) as Message[]
         const fetchedById = new Map(fetchedMessages.map(m => [m.id, m]))
         let recoveredMissedStreamEnd = false
@@ -506,11 +544,15 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
   // F015: room is busy when any agent is streaming or has thinking/waiting status
   const isRoomBusy = streamingAgentIds.size > 0 || agents.some(a => a.status === 'thinking' || a.status === 'waiting')
 
-  const openMentionPicker = useCallback((mentionAtIdx: number, query: string) => {
+  const openMentionPicker = useCallback((mentionAtIdx: number, query: string, filteredCount?: number) => {
     setMentionPickerOpen(true)
     setMentionQuery(query)
     setMentionStartIdx(mentionAtIdx)
-    setMentionHighlightIdx(0)
+    // When query is empty, highlight last item so the bottom of the list is immediately visible
+    const defaultHighlight = query === '' && (filteredCount ?? 0) > 1
+      ? (filteredCount ?? 1) - 1
+      : 0
+    setMentionHighlightIdx(defaultHighlight)
   }, [])
 
   const closeMentionPicker = useCallback(() => {
@@ -550,17 +592,80 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     }, 0)
   }, [userInput, mentionStartIdx, closeMentionPicker, agents, roomId])
 
+  // OPT001-P0: Memoize agentNames to avoid rebuilding array on every keystroke
+  const agentNames = useMemo(() => agents.map(a => a.name), [agents])
+
+  // OPT001-P0: Debounce mention detection to avoid cascade of setState on every keystroke.
+  // Stores pending input value so the debounced callback can read it without stale closure.
+  const pendingInputRef = useRef({ value: '', cursor: 0 })
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const compositionRef = useRef(false) // true while IME composition is in progress
+
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value
     const cursor = e.target.selectionStart ?? val.length
     setUserInput(val)
-    const activeMention = findActiveMentionTrigger(val, cursor, agents.map(a => a.name))
-    if (activeMention) {
-      openMentionPicker(activeMention.start, activeMention.query)
-      return
+    pendingInputRef.current = { value: val, cursor }
+
+    // OPT001-IME: Skip mention detection during IME composition — only detect after commit
+    if (compositionRef.current) return
+
+    // Cancel any pending debounced call
+    if (debounceTimerRef.current !== null) {
+      clearTimeout(debounceTimerRef.current)
     }
-    closeMentionPicker()
-  }, [openMentionPicker, closeMentionPicker, agents])
+
+    // Debounce mention detection by 150ms
+    debounceTimerRef.current = setTimeout(() => {
+      const { value, cursor: c } = pendingInputRef.current
+      const activeMention = findActiveMentionTrigger(value, c, agentNames)
+      if (activeMention) {
+        // Open picker as soon as @ is detected — show all agents if no query yet
+        // Compute filtered count so we can highlight the last item when query is empty
+        const filteredCount = activeMention.query.length > 0
+          ? agents.filter(a => a.name.toLowerCase().includes(activeMention.query.toLowerCase())).length
+          : agents.length
+        openMentionPicker(activeMention.start, activeMention.query, filteredCount)
+      } else {
+        closeMentionPicker()
+      }
+      debounceTimerRef.current = null
+    }, 150)
+  }, [openMentionPicker, closeMentionPicker, agentNames])
+
+  const handleCompositionStart = useCallback(() => {
+    compositionRef.current = true
+    if (debounceTimerRef.current !== null) {
+      clearTimeout(debounceTimerRef.current)
+      debounceTimerRef.current = null
+    }
+  }, [])
+
+  const handleCompositionEnd = useCallback((e: React.CompositionEvent<HTMLTextAreaElement>) => {
+    compositionRef.current = false
+    // Manually trigger input change with the committed value so picker detection runs
+    const val = e.currentTarget.value
+    const cursor = e.currentTarget.selectionStart ?? val.length
+    pendingInputRef.current = { value: val, cursor }
+    const activeMention = findActiveMentionTrigger(val, cursor, agentNames)
+    if (activeMention) {
+      const filteredCount = activeMention.query.length > 0
+        ? agents.filter(a => a.name.toLowerCase().includes(activeMention.query.toLowerCase())).length
+        : agents.length
+      openMentionPicker(activeMention.start, activeMention.query, filteredCount)
+    } else {
+      closeMentionPicker()
+    }
+  }, [openMentionPicker, closeMentionPicker, agentNames])
+
+  // OPT001: Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current !== null) {
+        clearTimeout(debounceTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (filteredAgents.length === 0) {
@@ -868,6 +973,25 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
                   <span className="px-3 py-1 bg-accent/10 border border-accent/20 rounded-full text-xs font-bold text-accent">{STATE_LABELS[state]}</span>
                 </div>
               )}
+              {/* F017: A2A depth switcher */}
+              {roomId && (
+                <DepthSwitcher
+                  value={maxA2ADepth}
+                  onChange={async (newDepth) => {
+                    setMaxA2ADepth(newDepth)
+                    try {
+                      await fetch(`${API}/api/rooms/${roomId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ maxA2ADepth: newDepth }),
+                      })
+                    } catch {
+                      // revert on error
+                      setMaxA2ADepth(maxA2ADepth)
+                    }
+                  }}
+                />
+              )}
               <button
                 type="button"
                 onClick={() => { setSettingsInitialTab('agent'); setSettingsOpen(true) }}
@@ -918,7 +1042,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
               const hasOutput = Boolean(msg.content.trim() || msg.thinking?.trim())
               const agentColor = AGENT_COLORS[msg.agentName]?.bg || DEFAULT_AGENT_COLOR.bg
               const agentAvatar = AGENT_COLORS[msg.agentName]?.avatar || DEFAULT_AGENT_COLOR.avatar
-              const mentions = extractMentions(msg.content)
+              const mentions = extractMentions(msg.content, agents.map(a => a.name))
               // Only show @点名 for agents that are actually in this room.
               // This prevents "phantom routing" where the agent references someone
               // not in the room (e.g. citing 【乔布斯】 from history but not routing to them).
@@ -1141,10 +1265,12 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
                 <div className="flex gap-3">
                   <textarea
                     ref={textareaRef}
-                    className="app-islands-input flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-[14px] text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all resize-none min-h-12 max-h-48 leading-relaxed"
+                    className="app-islands-input flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-[14px] text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent resize-none min-h-12 max-h-48 leading-relaxed"
                     placeholder="输入消息，或 @mention 专家…"
                     value={userInput}
                     onChange={handleInputChange}
+                    onCompositionStart={handleCompositionStart}
+                    onCompositionEnd={handleCompositionEnd}
                     onKeyDown={handleInputKeyDown}
                     disabled={sending}
                     aria-label="输入消息"

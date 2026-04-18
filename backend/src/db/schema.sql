@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS providers (
   default_model     TEXT NOT NULL,
   api_key           TEXT NOT NULL DEFAULT '',
   base_url          TEXT NOT NULL DEFAULT '',
-  timeout           INTEGER NOT NULL DEFAULT 90,
+  timeout           INTEGER NOT NULL DEFAULT 1800,
   thinking          INTEGER NOT NULL DEFAULT 1,
   last_tested       INTEGER,
   last_test_result  TEXT

@@ -106,6 +106,8 @@ export interface DiscussionRoom {
   a2aDepth: number;
   /** A2A 调用链 */
   a2aCallChain: string[];
+  /** F017: Room 级最大 A2A 深度覆盖，null=继承 scene 默认值 */
+  maxA2ADepth: number | null;
 }
 
 // F016: Scene 配置
@@ -115,6 +117,8 @@ export interface SceneConfig {
   description?: string;
   prompt: string;
   builtin: boolean;
+  /** F017: Scene 默认 A2A 最大深度，0=无限 */
+  maxA2ADepth: number;
 }
 
 // F016: 内置 Scene ID 常量
