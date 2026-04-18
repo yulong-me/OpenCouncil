@@ -20,10 +20,10 @@ export function initDB(): void {
   initSchema();
   migrateFromJson();
 
-  // Seed default provider if empty
-  const providers = providersRepo.list();
-  if (Object.keys(providers).length === 0) {
-    providersRepo.upsert('claude-code', {
+  // Seed / sync default providers (upsert so existing records get updated defaults)
+  const SEEDED_PROVIDERS = [
+    {
+      name: 'claude-code',
       label: 'Claude Code',
       cliPath: 'claude',
       defaultModel: 'claude-sonnet-4-6',
@@ -31,8 +31,9 @@ export function initDB(): void {
       baseUrl: '',
       timeout: 1800,
       thinking: true,
-    });
-    providersRepo.upsert('opencode', {
+    },
+    {
+      name: 'opencode',
       label: 'OpenCode',
       cliPath: '~/.opencode/bin/opencode',
       defaultModel: 'MiniMax-M2.7',
@@ -40,8 +41,10 @@ export function initDB(): void {
       baseUrl: '',
       timeout: 1800,
       thinking: true,
-    });
-    log('INFO', 'db:seed:providers:done');
+    },
+  ];
+  for (const p of SEEDED_PROVIDERS) {
+    providersRepo.upsert(p.name, p);
   }
 
   // Seed / upgrade default agents: detect existing seeded agents by well-known IDs
