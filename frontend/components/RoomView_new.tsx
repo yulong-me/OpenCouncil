@@ -3,32 +3,27 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
-import ReactMarkdown from 'react-markdown'
 import { API_URL } from '@/lib/api'
 
 const API = API_URL;
-import remarkGfm from 'remark-gfm'
-import remarkBreaks from 'remark-breaks'
 import { io, type Socket } from 'socket.io-client'
 import {
-  Menu, Download, ChevronDown, BrainCircuit, UserPlus, Users, X, Wrench, Copy, Maximize2,
+  Menu, Download, ChevronDown, UserPlus, Users,
 } from 'lucide-react'
 import {
-  AGENT_COLORS, DEFAULT_AGENT_COLOR, STATE_LABELS,
-  mdComponents, extractMentions, extractUserMentionsFromAgents, findActiveMentionTrigger, insertMention, TIME_FORMATTER,
+  extractUserMentionsFromAgents,
   type Agent, type Message, type DiscussionState, type ToolCall,
 } from '../lib/agents'
 import { error as logError, telemetry, setRoomId } from '../lib/logger'
 import CreateRoomModal from './CreateRoomModal'
 import SettingsModal from './SettingsModal'
-import MentionPicker from './MentionPicker'
-import { BubbleSection } from './BubbleSection'
 import { RoomListSidebarDesktop, RoomListSidebarMobile } from './RoomListSidebar'
 import { AgentPanel } from './AgentPanel'
 import { AgentInviteDrawer } from './AgentInviteDrawer'
-import { AgentAvatar } from './AgentAvatar'
-import { ErrorBubble, type AgentRunErrorEvent } from './ErrorBubble'
-import { BubbleErrorBoundary } from './BubbleErrorBoundary'
+import { type AgentRunErrorEvent } from './ErrorBubble'
+import { MessageList } from './MessageList'
+import { RoomComposer } from './RoomComposer'
+import { type RoomComposerHandle } from './RoomComposer'
 
 // F017: A2A depth dropdown
 function DepthSwitcher({ value, onChange, currentDepth, maxDepth }: {
@@ -102,12 +97,9 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
   const [settingsInitialTab, setSettingsInitialTab] = useState<'agent' | 'provider'>('agent')
   // AC-4: mobile agent drawer
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
-  const [userInput, setUserInput] = useState('')
   const [sending, setSending] = useState(false)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
-  const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null)
-  // F013: selectedRecipientId kept for telemetry only; routing comes from @ mention text
   const [streamingAgentIds, setStreamingAgentIds] = useState<Set<string>>(new Set())
   const [messageErrorMap, setMessageErrorMap] = useState<Record<string, AgentRunErrorEvent>>({})
   const [orphanErrors, setOrphanErrors] = useState<AgentRunErrorEvent[]>([])
@@ -122,11 +114,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
   // F017: displayMax — user-selected depth option takes priority over poll's effectiveMaxDepth
   const displayMax = maxA2ADepth !== null ? maxA2ADepth : effectiveMaxDepth
 
-  // @mention picker state
-  const [mentionPickerOpen, setMentionPickerOpen] = useState(false)
-  const [mentionQuery, setMentionQuery] = useState('')
-  const [mentionStartIdx, setMentionStartIdx] = useState(-1)
-  const [mentionHighlightIdx, setMentionHighlightIdx] = useState(0)
   const [mounted, setMounted] = useState(false)
 
   const { theme, resolvedTheme, setTheme } = useTheme()
@@ -138,7 +125,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     setSettingsInitialTab('agent')
     setSettingsOpen(true)
   }, [])
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const composerRef = useRef<RoomComposerHandle>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollStateRef = useRef<{ state: DiscussionState; agents: Agent[] }>({ state: 'RUNNING' as DiscussionState, agents: [] as Agent[] })
   const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
@@ -147,50 +134,36 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
 
   // F007: invite drawer
   const [showInviteDrawer, setShowInviteDrawer] = useState(false)
-  // Tool call hover tooltip
-  const [hoveredToolCall, setHoveredToolCall] = useState<string | null>(null)
-  const [expandedToolCall, setExpandedToolCall] = useState<string | null>(null)
-  const hoverTimerRef = useRef<number | undefined>(undefined)
   const userScrolledRef = useRef(false)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const streamingCountRef = useRef(0)
   const streamingAgentIdsRef = useRef<Set<string>>(new Set())
   const socketRef = useRef<Socket | null>(null)
-  const sendMessageRef = useRef<() => void>(() => {})
   const agentsRef = useRef<Agent[]>([])
+  const sendErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     if (userScrolledRef.current) return
     const behavior = streamingCountRef.current > 0 ? 'instant' : 'smooth'
     messagesEndRef.current?.scrollIntoView({ behavior })
-  }
+  }, [])
 
-  const handleScroll = () => {
+  const handleScroll = useCallback(() => {
     const el = messagesContainerRef.current
     if (!el) return
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
     userScrolledRef.current = distFromBottom > 100
     setShowScrollBtn(distFromBottom > 100)
-  }
+  }, [])
 
-  const handleScrollToBottom = () => {
+  const handleScrollToBottom = useCallback(() => {
     userScrolledRef.current = false
     setShowScrollBtn(false)
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  }, [])
 
-  useEffect(() => { scrollToBottom() }, [messages])
+  useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
 
-  // AC-1: Auto-resize textarea
-  useEffect(() => {
-    const ta = textareaRef.current
-    if (!ta) return
-    ta.style.height = 'auto'
-    const maxH = 200
-    const newH = Math.min(ta.scrollHeight, maxH)
-    ta.style.height = `${newH}px`
-    ta.style.overflowY = ta.scrollHeight > maxH ? 'auto' : 'hidden'
-  }, [userInput])
   useEffect(() => setMounted(true), [])
 
   // AC-5: debug logs are no longer synced to UI state (panel removed)
@@ -204,7 +177,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     setAgents([])
     setState('RUNNING')
     setReport('')
-    setSelectedRecipientId(null)
     setStreamingAgentIds(new Set())
     setMessageErrorMap({})
     setOrphanErrors([])
@@ -216,9 +188,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     streamingAgentIdsRef.current.clear()
     userScrolledRef.current = false
     setShowScrollBtn(false)
-    // Clear tool call hover states
-    setHoveredToolCall(null)
-    setExpandedToolCall(null)
   }, [roomId])
 
 
@@ -526,217 +495,48 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
   // ─── @mention helpers ────────────────────────────────────────────────────────
   // F013: derive last-active WORKER from message history (for mention picker sort)
   const lastActiveWorkerId = useMemo(() => {
-    const workerMsgs = [...messages].reverse().filter(m => m.agentRole === 'WORKER')
-    return workerMsgs[0]?.agentName
-      ? agents.find(a => a.name === workerMsgs[0].agentName)?.id ?? null
-      : null
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i]
+      if (msg.agentRole !== 'WORKER') continue
+      return agents.find(a => a.name === msg.agentName)?.id ?? null
+    }
+    return null
   }, [messages, agents])
 
-  const filteredAgents = useMemo(() => {
-    const base = mentionQuery
-      ? agents.filter(a => a.name.toLowerCase().includes(mentionQuery.toLowerCase()))
-      : agents
-    // F013: put last-active WORKER at top of mention picker
-    if (!lastActiveWorkerId || mentionQuery) return base
-    return [
-      ...base.filter(a => a.id === lastActiveWorkerId),
-      ...base.filter(a => a.id !== lastActiveWorkerId),
-    ]
-  }, [agents, mentionQuery, lastActiveWorkerId])
-  const sortedMessages = useMemo(
-    () => [...messages].sort((a, b) => a.timestamp - b.timestamp),
-    [messages],
-  )
   const currentAgentConfigIds = useMemo(
     () => agents.map(a => a.configId ?? ''),
     [agents],
   )
-
-  // F015: room is busy when any agent is streaming or has thinking/waiting status
-  const isRoomBusy = streamingAgentIds.size > 0 || agents.some(a => a.status === 'thinking' || a.status === 'waiting')
-
-  const openMentionPicker = useCallback((mentionAtIdx: number, query: string, filteredCount?: number) => {
-    setMentionPickerOpen(true)
-    setMentionQuery(query)
-    setMentionStartIdx(mentionAtIdx)
-    // When query is empty, highlight last item so the bottom of the list is immediately visible
-    const defaultHighlight = query === '' && (filteredCount ?? 0) > 1
-      ? (filteredCount ?? 1) - 1
-      : 0
-    setMentionHighlightIdx(defaultHighlight)
-  }, [])
-
-  const closeMentionPicker = useCallback(() => {
-    setMentionPickerOpen(false)
-    setMentionQuery('')
-    setMentionStartIdx(-1)
-  }, [])
-
-  const prefillMention = useCallback((agent: Agent) => {
-    setUserInput(current => current.trim() ? current : `@${agent.name} `)
-    setSelectedRecipientId(agent.id)
-    closeMentionPicker()
-    requestAnimationFrame(() => textareaRef.current?.focus())
-  }, [closeMentionPicker])
-
-  useEffect(() => {
-    if (!mentionPickerOpen) return
-    const onMouseDown = (ev: MouseEvent) => {
-      const target = ev.target as HTMLElement | null
-      if (!target) return
-      if (textareaRef.current?.contains(target)) return
-      if (target.closest('[data-mention-picker="1"]')) return
-      closeMentionPicker()
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [mentionPickerOpen, closeMentionPicker])
-
-  const selectMentionAgent = useCallback((agentName: string) => {
-    const ta = textareaRef.current
-    if (!ta || mentionStartIdx < 0) return
-    const cursor = ta.selectionStart ?? userInput.length
-    const { nextValue, nextCursor } = insertMention(userInput, mentionStartIdx, cursor, agentName)
-    setUserInput(nextValue)
-    closeMentionPicker()
-    const target = agents.find(a => a.name === agentName)
-    if (target) {
-      setSelectedRecipientId(target.id)
-      telemetry('ui:mention:pick', { roomId, agentName, agentId: target.id, agentRole: target.role })
-    }
-    setTimeout(() => {
-      ta.focus()
-      ta.setSelectionRange(nextCursor, nextCursor)
-    }, 0)
-  }, [userInput, mentionStartIdx, closeMentionPicker, agents, roomId])
-
-  // OPT001-P0: Memoize agentNames to avoid rebuilding array on every keystroke
   const agentNames = useMemo(() => agents.map(a => a.name), [agents])
 
-  // OPT001-P0: Debounce mention detection to avoid cascade of setState on every keystroke.
-  // Stores pending input value so the debounced callback can read it without stale closure.
-  const pendingInputRef = useRef({ value: '', cursor: 0 })
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const compositionRef = useRef(false) // true while IME composition is in progress
-
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value
-    const cursor = e.target.selectionStart ?? val.length
-    setUserInput(val)
-    pendingInputRef.current = { value: val, cursor }
-
-    // OPT001-IME: Skip mention detection during IME composition — only detect after commit
-    if (compositionRef.current) return
-
-    // Cancel any pending debounced call
-    if (debounceTimerRef.current !== null) {
-      clearTimeout(debounceTimerRef.current)
+  const showSendError = useCallback((message: string, timeoutMs = 4000) => {
+    if (sendErrorTimerRef.current !== null) {
+      clearTimeout(sendErrorTimerRef.current)
     }
-
-    // Debounce mention detection by 150ms
-    debounceTimerRef.current = setTimeout(() => {
-      const { value, cursor: c } = pendingInputRef.current
-      const activeMention = findActiveMentionTrigger(value, c, agentNames)
-      if (activeMention) {
-        // Open picker as soon as @ is detected — show all agents if no query yet
-        // Compute filtered count so we can highlight the last item when query is empty
-        const filteredCount = activeMention.query.length > 0
-          ? agents.filter(a => a.name.toLowerCase().includes(activeMention.query.toLowerCase())).length
-          : agents.length
-        openMentionPicker(activeMention.start, activeMention.query, filteredCount)
-      } else {
-        closeMentionPicker()
-      }
-      debounceTimerRef.current = null
-    }, 150)
-  }, [openMentionPicker, closeMentionPicker, agentNames])
-
-  const handleCompositionStart = useCallback(() => {
-    compositionRef.current = true
-    if (debounceTimerRef.current !== null) {
-      clearTimeout(debounceTimerRef.current)
-      debounceTimerRef.current = null
-    }
+    setSendError(message)
+    sendErrorTimerRef.current = setTimeout(() => {
+      setSendError(null)
+      sendErrorTimerRef.current = null
+    }, timeoutMs)
   }, [])
 
-  const handleCompositionEnd = useCallback((e: React.CompositionEvent<HTMLTextAreaElement>) => {
-    compositionRef.current = false
-    // Manually trigger input change with the committed value so picker detection runs
-    const val = e.currentTarget.value
-    const cursor = e.currentTarget.selectionStart ?? val.length
-    pendingInputRef.current = { value: val, cursor }
-    const activeMention = findActiveMentionTrigger(val, cursor, agentNames)
-    if (activeMention) {
-      const filteredCount = activeMention.query.length > 0
-        ? agents.filter(a => a.name.toLowerCase().includes(activeMention.query.toLowerCase())).length
-        : agents.length
-      openMentionPicker(activeMention.start, activeMention.query, filteredCount)
-    } else {
-      closeMentionPicker()
-    }
-  }, [openMentionPicker, closeMentionPicker, agentNames])
-
-  // OPT001: Clean up debounce timer on unmount
   useEffect(() => {
     return () => {
-      if (debounceTimerRef.current !== null) {
-        clearTimeout(debounceTimerRef.current)
+      if (sendErrorTimerRef.current !== null) {
+        clearTimeout(sendErrorTimerRef.current)
       }
     }
   }, [])
 
-  useEffect(() => {
-    if (filteredAgents.length === 0) {
-      setMentionHighlightIdx(0)
-      return
-    }
-    setMentionHighlightIdx(current => Math.min(current, filteredAgents.length - 1))
-  }, [filteredAgents.length])
-
-  const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!mentionPickerOpen) {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault()
-        sendMessageRef.current()
-      }
-      return
-    }
-    const count = filteredAgents.length
-    if (count === 0) {
-      if (e.key === 'Escape') { e.preventDefault(); closeMentionPicker() }
-      else if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault()
-        closeMentionPicker()
-        sendMessageRef.current()
-      }
-      return
-    }
-    if (e.key === 'ArrowDown') { e.preventDefault(); setMentionHighlightIdx(i => (i + 1) % count) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setMentionHighlightIdx(i => (i - 1 + count) % count) }
-    else if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault()
-      if (filteredAgents[mentionHighlightIdx]) selectMentionAgent(filteredAgents[mentionHighlightIdx].name)
-    } else if (e.key === 'Escape') { e.preventDefault(); closeMentionPicker() }
-  }, [mentionPickerOpen, filteredAgents, mentionHighlightIdx, selectMentionAgent, closeMentionPicker])
-
   const sendPreparedContent = useCallback(async (rawContent: string) => {
-    if (!roomId || sending) return
+    if (!roomId || sending) return false
     const content = rawContent.trim()
-    if (!content) return
-    const agentNames = agents.map(a => a.name)
-    // F013: no @ found — open mention picker at cursor, most-recent first
+    if (!content) return false
     if (extractUserMentionsFromAgents(content, agentNames).length === 0) {
-      const cursor = textareaRef.current?.selectionStart ?? content.length
-      setMentionStartIdx(cursor)
-      setMentionQuery('')
-      setMentionHighlightIdx(0)
-      setMentionPickerOpen(true)
-      setSendError('先选择要发给哪位专家：输入 @ 或点一个专家名称')
-      setTimeout(() => setSendError(null), 4000)
-      requestAnimationFrame(() => textareaRef.current?.focus())
-      return
+      showSendError('先选择要发给哪位专家：输入 @ 或点一个专家名称')
+      composerRef.current?.focus()
+      return false
     }
-    setMentionPickerOpen(false)
     // F013: @ is the single source of truth — derive toAgentId from mention text
     const mentionNames = extractUserMentionsFromAgents(content, agentNames)
     const targetName = mentionNames[0] ?? null
@@ -746,9 +546,8 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     // F015 P1-fix: use ref to avoid stale closure — read streamingAgentIds live at call time
     const busyNow = streamingAgentIdsRef.current.size > 0 || agents.some(a => a.status === 'thinking' || a.status === 'waiting')
     if (busyNow) {
-      setSendError('房间忙碌中，请稍后再试')
-      setTimeout(() => setSendError(null), 4000)
-      return
+      showSendError('房间忙碌中，请稍后再试')
+      return false
     }
     setSending(true)
     telemetry('ui:msg:send', {
@@ -757,7 +556,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
       toAgentId: recipientId,
       toAgentName: targetName,
     })
-    setUserInput('')
     try {
       const res = await fetch(`${API}/api/rooms/${roomId}/messages`, {
         method: 'POST',
@@ -769,71 +567,71 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
         logError('msg:send_error', { roomId, status: res.status, error: err })
         // 409 means room became busy concurrently — show error
         if (res.status === 409) {
-          setSending(false)
-          setUserInput(content)
-          setSendError('房间忙碌中，请稍后再试')
-          setTimeout(() => setSendError(null), 4000)
-          return
+          showSendError('房间忙碌中，请稍后再试')
+          return false
         }
-        setUserInput(content)
         // F013: 400 means missing target; guide user to pick one
         if (res.status === 400) {
-          setSendError('未找到指定专家，请检查 @ 后的名字')
+          showSendError('未找到指定专家，请检查 @ 后的名字')
         } else {
-          setSendError('发送失败，请重试')
+          showSendError('发送失败，请重试')
         }
-        setTimeout(() => setSendError(null), 4000)
+        return false
       }
+      return true
     } catch (e) {
       logError('msg:send_error', { roomId, error: String(e) })
-      setUserInput(content)
-      setSendError('发送失败，请检查网络')
-      setTimeout(() => setSendError(null), 4000)
+      showSendError('发送失败，请检查网络')
+      return false
     } finally {
       setSending(false)
     }
-  }, [agents, roomId, sending])
+  }, [agentNames, agents, roomId, sending, showSendError])
 
   const restoreFailedInput = useCallback((content?: string) => {
     if (!content) return
-    if (userInput.trim()) {
-      setSendError('输入框里还有草稿，先处理当前内容再找回原提问')
-      setTimeout(() => setSendError(null), 4000)
-      textareaRef.current?.focus()
+    if (composerRef.current?.hasDraft()) {
+      showSendError('输入框里还有草稿，先处理当前内容再找回原提问')
+      composerRef.current?.focus()
       return
     }
-    setUserInput(content)
-    requestAnimationFrame(() => textareaRef.current?.focus())
-  }, [userInput])
+    composerRef.current?.setDraft(content)
+    composerRef.current?.focus()
+  }, [showSendError])
 
   const copyFailedPrompt = useCallback(async (content?: string) => {
     if (!content || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return
     try {
       await navigator.clipboard.writeText(content)
     } catch {
-      setSendError('复制失败，请手动重试')
-      setTimeout(() => setSendError(null), 3000)
+      showSendError('复制失败，请手动重试', 3000)
     }
-  }, [])
+  }, [showSendError])
 
   // F015: drain the outgoing queue when room becomes idle.
   // Only sends ONE item per invocation; subsequent items are handled by
   // the next stream_end / room_error / poll idle trigger.
   const retryFailedMessage = useCallback(async (roomError: AgentRunErrorEvent) => {
     if (!roomError.originalUserContent) return
-    if (userInput.trim()) {
-      setSendError('输入框里还有草稿，先处理当前内容再重试')
-      setTimeout(() => setSendError(null), 4000)
-      textareaRef.current?.focus()
+    if (composerRef.current?.hasDraft()) {
+      showSendError('输入框里还有草稿，先处理当前内容再重试')
+      composerRef.current?.focus()
       return
     }
     await sendPreparedContent(roomError.originalUserContent)
-  }, [sendPreparedContent, userInput])
+  }, [sendPreparedContent, showSendError])
 
-  const handleSendMessage = useCallback(async () => {
-    await sendPreparedContent(userInput)
-  }, [sendPreparedContent, userInput])
-  sendMessageRef.current = handleSendMessage
+  const prefillMention = useCallback((agent: Agent) => {
+    composerRef.current?.prefillMention(agent)
+  }, [])
+
+  const handleRecipientSelected = useCallback((_agentId: string | null) => {}, [])
+  const handleRetryFailedMessage = useCallback((error: AgentRunErrorEvent) => {
+    void retryFailedMessage(error)
+  }, [retryFailedMessage])
+  const handleCopyFailedPrompt = useCallback((content?: string) => {
+    void copyFailedPrompt(content)
+  }, [copyFailedPrompt])
 
   const toggleMobileMenu = () => setMobileMenuOpen(o => !o)
 
@@ -941,274 +739,24 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
             </div>
           </div>
 
-          {/* Message list */}
-          <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-6 scroll-smooth custom-scrollbar" ref={messagesContainerRef} onScroll={handleScroll}>
-            {sortedMessages.map(msg => {
-              const isUser = msg.agentRole === 'USER'
-              const isSystem = msg.type === 'system'
-              const isStreaming = !isUser && !isSystem && (msg.type === 'streaming' || msg.duration_ms === undefined)
-              const runError = messageErrorMap[msg.id] ?? msg.runError
-              const hasToolCalls = Boolean(msg.toolCalls?.length)
-              const hasOutput = Boolean(msg.content.trim() || msg.thinking?.trim() || hasToolCalls)
-              const agentColor = AGENT_COLORS[msg.agentName]?.bg || DEFAULT_AGENT_COLOR.bg
-              const mentions = extractMentions(msg.content, agents.map(a => a.name))
-              // Only show @点名 for agents that are actually in this room.
-              // This prevents "phantom routing" where the agent references someone
-              // not in the room (e.g. citing 【乔布斯】 from history but not routing to them).
-              const validMentions = isUser
-                ? [] // USER messages already show routing via toAgentId → toRecipient
-                : mentions.filter(name => agents.some(a => a.name === name))
-              const formattedTime = TIME_FORMATTER.format(new Date(msg.timestamp))
-
-              if (isUser) {
-                const toRecipient = msg.toAgentId ? agents.find(a => a.id === msg.toAgentId) : null
-                const toColors = toRecipient ? AGENT_COLORS[toRecipient.name] || DEFAULT_AGENT_COLOR : null
-                return (
-                  <div key={msg.id} className="flex justify-end gap-3 mb-6 items-start">
-                    <div className="w-full max-w-[85%] lg:max-w-[90%]">
-                      <div className="flex justify-end items-center gap-2 mb-1.5">
-                        <span className="text-[11px] text-ink-soft">
-                          {formattedTime}
-                        </span>
-                        {isStreaming && <span className="text-[11px] text-accent animate-pulse font-medium">● 回答中</span>}
-                        <span className="text-[12px] font-bold px-2 py-0.5 rounded-md bg-accent/20 text-accent">你</span>
-                        {toRecipient && toColors && (
-                          <span className="text-[11px] px-1.5 py-0.5 rounded-full flex items-center gap-1" style={{ backgroundColor: `${toColors.bg}15`, color: toColors.bg }}>
-                            <span>→</span>
-                            <AgentAvatar name={toRecipient.name} color={toColors.bg} textColor={toColors.text} size={12} className="w-3 h-3 rounded-full" />
-                            {toRecipient.name}
-                          </span>
-                        )}
-                      </div>
-                      <div className="rounded-2xl rounded-tr-sm px-4 py-3.5 bg-surface border border-line shadow-sm">
-                        <BubbleErrorBoundary agentName={msg.agentName}>
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm, remarkBreaks]}
-                            components={{
-                              ...mdComponents,
-                              p: ({ children }) => <p className="mb-2 last:mb-0 text-ink">{children}</p>,
-                              a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 opacity-90 hover:opacity-100 text-accent">{children}</a>,
-                            }}
-                          >
-                            {msg.content}
-                          </ReactMarkdown>
-                        </BubbleErrorBoundary>
-                      </div>
-                    </div>
-                  </div>
-                )
-              }
-
-              if (isSystem) {
-                return (
-                  <div key={msg.id} className="flex justify-center mb-3">
-                    <div className="text-xs px-4 py-2 rounded-lg bg-surface/60 border border-line text-ink-soft max-w-[85%] text-center">
-                      {msg.content}
-                    </div>
-                  </div>
-                )
-              }
-
-              if (runError && !hasOutput) {
-                return (
-                  <div key={msg.id} className="group flex gap-3 mb-6 items-start">
-                    <div className="w-8 h-8 rounded-full flex-shrink-0 shadow-sm mt-1 overflow-hidden">
-                      <AgentAvatar name={msg.agentName} color={agentColor} size={32} className="w-full h-full" />
-                    </div>
-                    <div className="w-full max-w-[85%] lg:max-w-[90%]">
-                      <div className="mb-1.5 flex items-center gap-2">
-                        <span className="text-[13px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: `${agentColor}20`, color: agentColor }}>
-                          {msg.agentName}
-                        </span>
-                        <span className="text-[11px] text-ink-soft">
-                          {formattedTime}
-                        </span>
-                      </div>
-                      <ErrorBubble
-                        error={runError}
-                        retryDisabled={sending}
-                        restoreDisabled={Boolean(userInput.trim())}
-                        onRetry={() => void retryFailedMessage(runError)}
-                        onRestore={() => restoreFailedInput(runError.originalUserContent)}
-                        onCopy={() => void copyFailedPrompt(runError.originalUserContent)}
-                      />
-                    </div>
-                  </div>
-                )
-              }
-
-              return (
-                <div key={msg.id} className="group flex gap-3 mb-6 items-start">
-                  <div className="w-8 h-8 rounded-full flex-shrink-0 shadow-sm mt-1 overflow-hidden">
-                    <AgentAvatar name={msg.agentName} color={agentColor} size={32} className="w-full h-full" />
-                  </div>
-                  <div className="w-full max-w-[85%] lg:max-w-[90%]">
-                    <div className="mb-1.5 flex items-center gap-2">
-                      <span className="text-[13px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: `${agentColor}20`, color: agentColor }}>
-                        {msg.agentName}
-                      </span>
-                      <span className="text-[11px] text-ink-soft">
-                        {formattedTime}
-                      </span>
-                      {isStreaming && (
-                        <span className="text-[11px] text-emerald-500 font-medium flex items-center gap-1">
-                          <span className="animate-pulse">● 回答中</span>
-                        </span>
-                      )}
-                    </div>
-                    <div className="rounded-2xl rounded-tl-sm px-4 py-3.5 bg-surface border border-line shadow-sm">
-                      <BubbleErrorBoundary agentName={msg.agentName}>
-                        <BubbleSection label="思考过程" icon="brain" content={msg.thinking ?? ''} isStreaming={isStreaming} agentColor={agentColor} />
-                        {msg.toolCalls && msg.toolCalls.length > 0 && (
-                          <div className="mb-3">
-                            <div className="flex items-center gap-2 text-xs font-medium mb-2 px-2 py-1 rounded-lg" style={{ color: agentColor, backgroundColor: `${agentColor}10` }}>
-                              <Wrench className="w-3 h-3" />
-                              <span>工具调用</span>
-                              <span className="text-[11px] opacity-50 font-normal tracking-wider">{msg.toolCalls.length} 次</span>
-                            </div>
-                            <div className="ml-2 pl-3.5 border-l-2 font-mono text-[13px] flex flex-wrap gap-2 items-center" style={{ borderColor: `${agentColor}40` }}>
-                              {msg.toolCalls.map((tool, i) => {
-                                const key = `${msg.id}-${tool.callId ?? i}`
-                                const isHovered = hoveredToolCall === key
-                                const isExpanded = expandedToolCall === key
-                                return (
-                                  <div key={tool.callId ?? i} className="relative">
-                                    <span
-                                      className="text-[11px] font-bold px-2 py-1 rounded cursor-help whitespace-nowrap"
-                                      style={{ backgroundColor: `${agentColor}20`, color: agentColor }}
-                                      onMouseEnter={() => {
-                                        clearTimeout(hoverTimerRef.current)
-                                        setHoveredToolCall(key)
-                                      }}
-                                      onMouseLeave={() => {
-                                        hoverTimerRef.current = window.setTimeout(() => setHoveredToolCall(null), 100)
-                                      }}
-                                    >
-                                      {tool.toolName}
-                                    </span>
-                                    {isHovered && (
-                                      <div
-                                        className="absolute z-[9999] left-0 top-full mt-1 w-80 bg-black/80 border border-line rounded-lg shadow-xl text-xs select-text backdrop-blur-sm"
-                                        onMouseEnter={() => {
-                                          clearTimeout(hoverTimerRef.current)
-                                          setHoveredToolCall(key)
-                                        }}
-                                        onMouseLeave={() => setHoveredToolCall(null)}
-                                      >
-                                        <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-                                          <span className="font-medium text-white/80">{tool.toolName}</span>
-                                          <div className="flex gap-1">
-                                            <button
-                                              onClick={() => setExpandedToolCall(isExpanded ? null : key)}
-                                              className="p-1 rounded hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-                                              title={isExpanded ? '收起' : '全屏'}
-                                            >
-                                              <Maximize2 className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button
-                                              onClick={() => navigator.clipboard.writeText(JSON.stringify(tool.toolInput, null, 2))}
-                                              className="p-1 rounded hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-                                              title="复制全部"
-                                            >
-                                              <Copy className="w-3.5 h-3.5" />
-                                            </button>
-                                          </div>
-                                        </div>
-                                        <pre className={`text-[11px] text-white/90 whitespace-pre-wrap break-all p-3 ${isExpanded ? 'max-h-none overflow-y-visible' : 'max-h-48 overflow-y-auto'}`}>{JSON.stringify(tool.toolInput, null, 2)}</pre>
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        )}
-                        <BubbleSection label="回复" icon="output" content={msg.content} isStreaming={isStreaming} agentColor={agentColor} />
-                        {validMentions.length > 0 && (
-                          <div className="flex items-center gap-1.5 text-xs font-medium flex-wrap" style={{ color: agentColor }}>
-                            <span className="opacity-50 mr-0.5">@点名</span>
-                            {validMentions.map(name => (
-                              <span key={name} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: `${agentColor}20`, color: agentColor }}>
-                                {name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </BubbleErrorBoundary>
-                      {runError && (
-                        <div className="mt-3">
-                          <ErrorBubble
-                            error={runError}
-                            retryDisabled={sending}
-                            restoreDisabled={Boolean(userInput.trim())}
-                            onRetry={() => void retryFailedMessage(runError)}
-                            onRestore={() => restoreFailedInput(runError.originalUserContent)}
-                            onCopy={() => void copyFailedPrompt(runError.originalUserContent)}
-                          />
-                        </div>
-                      )}
-                    </div>
-                    {!isStreaming && msg.duration_ms && state === 'DONE' && (
-                      <div className="mt-1.5 px-3 py-1.5 bg-surface border border-line rounded-lg text-[11px] text-ink-soft flex flex-wrap gap-x-4 gap-y-1 max-w-fit">
-                        <span>⏱ {(msg.duration_ms / 1000).toFixed(1)}s</span>
-                        {msg.total_cost_usd && <span>💰 ${msg.total_cost_usd.toFixed(4)}</span>}
-                        {msg.input_tokens && <span>📥 {msg.input_tokens}</span>}
-                        {msg.output_tokens && <span>📤 {msg.output_tokens}</span>}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-
-            {orphanErrors.map(roomError => (
-              <div key={roomError.traceId} className="mb-6">
-                <ErrorBubble
-                  error={roomError}
-                  retryDisabled={sending}
-                  restoreDisabled={Boolean(userInput.trim())}
-                  onRetry={() => void retryFailedMessage(roomError)}
-                  onRestore={() => restoreFailedInput(roomError.originalUserContent)}
-                  onCopy={() => void copyFailedPrompt(roomError.originalUserContent)}
-                />
-              </div>
-            ))}
-
-            {messages.length === 0 && roomId && (
-              <div className="flex flex-col items-center justify-center min-h-44 text-center text-ink-soft gap-3 px-4">
-                <BrainCircuit className="w-8 h-8 opacity-70" />
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-ink">从 @一位专家 开始</p>
-                  <p className="text-xs max-w-md leading-relaxed">
-                    每条消息都需要明确收件人。软件开发任务建议先找架构师拆需求和计划，再进入实现与 review。
-                  </p>
-                </div>
-                {agents.length > 0 && (
-                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    {agents.slice(0, 4).map(agent => (
-                      <button
-                        key={agent.id}
-                        type="button"
-                        onClick={() => prefillMention(agent)}
-                        className="px-3 py-1.5 rounded-lg border border-line bg-surface text-xs font-medium text-ink hover:border-accent hover:text-accent transition-colors"
-                      >
-                        @{agent.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-            {showScrollBtn && (
-              <button
-                onClick={handleScrollToBottom}
-                className="sticky bottom-4 left-1/2 -translate-x-1/2 bg-accent text-white px-4 py-2 rounded-full text-xs font-medium shadow-lg hover:bg-accent-deep transition-colors flex items-center gap-1.5 z-10"
-              >
-                <ChevronDown className="w-3.5 h-3.5" /> 回到底部
-              </button>
-            )}
-          </div>
+          <MessageList
+            roomId={roomId}
+            messages={messages}
+            agents={agents}
+            state={state}
+            sending={sending}
+            messageErrorMap={messageErrorMap}
+            orphanErrors={orphanErrors}
+            showScrollBtn={showScrollBtn}
+            containerRef={messagesContainerRef}
+            endRef={messagesEndRef}
+            onScroll={handleScroll}
+            onScrollToBottom={handleScrollToBottom}
+            onPrefillMention={prefillMention}
+            onRetryFailedMessage={handleRetryFailedMessage}
+            onRestoreFailedInput={restoreFailedInput}
+            onCopyFailedPrompt={handleCopyFailedPrompt}
+          />
 
           {/* Action Area */}
           <div className="bg-nav-bg backdrop-blur-xl border-t border-line px-4 md:px-8 py-4 flex flex-col gap-3">
@@ -1221,39 +769,17 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
                 <Download className="w-4 h-4" /> 下载讨论报告
               </button>
             ) : roomId ? (
-              <div className="flex flex-col gap-2 relative">
-                {sendError && <div className="text-xs text-red-500 px-1">{sendError}</div>}
-                {mentionPickerOpen && (
-                  <MentionPicker
-                    agents={filteredAgents}
-                    highlightIndex={mentionHighlightIdx}
-                    onSelect={selectMentionAgent}
-                    onHighlight={setMentionHighlightIdx}
-                  />
-                )}
-                <div className="flex gap-3">
-                  <textarea
-                    ref={textareaRef}
-                    className="app-islands-input flex-1 bg-surface border border-line rounded-xl px-4 py-3 text-[14px] text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent resize-none min-h-12 max-h-48 leading-relaxed"
-                    placeholder="输入消息，或 @mention 专家…"
-                    value={userInput}
-                    onChange={handleInputChange}
-                    onCompositionStart={handleCompositionStart}
-                    onCompositionEnd={handleCompositionEnd}
-                    onKeyDown={handleInputKeyDown}
-                    disabled={sending}
-                    aria-label="输入消息"
-                  />
-                  <button
-                    type="button"
-                    className="app-islands-item bg-accent text-white font-semibold px-5 py-3 rounded-xl hover:bg-accent-deep transition-all disabled:opacity-50 text-[14px] shadow-sm self-end"
-                    onClick={handleSendMessage}
-                    disabled={sending || !userInput.trim()}
-                  >
-                    {sending ? '发送中…' : '发送'}
-                  </button>
-                </div>
-              </div>
+              <RoomComposer
+                ref={composerRef}
+                roomId={roomId}
+                agents={agents}
+                lastActiveWorkerId={lastActiveWorkerId}
+                sending={sending}
+                sendError={sendError}
+                onSend={sendPreparedContent}
+                onSendError={showSendError}
+                onRecipientSelected={handleRecipientSelected}
+              />
             ) : null}
           </div>
         </div>
@@ -1262,8 +788,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
         <AgentPanel
           roomId={roomId}
           agents={agents}
-          messages={messages}
-          state={state}
           workspace={workspace}
           isMobileOpen={agentDrawerOpen}
           onMobileClose={() => setAgentDrawerOpen(false)}

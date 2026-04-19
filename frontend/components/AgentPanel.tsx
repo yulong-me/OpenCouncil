@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { API_URL } from '@/lib/api'
-import { AGENT_COLORS, DEFAULT_AGENT_COLOR, type Agent, type Message, type DiscussionState } from '../lib/agents'
+import { type Agent } from '../lib/agents'
 import { X, Folder, File, ChevronRight, ChevronLeft } from 'lucide-react'
 
 interface BrowseEntry {
@@ -14,8 +14,6 @@ interface BrowseEntry {
 interface AgentPanelProps {
   roomId?: string
   agents: Agent[]
-  messages: Message[]
-  state: DiscussionState
   workspace?: string
   isMobileOpen?: boolean
   onMobileClose?: () => void
@@ -134,8 +132,6 @@ function WorkspaceFiles({ workspacePath }: { workspacePath: string }) {
 export function AgentPanel({
   roomId,
   agents,
-  messages,
-  state,
   workspace,
   isMobileOpen,
   onMobileClose,

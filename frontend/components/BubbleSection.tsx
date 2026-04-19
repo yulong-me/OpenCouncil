@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
@@ -25,7 +25,7 @@ interface BubbleSectionProps {
   agentColor: string
 }
 
-export function BubbleSection({
+export const BubbleSection = memo(function BubbleSection({
   label,
   icon,
   content,
@@ -98,7 +98,7 @@ export function BubbleSection({
       )}
     </div>
   )
-}
+})
 
 // ─── Single message bubble (USER or AGENT) ────────────────────────────────────
 
