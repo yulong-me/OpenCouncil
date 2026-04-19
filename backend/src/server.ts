@@ -98,8 +98,9 @@ initSocketEmitter(io);
 // Export io so routes can emit events
 export { io };
 
-httpServer.listen(7001, () => {
-  log('INFO', 'Backend running on http://localhost:7001');
+const BACKEND_PORT = parseInt(process.env.PORT || '7001', 10);
+httpServer.listen(BACKEND_PORT, () => {
+  log('INFO', `Backend running on http://localhost:${BACKEND_PORT}`);
 });
 
 export { log };

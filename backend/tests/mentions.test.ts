@@ -18,6 +18,15 @@ describe('@mention helpers', () => {
     ).toEqual(['Paul Graham', 'Andrej Karpathy']);
   });
 
+  it('matches mention names with middle-dot variants and full-width @', () => {
+    expect(
+      extractUserMentionsFromAgents(
+        '＠查理・芒格 你怎么看苹果折叠屏',
+        ['查理·芒格', '理查德·费曼'],
+      ),
+    ).toEqual(['查理·芒格']);
+  });
+
   it('ignores inline and code-block mentions when parsing routed message mentions', () => {
     const content = [
       '先引用一下 @乔布斯 的说法',
@@ -28,6 +37,17 @@ describe('@mention helpers', () => {
     ].join('\n');
 
     expect(extractMessageMentions(content)).toEqual(['测试员']);
+  });
+
+  it('extracts routed mentions with dotted names from room agent roster', () => {
+    const content = [
+      '@查理・芒格 你先回答',
+      '@理查德·费曼 你补充',
+    ].join('\n');
+
+    expect(
+      extractMessageMentions(content, ['查理·芒格', '理查德·费曼', '乔布斯']),
+    ).toEqual(['查理·芒格', '理查德·费曼']);
   });
 
   it('keeps the picker active only while typing the mention token', () => {

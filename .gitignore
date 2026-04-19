@@ -43,3 +43,4 @@ Thumbs.db
 .gstack/
 .worktrees/
 backend/workspaces/
+workspaces
