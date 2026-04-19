@@ -1,6 +1,7 @@
 'use client'
 
 import { AGENT_COLORS, DEFAULT_AGENT_COLOR, type Agent, type Message, type DiscussionState } from '../lib/agents'
+import { X } from 'lucide-react'
 import { AgentAvatar } from './AgentAvatar'
 
 interface AgentPanelProps {
@@ -8,6 +9,8 @@ interface AgentPanelProps {
   agents: Agent[]
   messages: Message[]
   state: DiscussionState
+  isMobileOpen?: boolean
+  onMobileClose?: () => void
 }
 
 function AgentCard({ agent, messages }: { agent: Agent; messages: Message[] }) {
@@ -66,33 +69,75 @@ export function AgentPanel({
   agents,
   messages,
   state,
+  isMobileOpen,
+  onMobileClose,
 }: AgentPanelProps) {
   return (
-    <div className="app-islands-panel hidden lg:flex w-[260px] bg-surface border-l border-line flex-col z-20">
-      <div className="p-5 border-b border-line space-y-1.5">
-        {roomId && (
-          <button
-            type="button"
-            onClick={() => navigator.clipboard.writeText(roomId)}
-            title="点击复制对话 ID"
-            className="flex items-center gap-1.5 text-[11px] text-ink-soft hover:text-accent transition-colors cursor-pointer group w-full"
-          >
-            <span className="opacity-60 group-hover:opacity-100 shrink-0">ID:</span>
-            <span className="font-mono truncate group-hover:text-accent">{roomId.slice(0, 8)}…</span>
-            <span className="text-[10px] opacity-40 ml-auto">📋</span>
-          </button>
-        )}
-        <h2 className="text-[15px] font-bold text-ink pt-1">参与 Agent</h2>
+    <>
+      {/* Desktop: fixed right sidebar */}
+      <div className="hidden lg:flex app-islands-panel w-[260px] bg-surface border-l border-line flex-col z-20 h-full shrink-0">
+        <div className="p-5 border-b border-line space-y-1.5">
+          {roomId && (
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(roomId)}
+              title="点击复制对话 ID"
+              className="flex items-center gap-1.5 text-[11px] text-ink-soft hover:text-accent transition-colors cursor-pointer group w-full"
+            >
+              <span className="opacity-60 group-hover:opacity-100 shrink-0">ID:</span>
+              <span className="font-mono truncate group-hover:text-accent">{roomId.slice(0, 8)}…</span>
+              <span className="text-[10px] opacity-40 ml-auto">📋</span>
+            </button>
+          )}
+          <h2 className="text-[15px] font-bold text-ink pt-1">参与 Agent</h2>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+          {agents.map(agent => (
+            <AgentCard key={agent.id} agent={agent} messages={messages} />
+          ))}
+          {agents.length === 0 && (
+            <p className="text-[12px] text-ink-soft text-center mt-6">选择讨论室后显示参与者</p>
+          )}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-        {agents.map(agent => (
-          <AgentCard key={agent.id} agent={agent} messages={messages} />
-        ))}
-        {agents.length === 0 && (
-          <p className="text-[12px] text-ink-soft text-center mt-6">选择讨论室后显示参与者</p>
-        )}
-      </div>
-    </div>
+      {/* Mobile: fixed right drawer, controlled by isMobileOpen */}
+      {isMobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-[200] flex">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-xl" onClick={onMobileClose} />
+          <div className="relative z-10 ml-auto w-[280px] h-full bg-surface border-l border-line flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-4 border-b border-white/[0.06]">
+              {roomId && (
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(roomId)}
+                  className="flex items-center gap-1.5 text-[11px] text-ink-soft hover:text-accent transition-colors cursor-pointer group"
+                >
+                  <span className="opacity-60">ID:</span>
+                  <span className="font-mono truncate group-hover:text-accent">{roomId.slice(0, 8)}…</span>
+                </button>
+              )}
+              <h2 className="text-[15px] font-bold text-ink">参与 Agent</h2>
+              <button
+                type="button"
+                onClick={onMobileClose}
+                className="p-1.5 text-ink-soft hover:text-ink hover:bg-white/[0.06] rounded-lg transition-colors"
+                aria-label="关闭"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+              {agents.map(agent => (
+                <AgentCard key={agent.id} agent={agent} messages={messages} />
+              ))}
+              {agents.length === 0 && (
+                <p className="text-[12px] text-ink-soft text-center mt-6">选择讨论室后显示参与者</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

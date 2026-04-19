@@ -1253,71 +1253,18 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
           </div>
         </div>
 
-        {/* Right sidebar: Agents (desktop) */}
+        {/* Right sidebar: Agents */}
         <AgentPanel
           roomId={roomId}
           agents={agents}
           messages={messages}
           state={state}
+          isMobileOpen={agentDrawerOpen}
+          onMobileClose={() => setAgentDrawerOpen(false)}
         />
 
       </div>
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsInitialTab} />
-      {/* AC-4: Agent Drawer — mobile only */}
-      {agentDrawerOpen && (
-        <div className="fixed inset-0 z-[200] flex">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-xl -webkit-backdrop-blur-xl" onClick={() => setAgentDrawerOpen(false)} />
-          <div className="relative z-10 ml-auto w-[280px] h-full app-window-shell border-l flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between px-4 py-4 border-b border-white/[0.06]">
-              <h2 className="text-[15px] font-bold text-ink">参与 Agent</h2>
-              <button
-                type="button"
-                onClick={() => setAgentDrawerOpen(false)}
-                className="p-1.5 text-ink-soft hover:text-ink hover:bg-white/[0.06] rounded-lg transition-colors"
-                aria-label="关闭"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-              {agents.map(agent => (
-                <div key={agent.id} className="app-window-surface rounded-xl p-3">
-                  <div className="flex items-center gap-3 mb-2.5">
-                    <AgentAvatar
-                      name={agent.name}
-                      color={(AGENT_COLORS[agent.name] || DEFAULT_AGENT_COLOR).bg}
-                      textColor={(AGENT_COLORS[agent.name] || DEFAULT_AGENT_COLOR).text}
-                      size={32}
-                      className="w-8 h-8 rounded-full flex-shrink-0 shadow-sm overflow-hidden"
-                    />
-                    <div>
-                      <p className="text-[14px] font-bold leading-none mb-1 text-ink">{agent.name}</p>
-                      <p className="text-[11px] text-ink-soft leading-none">
-                        {agent.role === 'MANAGER' ? '主持人' : agent.domainLabel}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-md max-w-fit" style={{background:"rgba(255,255,255,0.025)"}}>
-                    <span
-                      className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                        agent.status === 'thinking' || agent.status === 'waiting'
-                          ? 'bg-emerald-500 animate-pulse shadow-[0_0_4px_rgba(16,185,129,0.5)]'
-                          : 'bg-ink-soft/40'
-                      }`}
-                    />
-                    <span className="text-[11px] font-medium text-ink-soft">
-                      {agent.status === 'thinking' ? '工作中' : agent.status === 'waiting' ? '等待中' : '空闲'}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              {agents.length === 0 && (
-                <p className="text-[12px] text-ink-soft text-center mt-6">选择讨论室后显示参与者</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
       {showInviteDrawer && roomId && (
         <AgentInviteDrawer
           roomId={roomId}
