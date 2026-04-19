@@ -11,13 +11,12 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { io, type Socket } from 'socket.io-client'
 import {
-  Menu, Download, ChevronDown, BrainCircuit, UserPlus, Users, X, Wrench,
+  Menu, Download, ChevronDown, BrainCircuit, UserPlus, Users, X, Wrench, Copy, Maximize2,
 } from 'lucide-react'
 import {
   AGENT_COLORS, DEFAULT_AGENT_COLOR, STATE_LABELS,
   mdComponents, extractMentions, extractUserMentionsFromAgents, findActiveMentionTrigger, insertMention, TIME_FORMATTER,
   type Agent, type Message, type DiscussionState, type ToolCall,
-  type OutgoingQueueItem,
 } from '../lib/agents'
 import { error as logError, telemetry, setRoomId } from '../lib/logger'
 import CreateRoomModal from './CreateRoomModal'
@@ -26,8 +25,6 @@ import MentionPicker from './MentionPicker'
 import { BubbleSection } from './BubbleSection'
 import { RoomListSidebarDesktop, RoomListSidebarMobile } from './RoomListSidebar'
 import { AgentPanel } from './AgentPanel'
-import MentionQueue, { type QueuedMention } from './MentionQueue'
-import OutgoingMessageQueue from './OutgoingMessageQueue'
 import { AgentInviteDrawer } from './AgentInviteDrawer'
 import { AgentAvatar } from './AgentAvatar'
 import { ErrorBubble, type AgentRunErrorEvent } from './ErrorBubble'
@@ -86,18 +83,11 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
   const [sendError, setSendError] = useState<string | null>(null)
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null)
   // F013: selectedRecipientId kept for telemetry only; routing comes from @ mention text
-  const [mentionQueue, setMentionQueue] = useState<QueuedMention[]>([])
   const [streamingAgentIds, setStreamingAgentIds] = useState<Set<string>>(new Set())
   const [messageErrorMap, setMessageErrorMap] = useState<Record<string, AgentRunErrorEvent>>({})
   const [orphanErrors, setOrphanErrors] = useState<AgentRunErrorEvent[]>([])
   // F017: A2A depth config (null = inherit scene default)
   const [maxA2ADepth, setMaxA2ADepth] = useState<number | null>(null)
-
-  // F015: outgoing message queue state
-  const [outgoingQueue, setOutgoingQueue] = useState<OutgoingQueueItem[]>([])
-  const outgoingQueueRef = useRef<OutgoingQueueItem[]>([])
-  const dispatchingRef = useRef<string | null>(null)
-  const isDrainingRef = useRef(false)
 
   // @mention picker state
   const [mentionPickerOpen, setMentionPickerOpen] = useState(false)
@@ -124,6 +114,10 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
 
   // F007: invite drawer
   const [showInviteDrawer, setShowInviteDrawer] = useState(false)
+  // Tool call hover tooltip
+  const [hoveredToolCall, setHoveredToolCall] = useState<string | null>(null)
+  const [expandedToolCall, setExpandedToolCall] = useState<string | null>(null)
+  const hoverTimerRef = useRef<number | undefined>(undefined)
   const userScrolledRef = useRef(false)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const streamingCountRef = useRef(0)
@@ -178,7 +172,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     setState('RUNNING')
     setReport('')
     setSelectedRecipientId(null)
-    setMentionQueue([])
     setStreamingAgentIds(new Set())
     setMessageErrorMap({})
     setOrphanErrors([])
@@ -188,13 +181,11 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     streamingToolCallsRef.current.clear()
     streamingCountRef.current = 0
     streamingAgentIdsRef.current.clear()
-    // F015: reset outgoing queue so items from previous room can't leak into new room
-    outgoingQueueRef.current = []
-    dispatchingRef.current = null
-    isDrainingRef.current = false
-    setOutgoingQueue([])
     userScrolledRef.current = false
     setShowScrollBtn(false)
+    // Clear tool call hover states
+    setHoveredToolCall(null)
+    setExpandedToolCall(null)
   }, [roomId])
 
 
@@ -214,22 +205,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
         if (prev.some(m => m.id === msg.id)) return prev
         return [...prev, msg].sort((a, b) => a.timestamp - b.timestamp)
       })
-      // F0050: 用户消息含 @mention → 加入队列
-      if (msg.agentRole === 'USER' && msg.content) {
-        const names = extractMentions(msg.content, agentsRef.current.map(a => a.name))
-        setMentionQueue(prev => {
-          const existingIds = new Set(prev.map(m => m.agentId))
-          const newEntries: QueuedMention[] = []
-          for (const name of names) {
-            const agent = agentsRef.current.find(a => a.name === name)
-            if (agent && !existingIds.has(agent.id)) {
-              existingIds.add(agent.id)
-              newEntries.push({ agentId: agent.id, agentName: agent.name, mentionedBy: 'user', status: 'queued' })
-            }
-          }
-          return [...prev, ...newEntries]
-        })
-      }
     })
 
     socket.on('stream_start', (data: any) => {
@@ -321,11 +296,9 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
       } else {
         setOrphanErrors(prev => [...prev, roomError])
       }
-      // F015: trigger queue drain when last streaming agent finishes
+      // trigger queue drain when last streaming agent finishes
       const stillStreaming = streamingAgentIdsRef.current.size
-      if (stillStreaming === 0) {
-        setTimeout(() => drainQueue(), 100)
-      }
+      void stillStreaming
     })
 
     socket.on('stream_end', (data: any) => {
@@ -336,35 +309,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
       const msg = streamingMessagesRef.current.get(data.agentId)
       telemetry('ui:ai:end', { roomId, agentName: msg?.agentName ?? '', duration_ms: data.duration_ms, total_cost_usd: data.total_cost_usd, output_tokens: data.output_tokens })
       telemetry('socket:stream_end', { id: data.id, duration_ms: data.duration_ms })
-      // F0050: Manager 响应结束，解析其内容中的 @mention 加入队列
-      if (msg?.agentRole === 'MANAGER' && msg.content) {
-        const names = extractMentions(msg.content, agentsRef.current.map(a => a.name))
-        setMentionQueue(prev => {
-          const existingIds = new Set(prev.map(m => m.agentId))
-          const newEntries: QueuedMention[] = []
-          for (const name of names) {
-            const agent = agentsRef.current.find(a => a.name === name)
-            if (agent && !existingIds.has(agent.id)) {
-              existingIds.add(agent.id)
-              newEntries.push({ agentId: agent.id, agentName: agent.name, mentionedBy: 'manager', status: 'queued' })
-            }
-          }
-          return [...prev, ...newEntries]
-        })
-      }
-      // F0050: done 状态 3s 后移除
-      if (msg) {
-        setMentionQueue(prev => {
-          const alreadyDone = prev.some(m => m.agentId === data.agentId && m.status === 'done')
-          if (!alreadyDone) {
-            setTimeout(() => {
-              setMentionQueue(q => q.filter(m => m.agentId !== data.agentId))
-            }, 3000)
-            return prev.map(m => m.agentId === data.agentId ? { ...m, status: 'done' as const } : m)
-          }
-          return prev
-        })
-      }
       if (msg) {
         msg.duration_ms = data.duration_ms
         msg.total_cost_usd = data.total_cost_usd
@@ -377,11 +321,9 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
       streamingMessagesRef.current.delete(data.agentId)
       streamingThinkingRef.current.delete(data.agentId)
       streamingToolCallsRef.current.delete(data.agentId)
-      // F015: trigger queue drain when last streaming agent finishes
+      // trigger queue drain when last streaming agent finishes
       const stillStreaming = streamingAgentIdsRef.current.size
-      if (stillStreaming === 0) {
-        setTimeout(() => drainQueue(), 100)
-      }
+      void stillStreaming
     })
 
     socket.on('agent_status', (data: any) => {
@@ -488,13 +430,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
           // Sync React state with the refs we just cleaned up
           streamingCountRef.current = streamingMessagesRef.current.size
           setStreamingAgentIds(new Set(streamingAgentIdsRef.current))
-        }
-        if (nowIdle && outgoingQueueRef.current.length > 0) {
-          // F015 Codex-fix: trigger drain whenever room becomes idle AND queue
-          // has pending items — don't require recoveredMissedStreamEnd to be true.
-          // This covers the case where all streaming records were already flushed
-          // but the queue still has items that need to be sent.
-          setTimeout(() => drainQueue(), 100)
         }
         const fetchedErrors = fetchedMessages.filter(m => m.runError)
         if (fetchedErrors.length > 0) {
@@ -768,12 +703,8 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     // F015 P1-fix: use ref to avoid stale closure — read streamingAgentIds live at call time
     const busyNow = streamingAgentIdsRef.current.size > 0 || agents.some(a => a.status === 'thinking' || a.status === 'waiting')
     if (busyNow) {
-      if (!recipientId) {
-        setSendError('未找到指定专家，请检查 @ 后的名字')
-        setTimeout(() => setSendError(null), 4000)
-        return
-      }
-      enqueueMessage(content, recipientId, targetName!)
+      setSendError('房间忙碌中，请稍后再试')
+      setTimeout(() => setSendError(null), 4000)
       return
     }
     setSending(true)
@@ -793,20 +724,12 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
       if (!res.ok) {
         const err = await res.text()
         logError('msg:send_error', { roomId, status: res.status, error: err })
-        // F015: 409 means room became busy concurrently — enqueue the message
+        // 409 means room became busy concurrently — show error
         if (res.status === 409) {
           setSending(false)
-          // F015 Codex-fix: still validate recipientId before enqueuing.
-          // Without this, invalid @mention + 409 causes the queue entry to be
-          // created with recipientId=null, and the subsequent drain will 400
-          // and drop the item — user sees the message "disappear".
-          if (!recipientId) {
-            setUserInput(content)
-            setSendError('未找到指定专家，请检查 @ 后的名字')
-            setTimeout(() => setSendError(null), 4000)
-            return
-          }
-          enqueueMessage(content, recipientId, targetName!)
+          setUserInput(content)
+          setSendError('房间忙碌中，请稍后再试')
+          setTimeout(() => setSendError(null), 4000)
           return
         }
         setUserInput(content)
@@ -853,92 +776,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
   // F015: drain the outgoing queue when room becomes idle.
   // Only sends ONE item per invocation; subsequent items are handled by
   // the next stream_end / room_error / poll idle trigger.
-  // This prevents the 300ms delay heuristic from being a concurrency gate —
-  // even if two drains fire in the same idle window, the backend 409 guard
-  // (or a subsequent busy state) will stop the second from racing past.
-  const drainQueue = useCallback(async () => {
-    if (isDrainingRef.current) return
-    if (outgoingQueueRef.current.length === 0) return
-    if (dispatchingRef.current !== null) return
-
-    isDrainingRef.current = true
-    try {
-      const item = outgoingQueueRef.current[0]
-      if (!item) return
-
-      dispatchingRef.current = item.id
-      setOutgoingQueue(prev => prev.map(i => i.id === item.id ? { ...i, status: 'dispatching' } : i))
-
-      try {
-        const res = await fetch(`${API}/api/rooms/${roomId}/messages`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: item.content, toAgentId: item.toAgentId }),
-        })
-        if (res.status === 409) {
-          // Room still busy — stop draining, item stays queued
-          dispatchingRef.current = null
-          setOutgoingQueue(prev => prev.map(i => i.id === item.id ? { ...i, status: 'queued' } : i))
-          return
-        }
-        if (!res.ok) {
-          // Non-409 failure — remove failed item, stop drain cycle
-          const next = outgoingQueueRef.current.filter(i => i.id !== item.id)
-          outgoingQueueRef.current = next
-          dispatchingRef.current = null
-          setOutgoingQueue(next)
-          return
-        }
-        // Success — remove from queue. Next drain is triggered by
-        // stream_end / room_error / poll idle; don't loop here.
-        const remaining = outgoingQueueRef.current.filter(i => i.id !== item.id)
-        outgoingQueueRef.current = remaining
-        dispatchingRef.current = null
-        setOutgoingQueue(remaining)
-      } catch {
-        dispatchingRef.current = null
-        setOutgoingQueue(prev => prev.map(i => i.id === item.id ? { ...i, status: 'queued' } : i))
-      }
-    } finally {
-      isDrainingRef.current = false
-    }
-  }, [roomId])
-
-  // F015: enqueue a message when room is busy
-  const enqueueMessage = useCallback((content: string, toAgentId: string, toAgentName: string) => {
-    const item: OutgoingQueueItem = {
-      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `q-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      content,
-      toAgentId,
-      toAgentName,
-      createdAt: Date.now(),
-      status: 'queued',
-    }
-    outgoingQueueRef.current = [...outgoingQueueRef.current, item]
-    setOutgoingQueue([...outgoingQueueRef.current])
-  }, [])
-
-  // F015: cancel a queued item (remove without sending)
-  const cancelQueuedItem = useCallback((itemId: string) => {
-    const next = outgoingQueueRef.current.filter(i => i.id !== itemId)
-    outgoingQueueRef.current = next
-    setOutgoingQueue(next)
-  }, [])
-
-  // F015: recall last queued item back to input box
-  const recallQueuedItem = useCallback((itemId: string) => {
-    if (userInput.trim()) return
-    const item = outgoingQueueRef.current.find(i => i.id === itemId)
-    if (!item) return
-    const next = outgoingQueueRef.current.filter(i => i.id !== itemId)
-    outgoingQueueRef.current = next
-    setOutgoingQueue(next)
-    setUserInput(item.content)
-    requestAnimationFrame(() => textareaRef.current?.focus())
-  }, [userInput])
-
   const retryFailedMessage = useCallback(async (roomError: AgentRunErrorEvent) => {
     if (!roomError.originalUserContent) return
     if (userInput.trim()) {
@@ -1190,13 +1027,60 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
                               <span>工具调用</span>
                               <span className="text-[11px] opacity-50 font-normal tracking-wider">{msg.toolCalls.length} 次</span>
                             </div>
-                            <div className="ml-2 pl-3.5 border-l-2 font-mono text-[13px] overflow-x-auto" style={{ borderColor: `${agentColor}40` }}>
-                              {msg.toolCalls.map((tool, i) => (
-                                <div key={tool.callId ?? i} className="py-1.5">
-                                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: `${agentColor}20`, color: agentColor }}>{tool.toolName}</span>
-                                  <pre className="text-[12px] text-ink-soft mt-1 whitespace-pre-wrap break-all">{JSON.stringify(tool.toolInput, null, 2)}</pre>
-                                </div>
-                              ))}
+                            <div className="ml-2 pl-3.5 border-l-2 font-mono text-[13px] flex flex-wrap gap-2 items-center" style={{ borderColor: `${agentColor}40` }}>
+                              {msg.toolCalls.map((tool, i) => {
+                                const key = `${msg.id}-${tool.callId ?? i}`
+                                const isHovered = hoveredToolCall === key
+                                const isExpanded = expandedToolCall === key
+                                return (
+                                  <div key={tool.callId ?? i} className="relative">
+                                    <span
+                                      className="text-[11px] font-bold px-2 py-1 rounded cursor-help whitespace-nowrap"
+                                      style={{ backgroundColor: `${agentColor}20`, color: agentColor }}
+                                      onMouseEnter={() => {
+                                        clearTimeout(hoverTimerRef.current)
+                                        setHoveredToolCall(key)
+                                      }}
+                                      onMouseLeave={() => {
+                                        hoverTimerRef.current = window.setTimeout(() => setHoveredToolCall(null), 100)
+                                      }}
+                                    >
+                                      {tool.toolName}
+                                    </span>
+                                    {isHovered && (
+                                      <div
+                                        className="absolute z-[9999] left-0 top-full mt-1 w-80 bg-black/80 border border-line rounded-lg shadow-xl text-xs select-text backdrop-blur-sm"
+                                        onMouseEnter={() => {
+                                          clearTimeout(hoverTimerRef.current)
+                                          setHoveredToolCall(key)
+                                        }}
+                                        onMouseLeave={() => setHoveredToolCall(null)}
+                                      >
+                                        <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+                                          <span className="font-medium text-white/80">{tool.toolName}</span>
+                                          <div className="flex gap-1">
+                                            <button
+                                              onClick={() => setExpandedToolCall(isExpanded ? null : key)}
+                                              className="p-1 rounded hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                                              title={isExpanded ? '收起' : '全屏'}
+                                            >
+                                              <Maximize2 className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                              onClick={() => navigator.clipboard.writeText(JSON.stringify(tool.toolInput, null, 2))}
+                                              className="p-1 rounded hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                                              title="复制全部"
+                                            >
+                                              <Copy className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <pre className={`text-[11px] text-white/90 whitespace-pre-wrap break-all p-3 ${isExpanded ? 'max-h-none overflow-y-visible' : 'max-h-48 overflow-y-auto'}`}>{JSON.stringify(tool.toolInput, null, 2)}</pre>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
                             </div>
                           </div>
                         )}
@@ -1299,29 +1183,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
               </button>
             ) : roomId ? (
               <div className="flex flex-col gap-2 relative">
-                {/*
-                 * F015: User outgoing queue — displayed above MentionQueue.
-                 * MentionQueue = who will speak (Agent speaking queue).
-                 * OutgoingMessageQueue = what the user wants to send (user sending queue).
-                 */}
-                <OutgoingMessageQueue
-                  items={outgoingQueue}
-                  dispatchingId={dispatchingRef.current}
-                  onCancel={cancelQueuedItem}
-                  onRecall={recallQueuedItem}
-                  inputHasDraft={userInput.trim().length > 0}
-                  agents={agents}
-                />
-                {/* AC-2: 发言队列 — absolute 定位不挤压输入框 */}
-                {roomId && mentionQueue.length > 0 && (
-                  <div className="absolute bottom-full left-0 right-0 mb-2 z-20">
-                    <MentionQueue
-                      queue={mentionQueue}
-                      agents={agents}
-                      streamingAgentIds={streamingAgentIds}
-                    />
-                  </div>
-                )}
                 {sendError && <div className="text-xs text-red-500 px-1">{sendError}</div>}
                 {mentionPickerOpen && (
                   <MentionPicker
