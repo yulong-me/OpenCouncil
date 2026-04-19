@@ -24,6 +24,12 @@ export interface RuntimeContext {
   a2aCallChain?: string[];
   /** Room topic */
   roomTopic?: string;
+  /** Current room participants shown to the recipient for collaboration routing */
+  participants?: Array<{
+    name: string;
+    domainLabel: string;
+    role?: string;
+  }>;
   /** Workspace path (shown as 【工作目录】) */
   workspace?: string;
 }
@@ -54,7 +60,16 @@ export function buildRoomScopedSystemPrompt(
   parts.push(basePrompt);
 
   // 3. Runtime Context
-  parts.push(buildRuntimeContextString(runtime));
+  const roomRuntime: RuntimeContext = {
+    ...runtime,
+    roomTopic: runtime.roomTopic ?? room.topic,
+    participants: runtime.participants ?? room.agents.map(a => ({
+      name: a.name,
+      domainLabel: a.domainLabel,
+      role: a.role,
+    })),
+  };
+  parts.push(buildRuntimeContextString(roomRuntime));
 
   return parts.join('\n\n');
 }
@@ -70,16 +85,24 @@ function buildRuntimeContextString(runtime: RuntimeContext): string {
     lines.push(`【议题】${runtime.roomTopic}`);
   }
 
+  if (runtime.toAgentName) {
+    lines.push(`【当前接收人】${runtime.toAgentName}`);
+  }
+
+  if (runtime.participants && runtime.participants.length > 0) {
+    lines.push('【参与专家】');
+    for (const participant of runtime.participants) {
+      lines.push(`- ${participant.name}（${participant.domainLabel}）`);
+    }
+    lines.push('需要协作时，另起一行行首 @专家名；只是引用观点时用【专家名】。');
+  }
+
   if (runtime.userMessage) {
     lines.push(`【用户输入/任务】${runtime.userMessage}`);
   }
 
   if (runtime.taskText) {
     lines.push(`【A2A协作任务】${runtime.taskText}`);
-  }
-
-  if (runtime.toAgentName) {
-    lines.push(`【接收人】${runtime.toAgentName}`);
   }
 
   if (runtime.a2aCallChain && runtime.a2aCallChain.length > 0) {

@@ -299,6 +299,47 @@ describe('F016: scenePromptBuilder — real export', () => {
       buildRoomScopedSystemPrompt('room-1', 'base prompt', { userMessage: 'hi' }),
     ).toThrow(/ghost-scene/);
   });
+
+  it('injects room participants and current recipient into runtime context', async () => {
+    const { buildRoomScopedSystemPrompt } = await import('../src/services/scenePromptBuilder.js');
+    const { store } = await import('../src/store.js');
+
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-1',
+      topic: '实现登录态持久化',
+      state: 'RUNNING' as const,
+      agents: [
+        { id: 'worker-1', role: 'WORKER' as const, name: '架构师', domainLabel: '架构设计', configId: 'architect', status: 'idle' as const },
+        { id: 'worker-2', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'reviewer', status: 'idle' as const },
+      ],
+      messages: [],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'software-development',
+      maxA2ADepth: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    mockScenesRepo.get.mockReturnValue({
+      id: 'software-development',
+      name: '软件开发',
+      prompt: '软件开发场景',
+      builtin: true,
+      maxA2ADepth: 5,
+    });
+
+    const prompt = buildRoomScopedSystemPrompt('room-1', 'base prompt', {
+      userMessage: '请先评估方案',
+      toAgentName: '架构师',
+    });
+
+    expect(prompt).toContain('【当前接收人】架构师');
+    expect(prompt).toContain('【参与专家】');
+    expect(prompt).toContain('- 架构师（架构设计）');
+    expect(prompt).toContain('- Reviewer（代码审查）');
+    expect(prompt).toContain('需要协作时，另起一行行首 @专家名');
+  });
 });
 
 // ── Pure logic: name guard expression (no mock needed) ──────────────────────

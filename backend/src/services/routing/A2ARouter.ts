@@ -48,6 +48,24 @@ export function scanForA2AMentions(text: string, agentNames: string[] = []): str
   const seen = new Set<string>();
   const names: string[] = [];
 
+  if (agentNames.length === 0) {
+    for (let i = 0; i < withoutCodeBlocks.length; i++) {
+      if (withoutCodeBlocks[i] !== '@') continue;
+
+      const lineStart = withoutCodeBlocks.lastIndexOf('\n', i - 1) + 1;
+      const before = withoutCodeBlocks.slice(lineStart, i);
+      if (!/^[ \t]*$/.test(before)) continue;
+
+      const match = /^([^\s@()[\]{}<>，。！？；：,.;!?]+)/u.exec(withoutCodeBlocks.slice(i + 1));
+      const matchedName = match?.[1]?.trim();
+      if (!matchedName || seen.has(matchedName)) continue;
+      seen.add(matchedName);
+      names.push(matchedName);
+      i += matchedName.length;
+    }
+    return names;
+  }
+
   // Build patterns per agent name — handles spaces, middle-dots, and partial matches
   // Sort longest-first so "@Ilya Sutskever" is matched before "@Ilya"
   const matchers: Array<{ name: string; pattern: RegExp }> = agentNames

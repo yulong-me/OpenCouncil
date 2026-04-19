@@ -31,6 +31,14 @@ const PROVIDER_LABELS: Record<string, string> = {
 }
 
 const DOMAIN_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  '圆桌论坛': { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' },
+  '软件开发': { bg: '#DBEAFE', text: '#1E40AF', border: '#93C5FD' },
+  '人物视角': { bg: '#F3F4F6', text: '#374151', border: '#D1D5DB' },
+  '需求': { bg: '#FCE7F3', text: '#9D174D', border: '#F9A8D4' },
+  '架构': { bg: '#E0F2FE', text: '#075985', border: '#7DD3FC' },
+  '实现': { bg: '#D1FAE5', text: '#065F46', border: '#6EE7B7' },
+  'review': { bg: '#FEE2E2', text: '#991B1B', border: '#FCA5A5' },
+  '测试': { bg: '#EDE9FE', text: '#5B21B6', border: '#C4B5FD' },
   '历史': { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' },
   '科技': { bg: '#DBEAFE', text: '#1E40AF', border: '#93C5FD' },
   '财经': { bg: '#D1FAE5', text: '#065F46', border: '#6EE7B7' },
@@ -77,6 +85,7 @@ export default function CreateRoomModal({
   const agentGridRef = useRef<HTMLDivElement>(null)
 
   const workers = allAgents.filter(a => a.role === 'WORKER' && a.enabled)
+  const sceneAgentTag = scenes.find(s => s.id === sceneId)?.name ?? null
 
   useEffect(() => {
     if (!isOpen) return
@@ -110,6 +119,13 @@ export default function CreateRoomModal({
       setSceneId('roundtable-forum')
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || !sceneAgentTag) return
+    setActiveTag(sceneAgentTag)
+    setSelected(new Set())
+    setErrors(prev => ({ ...prev, agents: undefined }))
+  }, [isOpen, sceneAgentTag])
 
   useEffect(() => {
     if (!isOpen) return
@@ -175,7 +191,10 @@ export default function CreateRoomModal({
 
   const filteredWorkers = workers.filter(a => {
     const matchTag = !activeTag || a.tags.includes(activeTag)
-    const matchSearch = !searchText || a.name.toLowerCase().includes(searchText.toLowerCase()) || a.roleLabel.toLowerCase().includes(searchText.toLowerCase())
+    const matchSearch = !searchText ||
+      a.name.toLowerCase().includes(searchText.toLowerCase()) ||
+      a.roleLabel.toLowerCase().includes(searchText.toLowerCase()) ||
+      a.tags.some(tag => tag.toLowerCase().includes(searchText.toLowerCase()))
     return matchTag && matchSearch
   })
   const selectedWorkers = workers.filter(a => selected.has(a.id))
@@ -247,6 +266,9 @@ export default function CreateRoomModal({
                 ))}
               </select>
               {loadingScenes && <p className="text-[11px] text-ink-soft mt-1">加载场景中…</p>}
+              {!loadingScenes && sceneAgentTag && (
+                <p className="text-[11px] text-ink-soft mt-1">已默认筛选 {sceneAgentTag} 相关专家，可切换为全部。</p>
+              )}
             </div>
 
             {/* Expert Section Header */}

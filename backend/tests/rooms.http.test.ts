@@ -48,6 +48,8 @@ vi.mock('../src/services/stateMachine.js', async (importOriginal) => {
 
 import { roomsRouter } from '../src/routes/rooms.js';
 import { store } from '../src/store.js';
+import { roomsRepo, scenesRepo } from '../src/db/index.js';
+import { getAgent } from '../src/config/agentConfig.js';
 
 // Build a minimal Express app with the rooms router under test
 function makeApp() {
@@ -196,5 +198,43 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
     });
 
     expect(result.status).toBe(404);
+  });
+
+  _skipIfNoPort('preserves the user-provided topic when creating a room', async () => {
+    vi.mocked(scenesRepo.get).mockReturnValue({
+      id: 'software-development',
+      name: '软件开发',
+      prompt: '软件开发场景',
+      builtin: true,
+      maxA2ADepth: 5,
+    });
+    vi.mocked(getAgent).mockReturnValue({
+      id: 'worker-1',
+      name: '架构师',
+      role: 'WORKER',
+      roleLabel: '架构设计',
+      provider: 'claude-code',
+      providerOpts: { thinking: true },
+      systemPrompt: '你是架构师',
+      enabled: true,
+      tags: ['dev'],
+    });
+
+    const result = await postJson('/api/rooms', {
+      topic: '  实现登录态持久化  ',
+      workerIds: ['worker-1'],
+      sceneId: 'software-development',
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.data).toHaveProperty('topic', '实现登录态持久化');
+    expect(store.create).toHaveBeenCalledWith(expect.objectContaining({
+      topic: '实现登录态持久化',
+      sceneId: 'software-development',
+    }));
+    expect(roomsRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      topic: '实现登录态持久化',
+      sceneId: 'software-development',
+    }));
   });
 });

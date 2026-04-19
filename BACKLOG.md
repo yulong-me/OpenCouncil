@@ -20,3 +20,4 @@ created: 2026-04-09
 | F012 | 去 MANAGER 化：系统级路由与容错模型 | done | sonnet | [F012](docs/features/F012-decentralized-routing.md) |
 | F013 | 强制显式路由（Mandatory @-Mention）| done | sonnet | [F013](docs/features/F013-mandatory-mention-routing.md) |
 | F015 | 房间忙时消息阻断与出站队列 | spec | yulong | [F015](docs/features/F015-busy-room-send-queue.md) |
+| F018 | 创建房间后的主流程与提示词体验优化 | in-progress | codex | [F018](docs/features/F018-mainflow-prompt-ux.md) |

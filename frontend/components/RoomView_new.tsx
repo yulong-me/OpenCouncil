@@ -570,6 +570,13 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     setMentionStartIdx(-1)
   }, [])
 
+  const prefillMention = useCallback((agent: Agent) => {
+    setUserInput(current => current.trim() ? current : `@${agent.name} `)
+    setSelectedRecipientId(agent.id)
+    closeMentionPicker()
+    requestAnimationFrame(() => textareaRef.current?.focus())
+  }, [closeMentionPicker])
+
   useEffect(() => {
     if (!mentionPickerOpen) return
     const onMouseDown = (ev: MouseEvent) => {
@@ -722,6 +729,9 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
       setMentionQuery('')
       setMentionHighlightIdx(0)
       setMentionPickerOpen(true)
+      setSendError('先选择要发给哪位专家：输入 @ 或点一个专家名称')
+      setTimeout(() => setSendError(null), 4000)
+      requestAnimationFrame(() => textareaRef.current?.focus())
       return
     }
     setMentionPickerOpen(false)
@@ -1200,9 +1210,28 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
             ))}
 
             {messages.length === 0 && roomId && (
-              <div className="flex flex-col items-center justify-center h-40 text-ink-soft gap-3 opacity-60">
-                <BrainCircuit className="w-8 h-8" />
-                <p className="text-sm">输入消息开始讨论，或 @mention 专家</p>
+              <div className="flex flex-col items-center justify-center min-h-44 text-center text-ink-soft gap-3 px-4">
+                <BrainCircuit className="w-8 h-8 opacity-70" />
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-ink">从 @一位专家 开始</p>
+                  <p className="text-xs max-w-md leading-relaxed">
+                    每条消息都需要明确收件人。软件开发任务建议先找架构师拆需求和计划，再进入实现与 review。
+                  </p>
+                </div>
+                {agents.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                    {agents.slice(0, 4).map(agent => (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onClick={() => prefillMention(agent)}
+                        className="px-3 py-1.5 rounded-lg border border-line bg-surface text-xs font-medium text-ink hover:border-accent hover:text-accent transition-colors"
+                      >
+                        @{agent.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <div ref={messagesEndRef} />

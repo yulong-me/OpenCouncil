@@ -559,11 +559,12 @@ async function streamingCallAgent(
           .join('\n\n')
       : undefined;
 
-    const basePrompt = `【角色】${ctx.domainLabel}（${systemPrompt}）`;
+    const basePrompt = `【当前执行者】${agentName}\n【角色】${ctx.domainLabel}（${systemPrompt}）`;
     const prompt = buildRoomScopedSystemPrompt(roomId, basePrompt, {
       userMessage: ctx.userMessage,
       recentTranscript,
       roomTopic: room?.topic,
+      toAgentName: agentName,
       a2aCallChain: room?.a2aCallChain,
       workspace,
     }) ?? `${basePrompt}\n\n${ctx.userMessage}`;

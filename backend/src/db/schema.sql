@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS scenes (
   name        TEXT NOT NULL,
   description TEXT,
   prompt      TEXT NOT NULL,
-  builtin     INTEGER NOT NULL DEFAULT 0
+  builtin     INTEGER NOT NULL DEFAULT 0,
+  max_a2a_depth INTEGER DEFAULT 5 NOT NULL
 );
 
 -- F016: Room Scene — scene_id references scenes.id
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS rooms (
   agent_ids   TEXT NOT NULL DEFAULT '[]',
   workspace   TEXT,
   scene_id    TEXT NOT NULL DEFAULT 'roundtable-forum',
+  max_a2a_depth INTEGER,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
   deleted_at  INTEGER

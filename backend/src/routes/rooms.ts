@@ -32,13 +32,15 @@ roomsRouter.get('/sidebar', (_req, res) => {
 
 // POST /api/rooms — 创建讨论室（F012: 无 MANAGER，只有 WORKER）
 roomsRouter.post('/', async (req, res) => {
-  const { workerIds: rawWorkerIds, workspacePath, sceneId } = req.body as {
+  const { topic, workerIds: rawWorkerIds, workspacePath, sceneId } = req.body as {
+    topic?: string;
     workerIds?: string[];
     workspacePath?: string; // F006: custom workspace directory
     sceneId?: string; // F016: scene ID, defaults to roundtable-forum
   };
 
   const workerIds: string[] = rawWorkerIds ?? [];
+  const roomTopic = topic?.trim() || '自由讨论';
 
   // F016: Validate sceneId — always check effectiveSceneId exists
   const effectiveSceneId = sceneId ?? 'roundtable-forum';
@@ -86,7 +88,7 @@ roomsRouter.post('/', async (req, res) => {
 
   const room: DiscussionRoom = {
     id: uuid(),
-    topic: '自由讨论',
+    topic: roomTopic,
     state: 'RUNNING',
     agents: workerEntries, // F012: no MANAGER in room
     messages: [],
