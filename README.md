@@ -88,8 +88,8 @@ opencode --version
 ### 克隆仓库
 
 ```bash
-git clone https://github.com/yulong-me/muti-agent-new.git
-cd muti-agent-new
+git clone https://github.com/yulong-me/OpenCouncil.git
+cd OpenCouncil
 ```
 
 ### 安装依赖

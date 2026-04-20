@@ -3,8 +3,8 @@ import { ThemeProvider } from '@/components/ThemeProvider'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'AI 智囊团',
-  description: 'Multi-Agent Collaboration Platform',
+  title: 'OpenCouncil',
+  description: 'Multi-agent deliberation workspace',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,5 +1,5 @@
 {
-  "name": "muti-agent-f001",
+  "name": "opencouncil",
   "private": true,
   "scripts": {
     "dev": "node scripts/dev.mjs",

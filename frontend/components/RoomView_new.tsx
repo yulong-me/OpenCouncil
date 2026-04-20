@@ -913,7 +913,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
               >
                 <Menu className="w-5 h-5" />
               </button>
-              <h1 className="text-lg font-bold text-ink hidden sm:block">AI 智囊团</h1>
+              <h1 className="text-lg font-bold text-ink hidden sm:block">OpenCouncil</h1>
             </div>
             <div className="flex items-center gap-2 md:gap-4">
               {/* F017: A2A depth switcher */}
