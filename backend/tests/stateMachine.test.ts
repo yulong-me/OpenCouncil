@@ -303,4 +303,74 @@ describe('F004: Manager 路由器', () => {
       expect(mentions).toContain('应该触发');
     });
   });
+
+  describe('A2A 循环保护', () => {
+    it('允许回流到链路中出现过但尚未形成乒乓循环的专家', async () => {
+      const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-cycle-revisit',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '需求分析师', domainLabel: '需求澄清', configId: 'requirements', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: '架构师', domainLabel: '架构设计', configId: 'architect', status: 'idle' as const },
+          { id: 'worker-3', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'implementer', status: 'idle' as const },
+          { id: 'worker-4', role: 'WORKER' as const, name: '测试工程师', domainLabel: '测试验证', configId: 'qa', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 4,
+        a2aCallChain: ['需求分析师', '架构师', '需求分析师', '实现工程师'],
+        maxA2ADepth: 0,
+      };
+
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+
+      await a2aOrchestrate('room-cycle-revisit', 'worker-4', '测试工程师', '@实现工程师 请继续确认实现细节');
+
+      expect(getProvider).toHaveBeenCalledTimes(1);
+    });
+
+    it('所有 mention 都因循环保护被拦截时，追加系统提示而不是静默结束', async () => {
+      const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { messagesRepo } = await import('../src/db/index.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-cycle-blocked',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'implementer', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: '测试工程师', domainLabel: '测试验证', configId: 'qa', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 2,
+        a2aCallChain: ['实现工程师', '测试工程师'],
+        maxA2ADepth: 0,
+      };
+
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+
+      await a2aOrchestrate('room-cycle-blocked', 'worker-1', '实现工程师', '@测试工程师 请再确认一次');
+
+      expect(messagesRepo.insert).toHaveBeenCalledWith(
+        'room-cycle-blocked',
+        expect.objectContaining({
+          agentName: '系统',
+          type: 'system',
+          content: expect.stringContaining('检测到重复协作链路'),
+        }),
+      );
+      expect(getProvider).not.toHaveBeenCalled();
+    });
+  });
+
 });

@@ -780,6 +780,9 @@ export async function a2aOrchestrate(
   const newChain = [...currentChain, fromAgentName];
   updateA2AContext(roomId, currentDepth + 1, newChain);
 
+  const skippedCycleTargets: string[] = [];
+  let routedCount = 0;
+
   for (const mention of mentions) {
     const targetAgent = room.agents.find(
       a =>
@@ -792,13 +795,14 @@ export async function a2aOrchestrate(
       continue;
     }
 
-    // 跳过已在调用链中的 Agent（防止循环）
-    // 规则：只拦截"真正的循环"
+    // 只拦截最典型的 A→B→A→B 来回对拉，允许合理回流给之前出现过的专家。
+    // 示例：
     // - A→B：允许
-    // - A→B→A（2人来回）：允许 — 直接对答不算循环
-    // - A→B→C→A（3人+循环）：拦截
-    if (newChain.length > 2 && newChain.includes(targetAgent.name)) {
+    // - A→B→A：允许
+    // - A→B→A→B：拦截（已经形成明显的乒乓循环）
+    if (createsImmediatePingPong(newChain, targetAgent.name)) {
       telemetry('a2a:skip_cycle', { roomId, target: targetAgent.name, chain: newChain });
+      skippedCycleTargets.push(targetAgent.name);
       continue;
     }
 
@@ -839,10 +843,28 @@ ${filteredOutput}
       'statement',
       'WORKER',
     );
+    routedCount++;
+  }
+
+  if (routedCount === 0 && skippedCycleTargets.length > 0) {
+    addSystemMessage(
+      roomId,
+      `[系统提醒] 检测到重复协作链路，已跳过 ${skippedCycleTargets.map(name => `@${name}`).join('、')}，避免讨论原地打转。请引入新专家或由你来决定下一步。`,
+    );
   }
 }
 
 // ─── 辅助函数 ───────────────────────────────────────────────────────────────
+
+function createsImmediatePingPong(callChain: string[], targetAgentName: string): boolean {
+  if (callChain.length < 3) return false;
+
+  const currentSpeaker = callChain[callChain.length - 1];
+  const previousSpeaker = callChain[callChain.length - 2];
+  const speakerBeforePrevious = callChain[callChain.length - 3];
+
+  return speakerBeforePrevious === currentSpeaker && previousSpeaker === targetAgentName;
+}
 
 /** 判断用户输入是否请求生成报告 */
 function isReportRequest(text: string): boolean {
