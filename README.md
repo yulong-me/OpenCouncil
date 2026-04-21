@@ -133,6 +133,26 @@ pnpm dev
 
 - `backend/data/muti-agent.db`
 
+### 构建
+
+根目录现在提供统一构建入口：
+
+```bash
+pnpm build
+```
+
+它会顺序执行：
+
+- `pnpm run build:backend`：把后端 TypeScript 编译到 `backend/dist`
+- `pnpm run build:frontend`：执行 Next.js 生产构建，产物位于 `frontend/.next`
+
+如果只想单独构建某一侧，也可以直接运行：
+
+```bash
+pnpm run build:backend
+pnpm run build:frontend
+```
+
 ### 进入产品
 
 1. 打开 [http://localhost:7002](http://localhost:7002)
