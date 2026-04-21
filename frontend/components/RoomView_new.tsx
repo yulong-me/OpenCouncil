@@ -151,8 +151,11 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     setSettingsInitialTab('agent')
     setSettingsOpen(true)
   }, [])
+  const openRoom = useCallback((id: string) => {
+    setMobileMenuOpen(false)
+    router.push(`/room/${id}`, { scroll: false })
+  }, [router])
   const composerRef = useRef<RoomComposerHandle>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const pollStateRef = useRef<{ state: DiscussionState; agents: Agent[] }>({ state: 'RUNNING' as DiscussionState, agents: [] as Agent[] })
   const streamingMessagesRef = useRef<Map<string, Message>>(new Map())
   const streamingThinkingRef = useRef<Map<string, string>>(new Map())
@@ -188,11 +191,16 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
     [outgoingQueue],
   )
 
+  const scrollMessageListToBottom = useCallback((behavior: ScrollBehavior) => {
+    const el = messagesContainerRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior })
+  }, [])
+
   const scrollToBottom = useCallback(() => {
     if (userScrolledRef.current) return
-    const behavior = streamingCountRef.current > 0 ? 'instant' : 'smooth'
-    messagesEndRef.current?.scrollIntoView({ behavior })
-  }, [])
+    scrollMessageListToBottom('auto')
+  }, [scrollMessageListToBottom])
 
   const handleScroll = useCallback(() => {
     const el = messagesContainerRef.current
@@ -205,8 +213,8 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
   const handleScrollToBottom = useCallback(() => {
     userScrolledRef.current = false
     setShowScrollBtn(false)
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [])
+    scrollMessageListToBottom('smooth')
+  }, [scrollMessageListToBottom])
 
   useEffect(() => { scrollToBottom() }, [messages, scrollToBottom])
 
@@ -966,7 +974,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
           rooms={rooms}
           currentRoomId={roomId}
           onNewRoom={() => setIsCreateModalOpen(true)}
-          onSelectRoom={id => router.push(`/room/${id}`)}
+          onSelectRoom={openRoom}
           onDeleteRoom={async (id) => {
             const res = await fetch(`${API}/api/rooms/${id}/archive`, { method: 'PATCH' })
             if (!res.ok) return
@@ -984,7 +992,7 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
           rooms={rooms}
           currentRoomId={roomId}
           onNewRoom={() => setIsCreateModalOpen(true)}
-          onSelectRoom={id => router.push(`/room/${id}`)}
+          onSelectRoom={openRoom}
           onDeleteRoom={async (id) => {
             const res = await fetch(`${API}/api/rooms/${id}/archive`, { method: 'PATCH' })
             if (!res.ok) return
@@ -1098,7 +1106,6 @@ export default function RoomView_new({ roomId, defaultCreateOpen = false }: Room
             orphanErrors={orphanErrors}
             showScrollBtn={showScrollBtn}
             containerRef={messagesContainerRef}
-            endRef={messagesEndRef}
             onScroll={handleScroll}
             onScrollToBottom={handleScrollToBottom}
             onPrefillMention={prefillMention}

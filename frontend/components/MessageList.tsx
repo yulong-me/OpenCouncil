@@ -39,7 +39,6 @@ interface MessageListProps {
   orphanErrors: AgentRunErrorEvent[]
   showScrollBtn: boolean
   containerRef: RefObject<HTMLDivElement>
-  endRef: RefObject<HTMLDivElement>
   onScroll: () => void
   onScrollToBottom: () => void
   onPrefillMention: (agent: Agent) => void
@@ -78,7 +77,6 @@ export const MessageList = memo(function MessageList({
   orphanErrors,
   showScrollBtn,
   containerRef,
-  endRef,
   onScroll,
   onScrollToBottom,
   onPrefillMention,
@@ -100,7 +98,7 @@ export const MessageList = memo(function MessageList({
   const agentById = useMemo(() => new Map(agents.map(agent => [agent.id, agent])), [agents])
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-6 scroll-smooth custom-scrollbar" ref={containerRef} onScroll={onScroll}>
+    <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-6 custom-scrollbar" ref={containerRef} onScroll={onScroll}>
       {sortedMessages.map(msg => (
         <MessageBubble
           key={msg.id}
@@ -165,7 +163,6 @@ export const MessageList = memo(function MessageList({
           )}
         </div>
       )}
-      <div ref={endRef} />
       {showScrollBtn && (
         <button
           onClick={onScrollToBottom}

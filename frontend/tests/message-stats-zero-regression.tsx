@@ -48,7 +48,6 @@ const markup = renderToStaticMarkup(
     orphanErrors={[]}
     showScrollBtn={false}
     containerRef={createRef<HTMLDivElement>()}
-    endRef={createRef<HTMLDivElement>()}
     onScroll={() => {}}
     onScrollToBottom={() => {}}
     onPrefillMention={() => {}}

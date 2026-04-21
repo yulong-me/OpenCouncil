@@ -184,7 +184,7 @@ export default function CreateRoomModal({
       }
       const room = await res.json()
       onClose()
-      router.push(`/room/${room.id}`)
+      router.push(`/room/${room.id}`, { scroll: false })
     } catch (_e) {
       setErrors({ agents: '网络错误，请重试' })
     } finally {
