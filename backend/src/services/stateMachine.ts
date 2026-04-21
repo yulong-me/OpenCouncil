@@ -37,6 +37,7 @@ import {
   registerActiveAgentRun,
   clearActiveAgentRun,
   stopAgentRun as requestStopAgentRun,
+  hasActiveAgentRunInRoom,
 } from './agentRuns.js';
 import { buildRoomScopedSystemPrompt } from './scenePromptBuilder.js';
 import { debug, info, warn, error } from '../lib/logger.js';
@@ -619,6 +620,7 @@ async function streamingCallAgent(
   let output_tokens = 0;
   let returnedSessionId = '';
   let activeRunController: AbortController | null = null;
+  let activeRunRegistered = false;
   let deltaCount = 0;
   let thinkingCount = 0;
   let accumulatedToolCalls: ToolCall[] = [];
@@ -657,6 +659,16 @@ async function streamingCallAgent(
       idleTokenTimeoutMs: 180000,
     };
 
+    activeRunController = new AbortController();
+    providerOpts.signal = activeRunController.signal;
+    registerActiveAgentRun({
+      roomId,
+      agentId,
+      agentName,
+      abortController: activeRunController,
+    });
+    activeRunRegistered = true;
+
     msg = addMessage(roomId, {
       agentRole,
       agentName,
@@ -682,60 +694,46 @@ async function streamingCallAgent(
     updateAgentStatus(roomId, agentId, 'thinking');
 
     const provider = getProvider(providerName);
-    activeRunController = new AbortController();
-    providerOpts.signal = activeRunController.signal;
-    registerActiveAgentRun({
-      roomId,
-      agentId,
-      agentName,
-      abortController: activeRunController,
-    });
-
-    try {
-      for await (const event of provider(prompt, agentId, providerOpts)) {
-        if (event.type === 'delta') {
-          deltaCount++;
-          accumulated += event.text;
-          appendMessageContent(roomId, msgId, event.text);
-          emitStreamDelta(roomId, agentId, event.text);
-        } else if (event.type === 'thinking_delta') {
-          thinkingCount++;
-          accumulatedThinking += event.thinking;
-          emitThinkingDelta(roomId, agentId, event.thinking);
-        } else if (event.type === 'tool_use') {
-          const toolCall: ToolCall = {
-            toolName: event.toolName,
-            toolInput: event.toolInput,
-            callId: event.callId,
-            timestamp: Date.now(),
-          };
-          accumulatedToolCalls = [...accumulatedToolCalls, toolCall];
-          const r = store.get(roomId);
-          if (r && msg) {
-            store.update(roomId, {
-              messages: r.messages.map(m =>
-                m.id === msg!.id
-                  ? { ...m, toolCalls: accumulatedToolCalls }
-                  : m,
-              ),
-            });
-          }
-          emitToolUse(roomId, agentId, event.toolName, event.toolInput, event.callId, toolCall.timestamp);
-        } else if (event.type === 'end') {
-          duration_ms = event.duration_ms;
-          total_cost_usd = event.total_cost_usd;
-          input_tokens = event.input_tokens;
-          output_tokens = event.output_tokens;
-          if (event.sessionId) returnedSessionId = event.sessionId;
-        } else if (event.type === 'error') {
-          const providerError = new Error(event.message);
-          (providerError as Error & { code?: string }).code = 'AGENT_PROVIDER_ERROR';
-          throw providerError;
+    for await (const event of provider(prompt, agentId, providerOpts)) {
+      if (event.type === 'delta') {
+        deltaCount++;
+        accumulated += event.text;
+        appendMessageContent(roomId, msgId, event.text);
+        emitStreamDelta(roomId, agentId, event.text);
+      } else if (event.type === 'thinking_delta') {
+        thinkingCount++;
+        accumulatedThinking += event.thinking;
+        emitThinkingDelta(roomId, agentId, event.thinking);
+      } else if (event.type === 'tool_use') {
+        const toolCall: ToolCall = {
+          toolName: event.toolName,
+          toolInput: event.toolInput,
+          callId: event.callId,
+          timestamp: Date.now(),
+        };
+        accumulatedToolCalls = [...accumulatedToolCalls, toolCall];
+        const r = store.get(roomId);
+        if (r && msg) {
+          store.update(roomId, {
+            messages: r.messages.map(m =>
+              m.id === msg!.id
+                ? { ...m, toolCalls: accumulatedToolCalls }
+                : m,
+            ),
+          });
         }
+        emitToolUse(roomId, agentId, event.toolName, event.toolInput, event.callId, toolCall.timestamp);
+      } else if (event.type === 'end') {
+        duration_ms = event.duration_ms;
+        total_cost_usd = event.total_cost_usd;
+        input_tokens = event.input_tokens;
+        output_tokens = event.output_tokens;
+        if (event.sessionId) returnedSessionId = event.sessionId;
+      } else if (event.type === 'error') {
+        const providerError = new Error(event.message);
+        (providerError as Error & { code?: string }).code = 'AGENT_PROVIDER_ERROR';
+        throw providerError;
       }
-    } finally {
-      clearActiveAgentRun(roomId, agentId, activeRunController);
-      activeRunController = null;
     }
   } catch (err) {
     handleAgentRunFailure({
@@ -753,6 +751,12 @@ async function streamingCallAgent(
       requestMeta,
     });
     throw err;
+  } finally {
+    if (activeRunRegistered) {
+      clearActiveAgentRun(roomId, agentId, activeRunController ?? undefined);
+      activeRunRegistered = false;
+    }
+    activeRunController = null;
   }
 
   if (returnedSessionId) {
@@ -966,6 +970,8 @@ function isReportRequest(text: string): boolean {
  */
 export function isRoomBusy(roomId: string): boolean {
   const room = store.get(roomId);
-  if (!room) return false;
-  return room.agents.some(a => a.status === 'thinking' || a.status === 'waiting');
+  const hasBusyAgent = room
+    ? room.agents.some(a => a.status === 'thinking' || a.status === 'waiting')
+    : false;
+  return hasBusyAgent || hasActiveAgentRunInRoom(roomId);
 }

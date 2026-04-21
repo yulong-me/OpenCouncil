@@ -243,7 +243,7 @@ describe('F004: Manager 路由器', () => {
       const { store } = await import('../src/store.js');
       const { messagesRepo } = await import('../src/db/index.js');
       const { getProvider } = await import('../src/services/providers/index.js');
-      const { emitRoomErrorEvent } = await import('../src/services/socketEmitter.js');
+      const { emitRoomErrorEvent, emitStreamStart } = await import('../src/services/socketEmitter.js');
 
       const mockRoom = {
         id: 'room-1',
@@ -265,9 +265,18 @@ describe('F004: Manager 路由器', () => {
 
       vi.mocked(store.get).mockReturnValue(mockRoom);
       vi.mocked(store.update).mockImplementation(() => {});
+      let stopResult: ReturnType<typeof stopAgentRun> | null = null;
+      vi.mocked(emitStreamStart).mockImplementationOnce(() => {
+        stopResult = stopAgentRun('room-1', 'worker-1');
+      });
       vi.mocked(getProvider).mockReturnValueOnce(async function* (_prompt, _agentId, opts) {
         const signal = opts?.signal as AbortSignal | undefined;
         providerStarted();
+        if (signal?.aborted) {
+          const err = new Error('stopped');
+          (err as Error & { code?: string }).code = 'AGENT_STOPPED';
+          throw err;
+        }
         yield { type: 'delta', agentId: 'worker-1', text: '先给你一半答案' };
         await new Promise<void>((_resolve, reject) => {
           if (signal?.aborted) {
@@ -287,7 +296,7 @@ describe('F004: Manager 路由器', () => {
       const runPromise = routeToAgent('room-1', '@架构师 帮我看看这个方案', 'worker-1');
       await started;
 
-      expect(stopAgentRun('room-1', 'worker-1')).toEqual(
+      expect(stopResult).toEqual(
         expect.objectContaining({ stopped: true, agentName: '架构师' }),
       );
 
@@ -304,7 +313,7 @@ describe('F004: Manager 路由器', () => {
       );
       expect(messagesRepo.updateContent).toHaveBeenCalledWith(
         expect.any(String),
-        '先给你一半答案',
+        '',
         expect.objectContaining({
           runError: expect.objectContaining({
             code: 'AGENT_STOPPED',
@@ -312,6 +321,54 @@ describe('F004: Manager 路由器', () => {
           }),
         }),
       );
+    });
+
+    it('同房间同专家已有活跃 run 时应该拒绝第二次注册', async () => {
+      const { routeToAgent } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { emitRoomErrorEvent } = await import('../src/services/socketEmitter.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-1',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '架构师', domainLabel: '架构设计', configId: 'worker-config', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 0,
+        a2aCallChain: [],
+      };
+
+      let releaseFirstRun!: () => void;
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+      vi.mocked(getProvider).mockReturnValueOnce(async function* () {
+        await new Promise<void>((resolve) => {
+          releaseFirstRun = resolve;
+        });
+        yield { type: 'end', agentId: 'worker-1', duration_ms: 100, total_cost_usd: 0, input_tokens: 0, output_tokens: 0 };
+      });
+
+      const firstRun = routeToAgent('room-1', '@架构师 第一次', 'worker-1');
+      await Promise.resolve();
+
+      await expect(routeToAgent('room-1', '@架构师 第二次', 'worker-1')).rejects.toMatchObject({
+        code: 'AGENT_RUN_CONFLICT',
+      });
+
+      expect(emitRoomErrorEvent).toHaveBeenCalledWith(
+        'room-1',
+        expect.objectContaining({
+          code: 'AGENT_RUNTIME_ERROR',
+          messageId: undefined,
+        }),
+      );
+
+      releaseFirstRun();
+      await firstRun;
     });
 
     it('专家启动前置步骤失败时也应该发出可恢复的 orphan 错误事件', async () => {

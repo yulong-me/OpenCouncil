@@ -12,7 +12,7 @@ import { error, info } from '../lib/logger.js';
 import { v4 as uuid } from 'uuid';
 import { store } from '../store.js';
 import type { DiscussionRoom } from '../types.js';
-import { routeToAgent, generateReportInline, stopAgentRun } from '../services/stateMachine.js';
+import { routeToAgent, generateReportInline, stopAgentRun, isRoomBusy } from '../services/stateMachine.js';
 import { roomsRepo, sessionsRepo, messagesRepo, scenesRepo } from '../db/index.js';
 import { auditRepo } from '../db/index.js';
 import { archiveWorkspace, validateWorkspacePath } from '../services/workspace.js';
@@ -172,8 +172,7 @@ roomsRouter.post('/:id/messages', async (req, res) => {
   }
 
   // F015: room busy guard — prevents concurrent dispatch (multi-tab safety net)
-  const roomBusy = room.agents.some(a => a.status === 'thinking' || a.status === 'waiting');
-  if (roomBusy) {
+  if (isRoomBusy(req.params.id)) {
     return res.status(409).json({ code: 'ROOM_BUSY', error: 'Room has an Agent currently executing' });
   }
 
@@ -243,6 +242,9 @@ roomsRouter.post('/:id/agents/:agentId/stop', (req, res) => {
 roomsRouter.post('/:id/report', async (req, res) => {
   const room = store.get(req.params.id);
   if (!room) return res.status(404).json({ error: 'Room not found' });
+  if (isRoomBusy(req.params.id)) {
+    return res.status(409).json({ code: 'ROOM_BUSY', error: 'Room has an Agent currently executing' });
+  }
 
   const allContent = room.messages
     .map(m => `【${m.agentName}】${m.content}`)

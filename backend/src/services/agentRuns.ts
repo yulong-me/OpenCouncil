@@ -18,7 +18,15 @@ export function registerActiveAgentRun(args: {
   agentName: string;
   abortController: AbortController;
 }): void {
-  activeRuns.set(buildRunKey(args.roomId, args.agentId), {
+  const key = buildRunKey(args.roomId, args.agentId);
+  const existing = activeRuns.get(key);
+  if (existing) {
+    const err = new Error(`Active run already exists for ${args.roomId}:${args.agentId}`);
+    (err as Error & { code?: string }).code = 'AGENT_RUN_CONFLICT';
+    throw err;
+  }
+
+  activeRuns.set(key, {
     ...args,
     startedAt: Date.now(),
   });
@@ -49,4 +57,11 @@ export function stopAgentRun(roomId: string, agentId: string): {
     agentName: run.agentName,
     startedAt: run.startedAt,
   };
+}
+
+export function hasActiveAgentRunInRoom(roomId: string): boolean {
+  for (const run of activeRuns.values()) {
+    if (run.roomId === roomId) return true;
+  }
+  return false;
 }
