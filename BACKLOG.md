@@ -23,3 +23,4 @@ created: 2026-04-09
 | F015 | 房间忙时消息阻断与出站队列 | done | codex | [F015](docs/features/F015-busy-room-send-queue.md) |
 | F016 | 讨论室场景（Room Scenes: 内置场景 + Prompt 注入） | done | codex | [F016](docs/features/F016-agent-scenes.md) |
 | F018 | 创建房间后的主流程与提示词体验优化 | done | codex | [F018](docs/features/F018-mainflow-prompt-ux.md) |
+| F024 | 长对话上下文检查点与 Session Rollover | spec | codex | [F024](docs/features/F024-context-checkpoint-rollover.md) |

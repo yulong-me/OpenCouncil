@@ -37,8 +37,8 @@ updated: 2026-04-11
 | AgentService | Claude Code + OpenCode | 只做两个 CLI，提供商可插拔 |
 | Workspace | `/workspace/room-{id}/` | 共享工作目录，Agent 间文件共享 |
 | A2A Router | hostReply() 内部 | 作为输出过滤器，流式完成后扫描 |
-| 前端 | Next.js (port 3003) | 全栈一体 |
-| 后端 | Express (port 3004) | 状态机 + Agent 调度 |
+| 前端 | Next.js (port 7002) | 全栈一体 |
+| 后端 | Express (port 7001) | 状态机 + Agent 调度 |
 
 ---
 

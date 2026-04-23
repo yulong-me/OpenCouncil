@@ -292,7 +292,7 @@ opencode "prompt"
 ## Dependencies
 
 - F001: Multi-Agent Platform（基础状态机和 UI）
-- Backend: Express (port 3004)
+- Backend: Express (port 7001)
 - CLI: Claude Code CLI, OpenCode CLI
 
 ## Open Questions

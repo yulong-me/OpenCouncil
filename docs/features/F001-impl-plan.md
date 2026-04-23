@@ -12,7 +12,7 @@
 - [ ] AC-7: 用户可在 RESEARCH/DEBATE/CONVERGING 阶段选择下一步
 - [ ] AC-8: Web App 本地可运行（localhost）
 **Architecture:** Express 后端维护状态机 + 主持人 Agent 编排，Next.js 前端三栏 UI，Claude Code CLI (`claude -p`) 调用三个 Agent，MCP 工具供 Agent 调查用，轮询 2s 前端拉取状态
-**Tech Stack:** Next.js (3003) + Express (3004) + TypeScript + Tailwind + Claude Code CLI
+**Tech Stack:** Next.js (7002) + Express (7001) + TypeScript + Tailwind + Claude Code CLI
 **前端验证:** Yes — 完成后用 Playwright 实测完整 5 状态流程
 
 ---
@@ -34,7 +34,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3003"
+    "dev": "next dev -p 7002"
   },
   "dependencies": {
     "next": "14.x",
@@ -167,8 +167,8 @@ app.use(express.json());
 
 app.use('/api/rooms', roomsRouter);
 
-app.listen(3004, () => {
-  console.log('Backend running on http://localhost:3004');
+app.listen(7001, () => {
+  console.log('Backend running on http://localhost:7001');
 });
 ```
 
@@ -548,9 +548,9 @@ async function checkMCP(): Promise<boolean> {
 
 | Phase | 验证 |
 |-------|------|
-| Phase 1 | `curl http://localhost:3004/api/rooms` 返回 `[]` |
+| Phase 1 | `curl http://localhost:7001/api/rooms` 返回 `[]` |
 | Phase 2 | 创建 room 后，INIT→RESEARCH 状态转移正常 |
-| Phase 3 | `pnpm dev` → `localhost:3003` → 三栏布局渲染正常 |
+| Phase 3 | `pnpm dev` → `localhost:7002` → 三栏布局渲染正常 |
 | Phase 4 | 完整 5 状态跑通，消息实时显示 |
 | Phase 5 | Agent 调用 MCP 搜索可用 |
 
