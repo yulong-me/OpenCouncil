@@ -307,21 +307,29 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       builtin: true,
       maxA2ADepth: 5,
     });
-    vi.mocked(getAgent).mockReturnValue({
-      id: 'worker-1',
-      name: '架构师',
-      role: 'WORKER',
-      roleLabel: '架构设计',
-      provider: 'claude-code',
-      providerOpts: { thinking: true },
-      systemPrompt: '你是架构师',
-      enabled: true,
-      tags: ['dev'],
+    const coreAgents = new Map([
+      ['dev-architect', { id: 'dev-architect', name: '主架构师', role: 'WORKER', roleLabel: '方案设计', provider: 'claude-code', providerOpts: { thinking: true }, systemPrompt: '你是主架构师', enabled: true, tags: ['dev'] }],
+      ['dev-challenge-architect', { id: 'dev-challenge-architect', name: '挑战架构师', role: 'WORKER', roleLabel: '方案质疑', provider: 'claude-code', providerOpts: { thinking: true }, systemPrompt: '你是挑战架构师', enabled: true, tags: ['dev'] }],
+      ['dev-implementer', { id: 'dev-implementer', name: '实现工程师', role: 'WORKER', roleLabel: '代码实现', provider: 'claude-code', providerOpts: { thinking: true }, systemPrompt: '你是实现工程师', enabled: true, tags: ['dev'] }],
+      ['dev-reviewer', { id: 'dev-reviewer', name: 'Reviewer', role: 'WORKER', roleLabel: '代码审查', provider: 'claude-code', providerOpts: { thinking: true }, systemPrompt: '你是 Reviewer', enabled: true, tags: ['dev'] }],
+    ]);
+    vi.mocked(getAgent).mockImplementation((id: string) => coreAgents.get(id));
+
+    const missingCoreResult = await requestJson('POST', '/api/rooms', {
+      topic: '实现登录态持久化',
+      workerIds: ['dev-architect', 'dev-implementer', 'dev-reviewer'],
+      sceneId: 'software-development',
     });
+
+    expect(missingCoreResult.status).toBe(400);
+    expect(missingCoreResult.data).toHaveProperty(
+      'error',
+      '软件开发场景必须包含 4 位核心专家：主架构师、挑战架构师、实现工程师、Reviewer。当前缺少：挑战架构师',
+    );
 
     const result = await requestJson('POST', '/api/rooms', {
       topic: '  实现登录态持久化  ',
-      workerIds: ['worker-1'],
+      workerIds: ['dev-architect', 'dev-challenge-architect', 'dev-implementer', 'dev-reviewer'],
       sceneId: 'software-development',
     });
 

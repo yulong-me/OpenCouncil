@@ -129,7 +129,12 @@ export function computeEffectiveMessageMentions(
     return handoff ? [normalize(handoff.mention)] : [];
   }
 
-  return scanForA2AMentions(text, mentionCandidates).map(normalize);
+  const mentions = scanForA2AMentions(text, mentionCandidates).map(normalize);
+  if (sceneId === 'software-development') {
+    return mentions.slice(0, 1);
+  }
+
+  return mentions;
 }
 
 function collectMentions(text: string, agentNames: string[] = [], requireLineStart: boolean): string[] {

@@ -18,6 +18,7 @@ import { auditRepo } from '../db/index.js';
 import { archiveWorkspace, validateWorkspacePath } from '../services/workspace.js';
 import { getAgent } from '../config/agentConfig.js';
 import { computeEffectiveMessageMentions, resolveEffectiveMaxDepth } from '../services/routing/A2ARouter.js';
+import { SOFTWARE_DEVELOPMENT_CORE_AGENT_IDS } from '../prompts/builtinAgents.js';
 import {
   discoverWorkspaceSkills,
   getRoomWorkspace,
@@ -27,6 +28,13 @@ import {
 } from '../services/skills.js';
 
 export const roomsRouter = Router();
+
+const SOFTWARE_DEVELOPMENT_CORE_REQUIREMENTS = [
+  { id: SOFTWARE_DEVELOPMENT_CORE_AGENT_IDS.leadArchitect, label: '主架构师' },
+  { id: SOFTWARE_DEVELOPMENT_CORE_AGENT_IDS.challengeArchitect, label: '挑战架构师' },
+  { id: SOFTWARE_DEVELOPMENT_CORE_AGENT_IDS.implementer, label: '实现工程师' },
+  { id: SOFTWARE_DEVELOPMENT_CORE_AGENT_IDS.reviewer, label: 'Reviewer' },
+] as const;
 
 // GET /api/rooms — 列出所有讨论室（按最近活跃排序）
 roomsRouter.get('/', (_req, res) => {
@@ -38,7 +46,7 @@ roomsRouter.get('/sidebar', (_req, res) => {
   res.json(roomsRepo.listSidebar());
 });
 
-// POST /api/rooms — 创建讨论室（F012: 无 MANAGER，只有 WORKER）
+// POST /api/rooms — 创建讨论室（运行期仅创建 WORKER）
 roomsRouter.post('/', async (req, res) => {
   const { topic, workerIds: rawWorkerIds, workspacePath, sceneId, roomSkills: rawRoomSkills } = req.body as {
     topic?: string;
@@ -96,6 +104,20 @@ roomsRouter.post('/', async (req, res) => {
       sceneId: effectiveSceneId,
     });
     return res.status(400).json({ error: '圆桌论坛至少选择 3 位专家' });
+  }
+
+  if (effectiveSceneId === 'software-development') {
+    const missingCore = SOFTWARE_DEVELOPMENT_CORE_REQUIREMENTS.filter(requirement => !workerIds.includes(requirement.id));
+    if (missingCore.length > 0) {
+      warn('room:create:invalid_workers', {
+        reason: 'missing_software_development_core_agents',
+        missing: missingCore.map(requirement => requirement.id),
+        sceneId: effectiveSceneId,
+      });
+      return res.status(400).json({
+        error: `软件开发场景必须包含 4 位核心专家：主架构师、挑战架构师、实现工程师、Reviewer。当前缺少：${missingCore.map(requirement => requirement.label).join('、')}`,
+      });
+    }
   }
 
   const workerEntries = workerIds.map(id => {
@@ -465,10 +487,10 @@ roomsRouter.post('/:id/agents', (req, res) => {
     return res.status(404).json({ error: `Agent not found: ${agentId}` });
   }
 
-  // 角色校验：仅允许追加 WORKER
+  // 角色校验：运行期仅允许追加 WORKER
   if (cfg.role !== 'WORKER') {
     warn('room:agent_add:invalid_role', { roomId: id, agentId, role: cfg.role });
-    return res.status(400).json({ error: '无法追加 MANAGER 角色' });
+    return res.status(400).json({ error: '仅允许追加 WORKER Agent' });
   }
 
   // 启用状态校验

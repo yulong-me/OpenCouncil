@@ -1,6 +1,6 @@
-// F004: Manager 路由器 - 简化状态机
+// F004: 简化状态机
 export type DiscussionState = 'RUNNING' | 'DONE';
-// Agent 角色：MANAGER 只调度不执行，WORKER 执行具体任务
+// Agent 角色：运行期只会创建 WORKER；保留 MANAGER 仅用于兼容历史数据
 export type AgentRole = 'MANAGER' | 'WORKER';
 export type MessageType = 'system' | 'statement' | 'question' | 'rebuttal' | 'summary' | 'report' | 'user_action' | 'a2a_handoff';
 export type AgentExecutionErrorCode =
@@ -84,7 +84,7 @@ export interface Message {
     depth: number;
     callChain: string[];
   };
-  /** F0042: 直接路由的接收人 agentId（MANAGER 时为空） */
+  /** F0042: 直接路由的接收人 agentId */
   toAgentId?: string;
   /** F014: structured agent execution error persisted for reconnect/poll recovery */
   runError?: AgentRunError;

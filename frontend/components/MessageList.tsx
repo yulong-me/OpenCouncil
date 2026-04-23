@@ -144,7 +144,7 @@ export const MessageList = memo(function MessageList({
           <div className="space-y-1">
             <p className="text-sm font-semibold text-ink">从 @一位专家 开始</p>
             <p className="text-xs max-w-md leading-relaxed">
-              每条消息都需要明确收件人。软件开发任务建议先找架构师拆需求和计划，再进入实现与 review。
+              每条消息都需要明确收件人。软件开发任务建议先找主架构师出方案，再让挑战架构师找茬收敛；达成一致后交给实现工程师，最后由 Reviewer 做质量门禁。
             </p>
           </div>
           {agents.length > 0 && (

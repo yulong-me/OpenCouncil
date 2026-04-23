@@ -11,12 +11,16 @@ import { skillsRepo, agentSkillBindingsRepo, roomSkillBindingsRepo } from './rep
 import { log } from '../log.js';
 import {
   BUILTIN_AGENT_DEFINITIONS,
+  LEGACY_SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS,
+  PREVIOUS_SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS,
   SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS,
+  SOFTWARE_DEVELOPMENT_SCENE_TAG,
   ROUNDTABLE_AGENT_DEFINITIONS,
   buildBuiltinProviderOptsForMigration,
   type BuiltinAgentDefinition,
 } from '../prompts/builtinAgents.js';
 import { runtimePaths } from '../config/runtimePaths.js';
+import { matchesResolvedBuiltinAgent } from './builtinAgentCatalog.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -83,17 +87,71 @@ function hasTags(agent: { tags: string[] }, expected: string[]): boolean {
   return agent.tags.length === expected.length && expected.every(tag => agent.tags.includes(tag));
 }
 
-function ensureBuiltinAgentCatalogV3(): void {
+function matchesExactBuiltinAgent(
+  agent: {
+    name: string;
+    role: string;
+    roleLabel: string;
+    provider: string;
+    providerOpts: Record<string, unknown>;
+    systemPrompt: string;
+    enabled: boolean;
+    tags: string[];
+  },
+  definition: BuiltinAgentDefinition,
+  options?: { ignoreProviderFields?: boolean },
+): boolean {
+  const systemPrompt = resolveBuiltinAgentPrompt(definition);
+  if (systemPrompt === null) return false;
+
+  return matchesResolvedBuiltinAgent(agent, definition, systemPrompt, options);
+}
+
+function ensureBuiltinAgentCatalogV5(): void {
   const row = db.prepare("SELECT value FROM app_meta WHERE key = 'builtin_agent_catalog_version'").get() as { value: string } | undefined;
-  if (row?.value === '3') return;
+  if (row?.value === '5') return;
 
   let inserted = 0;
   let retagged = 0;
   let providerMigrated = 0;
+  let upgraded = 0;
+  let retired = 0;
+
+  const migratableSoftwareDefsById = new Map<string, BuiltinAgentDefinition[]>();
+  for (const definition of [
+    ...LEGACY_SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS,
+    ...PREVIOUS_SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS,
+  ]) {
+    const existing = migratableSoftwareDefsById.get(definition.id) ?? [];
+    existing.push(definition);
+    migratableSoftwareDefsById.set(definition.id, existing);
+  }
+  const activeSoftwareAgentIds = new Set(SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS.map(def => def.id));
 
   for (const agent of SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS) {
-    if (agentsRepo.get(agent.id)) continue;
-    if (seedBuiltinAgent(agent)) inserted++;
+    const existing = agentsRepo.get(agent.id);
+    if (!existing) {
+      if (seedBuiltinAgent(agent)) inserted++;
+      continue;
+    }
+
+    const previousDefinitions = migratableSoftwareDefsById.get(agent.id) ?? [];
+    if (!previousDefinitions.some(definition => matchesExactBuiltinAgent(existing, definition, { ignoreProviderFields: true }))) continue;
+    if (seedBuiltinAgent(agent)) upgraded++;
+  }
+
+  for (const legacyDefinition of LEGACY_SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS) {
+    if (activeSoftwareAgentIds.has(legacyDefinition.id)) continue;
+
+    const existing = agentsRepo.get(legacyDefinition.id);
+    if (!existing) continue;
+    if (!matchesExactBuiltinAgent(existing, legacyDefinition, { ignoreProviderFields: true })) continue;
+
+    agentsRepo.upsert({
+      ...existing,
+      tags: existing.tags.filter(tag => tag !== SOFTWARE_DEVELOPMENT_SCENE_TAG),
+    });
+    retired++;
   }
 
   for (const def of ROUNDTABLE_AGENT_DEFINITIONS) {
@@ -114,8 +172,8 @@ function ensureBuiltinAgentCatalogV3(): void {
     providerMigrated++;
   }
 
-  db.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('builtin_agent_catalog_version', '3')").run();
-  log('INFO', 'db:seed:agents:catalog_v3', { inserted, retagged, providerMigrated });
+  db.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('builtin_agent_catalog_version', '5')").run();
+  log('INFO', 'db:seed:agents:catalog_v5', { inserted, retagged, providerMigrated, upgraded, retired });
 }
 
 const seedFreshBuiltinData = db.transaction(() => {
@@ -175,7 +233,7 @@ export function initDB(): void {
     log('INFO', 'db:seed:bootstrap:skipped', { reason: 'bootstrap_seed_version already set' });
   }
 
-  ensureBuiltinAgentCatalogV3();
+  ensureBuiltinAgentCatalogV5();
 
   log('INFO', 'db:init:done', { dbPath: DB_PATH });
 }

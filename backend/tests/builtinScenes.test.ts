@@ -40,6 +40,12 @@ describe('builtin scene prompts', () => {
     const scene = BUILTIN_SCENES.find(s => s.id === 'software-development');
 
     expect(scene?.prompt).toContain('先理解需求');
+    expect(scene?.prompt).toContain('主架构师 → 挑战架构师 → 实现工程师 → Reviewer');
+    expect(scene?.prompt).toContain('架构结论：通过');
+    expect(scene?.prompt).toContain('待用户确认');
+    expect(scene?.prompt).toContain('每次最多 @ 1 位专家');
+    expect(scene?.prompt).toContain('最后另起一行行首写 @对方');
+    expect(scene?.prompt).not.toContain('句末加 @对方');
     expect(scene?.prompt).toContain('实施计划');
     expect(scene?.prompt).toContain('TDD');
     expect(scene?.prompt).toContain('review');
@@ -69,13 +75,7 @@ describe('builtin scene prompts', () => {
     expect(BUILTIN_AGENT_DEFINITIONS.every(agent => agent.provider === 'opencode')).toBe(true);
 
     const softwareAgentNames = SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS.map(agent => agent.name);
-    expect(softwareAgentNames).toEqual(expect.arrayContaining([
-      '需求分析师',
-      '架构师',
-      '实现工程师',
-      'Reviewer',
-      '测试工程师',
-    ]));
+    expect(softwareAgentNames).toEqual(['主架构师', '挑战架构师', '实现工程师', 'Reviewer']);
     expect(SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS.every(agent => agent.tags.includes('软件开发'))).toBe(true);
   });
 
