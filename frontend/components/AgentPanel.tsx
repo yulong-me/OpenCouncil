@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, Check, ChevronDown, Clock3, Copy, Crown, GripVertical, Users, X } from 'lucide-react'
 import { AgentAvatar } from './AgentAvatar'
 import { AGENT_COLORS, DEFAULT_AGENT_COLOR, type Agent, type SessionTelemetry } from '../lib/agents'
-import { formatCompactTokenCount, formatLatencyMs } from '../lib/telemetry'
+import { formatCompactTokenCount, formatLatencyMs, getRemainingContextRatio } from '../lib/telemetry'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 
 interface RoomSkillSummary {
@@ -56,9 +56,18 @@ function AgentItem({
         : { label: '待命', className: 'bg-surface text-ink-soft border border-line', dotClassName: 'bg-ink-soft/40' }
   const isManager = agent.role === 'MANAGER'
   const avatarColors = AGENT_COLORS[agent.name] ?? DEFAULT_AGENT_COLOR
+  const hasSessionTelemetry = Boolean(sessionTelemetry)
   const contextHealth = sessionTelemetry?.contextHealth
-  const headerStatusLabel = contextHealth ? '有上下文快照' : statusMeta.label
-  const headerStatusDotClassName = contextHealth ? 'bg-[color:var(--success)]' : statusMeta.dotClassName
+  const headerStatusLabel = contextHealth
+    ? '有上下文快照'
+    : hasSessionTelemetry
+      ? '会话中'
+      : statusMeta.label
+  const headerStatusDotClassName = contextHealth
+    ? 'bg-[color:var(--success)]'
+    : hasSessionTelemetry
+      ? 'bg-[color:var(--accent)]'
+      : statusMeta.dotClassName
 
   return (
     <div className={`app-window-surface rounded-2xl border px-2.5 py-2.5 transition-all ${
@@ -85,7 +94,7 @@ function AgentItem({
                 <span className="truncate">{headerStatusLabel}</span>
               </div>
             </div>
-            {contextHealth ? (
+            {sessionTelemetry ? (
               <div className="shrink-0">
                 <TelemetryRingTrigger telemetry={sessionTelemetry} />
               </div>
@@ -94,16 +103,12 @@ function AgentItem({
                 <Crown className="h-3 w-3" />
                 主持
               </span>
-            ) : sessionTelemetry ? (
-              <span className="inline-flex shrink-0 items-center rounded-full border border-line bg-surface px-2 py-1 text-[10px] font-medium text-ink-soft">
-                会话中
-              </span>
             ) : null}
           </div>
 
-          {((isBusy && !isManager && onStopAgent) || (agent.domainLabel && !contextHealth)) ? (
+          {((isBusy && !isManager && onStopAgent) || (agent.domainLabel && !hasSessionTelemetry)) ? (
             <div className="flex items-center gap-2 flex-wrap">
-              {agent.domainLabel && !contextHealth ? (
+              {agent.domainLabel && !hasSessionTelemetry ? (
                 <span className="truncate text-[10px] text-ink-soft/58">{agent.domainLabel}</span>
               ) : null}
               {isBusy && !isManager && onStopAgent ? (
@@ -144,7 +149,8 @@ function ContextRing({
   const strokeWidth = size >= 60 ? 6 : 5
   const radius = (size - strokeWidth) / 2
   const circumference = 2 * Math.PI * radius
-  const strokeDashoffset = circumference * (1 - contextHealth.fillRatio)
+  const remainingRatio = getRemainingContextRatio(contextHealth)
+  const strokeDashoffset = circumference * (1 - remainingRatio)
   const strokeColor = contextHealth.state === 'danger'
     ? 'var(--danger)'
     : contextHealth.state === 'warn'

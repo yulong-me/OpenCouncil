@@ -6,6 +6,7 @@ import { io, type Socket } from 'socket.io-client'
 import { API_URL } from '@/lib/api'
 import { debug, setRoomId, telemetry, warn } from '@/lib/logger'
 import type { Agent, DiscussionState, Message, SessionTelemetry, ToolCall } from '@/lib/agents'
+import { mergeSessionTelemetryMaps } from '@/lib/telemetry'
 
 import type { AgentRunErrorEvent } from '../ErrorBubble'
 
@@ -281,15 +282,16 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
         ))
         const telemetryKey = data.agentConfigId
         if (telemetryKey && data.sessionId) {
-          setSessionTelemetryByAgent(previous => ({
-            ...previous,
-            [telemetryKey]: {
-              sessionId: data.sessionId!,
-              invocationUsage: data.invocationUsage,
-              contextHealth: data.contextHealth,
-              measuredAt: Date.now(),
-            },
-          }))
+          setSessionTelemetryByAgent(previous =>
+            mergeSessionTelemetryMaps(previous, {
+              [telemetryKey]: {
+                sessionId: data.sessionId!,
+                invocationUsage: data.invocationUsage,
+                contextHealth: data.contextHealth,
+                measuredAt: Date.now(),
+              },
+            }),
+          )
         }
       }
       streamingMessagesRef.current.delete(data.agentId)
@@ -357,7 +359,9 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
           setWorkspace(data.workspace)
         }
         if (data.sessionTelemetryByAgent !== undefined) {
-          setSessionTelemetryByAgent(data.sessionTelemetryByAgent as Record<string, SessionTelemetry>)
+          setSessionTelemetryByAgent(previous =>
+            mergeSessionTelemetryMaps(previous, data.sessionTelemetryByAgent as Record<string, SessionTelemetry>),
+          )
         }
 
         const fetchedMessages = (data.messages || []) as Message[]

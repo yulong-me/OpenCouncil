@@ -125,17 +125,17 @@ function createMockChildProcess() {
 }
 
 describe('providersRouter opencode test command', () => {
-  runIfPortAvailable('omits model and permissions flags from opencode preview', async () => {
+  runIfPortAvailable('shows the real opencode launch flags in preview', async () => {
     const res = await requestJson('GET', '/api/providers/opencode/preview')
 
     expect(res.status).toBe(200)
     expect(res.data.provider).toBe('opencode')
-    expect(res.data.args).toEqual(['run', '--thinking', '--format', 'json', '--', '<prompt>'])
+    expect(res.data.args).toEqual(['run', '--thinking', '--dangerously-skip-permissions', '--format', 'json', '--', '<prompt>'])
     expect(String(res.data.note)).not.toContain('-m')
-    expect(String(res.data.note)).not.toContain('--dangerously-skip-permissions')
+    expect(String(res.data.note)).toContain('--dangerously-skip-permissions')
   })
 
-  runIfPortAvailable('tests opencode connection without forced model and captures text events', async () => {
+  runIfPortAvailable('tests opencode connection with the same runtime flags and captures text events', async () => {
     spawnMock.mockImplementation(() => {
       const proc = createMockChildProcess()
       queueMicrotask(() => {
@@ -154,17 +154,21 @@ describe('providersRouter opencode test command', () => {
     expect(spawnMock.mock.calls[0]?.[1]).toEqual([
       'run',
       '--thinking',
+      '--dangerously-skip-permissions',
       '--format',
       'json',
       '--',
       '说一个简单的词，比如"你好"',
     ])
+    expect(spawnMock.mock.calls[0]?.[2]).toMatchObject({
+      cwd: '/tmp',
+    })
     expect(res.data).toMatchObject({
       success: true,
       output: '你好',
     })
     expect(String(res.data.cli)).not.toContain('-m MiniMax-M2.7')
-    expect(String(res.data.cli)).not.toContain('--dangerously-skip-permissions')
+    expect(String(res.data.cli)).toContain('--dangerously-skip-permissions')
     expect(providerConfigMocks.updateTestResult).toHaveBeenCalledWith('opencode', {
       success: true,
       version: '你好',

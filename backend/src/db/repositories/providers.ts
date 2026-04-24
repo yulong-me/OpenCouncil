@@ -51,8 +51,17 @@ export const providersRepo = {
    */
   upsert(name: string, data: Omit<ProviderConfig, 'name' | 'lastTested' | 'lastTestResult'>): void {
     db.prepare(`
-      INSERT OR REPLACE INTO providers (name, label, cli_path, default_model, context_window, api_key, base_url, timeout, thinking, last_tested, last_test_result)
-      VALUES (@name, @label, @cliPath, @defaultModel, @contextWindow, @apiKey, @baseUrl, @timeout, @thinking, NULL, NULL)
+      INSERT INTO providers (name, label, cli_path, default_model, context_window, api_key, base_url, timeout, thinking)
+      VALUES (@name, @label, @cliPath, @defaultModel, @contextWindow, @apiKey, @baseUrl, @timeout, @thinking)
+      ON CONFLICT(name) DO UPDATE SET
+        label = excluded.label,
+        cli_path = excluded.cli_path,
+        default_model = excluded.default_model,
+        context_window = excluded.context_window,
+        api_key = excluded.api_key,
+        base_url = excluded.base_url,
+        timeout = excluded.timeout,
+        thinking = excluded.thinking
     `).run({
       name,
       label: data.label ?? name,

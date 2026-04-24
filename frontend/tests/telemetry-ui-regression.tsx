@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { AgentPanel } from '../components/AgentPanel'
 import { MetadataBadge } from '../components/MetadataBadge'
-import { formatSessionSnapshotLabel } from '../lib/telemetry'
+import { formatSessionSnapshotLabel, getRemainingContextRatio, mergeSessionTelemetryMaps } from '../lib/telemetry'
 
 assert.equal(
   formatSessionSnapshotLabel({
@@ -79,13 +79,92 @@ const agentPanelMarkup = renderToStaticMarkup(
   />,
 )
 
-assert.match(agentPanelMarkup, /145k left/)
-assert.match(agentPanelMarkup, /73% available/)
+assert.match(agentPanelMarkup, /aria-label="展开 telemetry 详情"/)
+assert.match(agentPanelMarkup, /73%/)
 assert.doesNotMatch(agentPanelMarkup, /Window unknown/)
+assert.doesNotMatch(agentPanelMarkup, /145k left/)
+assert.doesNotMatch(agentPanelMarkup, /54\.9k/)
 assert.doesNotMatch(agentPanelMarkup, /Session ID/)
 assert.doesNotMatch(agentPanelMarkup, />OpenCode</)
 assert.doesNotMatch(agentPanelMarkup, />119</)
 assert.doesNotMatch(agentPanelMarkup, />511</)
 assert.doesNotMatch(agentPanelMarkup, /19s/)
+
+const partialTelemetryMarkup = renderToStaticMarkup(
+  <AgentPanel
+    agents={[
+      {
+        id: 'agent-1',
+        role: 'WORKER',
+        name: 'Paul Graham',
+        domainLabel: '',
+        status: 'idle',
+        configId: 'paul-graham',
+      },
+    ]}
+    sessionTelemetryByAgent={{
+      'paul-graham': {
+        sessionId: 'ses_partial_only',
+        measuredAt: 1,
+        invocationUsage: {
+          provider: 'OpenCode',
+          inputTokens: 119,
+          outputTokens: 511,
+          latencyMs: 19000,
+        },
+      },
+    }}
+  />,
+)
+
+assert.match(partialTelemetryMarkup, /aria-label="展开 telemetry 详情"/)
+assert.match(partialTelemetryMarkup, /会话中/)
+
+assert.deepEqual(
+  mergeSessionTelemetryMaps(
+    {
+      expert: {
+        sessionId: 'ses_new',
+        measuredAt: 200,
+        invocationUsage: { inputTokens: 100 },
+        contextHealth: {
+          usedTokens: 100,
+          windowSize: 200000,
+          leftTokens: 199900,
+          leftPct: 100,
+          fillRatio: 0.0005,
+          source: 'approx',
+          state: 'healthy',
+        },
+      },
+    },
+    {
+      expert: {
+        sessionId: 'ses_old',
+        measuredAt: 100,
+        invocationUsage: { inputTokens: 50 },
+      },
+    },
+  ).expert,
+  {
+    sessionId: 'ses_new',
+    measuredAt: 200,
+    invocationUsage: { inputTokens: 100 },
+    contextHealth: {
+      usedTokens: 100,
+      windowSize: 200000,
+      leftTokens: 199900,
+      leftPct: 100,
+      fillRatio: 0.0005,
+      source: 'approx',
+      state: 'healthy',
+    },
+  },
+)
+
+assert.equal(
+  getRemainingContextRatio({ fillRatio: 0.27466 }),
+  0.72534,
+)
 
 console.log('telemetry-ui-regression: ok')
