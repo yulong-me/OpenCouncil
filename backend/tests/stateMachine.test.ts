@@ -28,12 +28,12 @@ vi.mock('../src/db/index.js', () => ({
 
 vi.mock('../src/config/agentConfig.js', () => ({
   getAgent: vi.fn().mockReturnValue({
-    id: 'host',
-    name: '主持人',
-    role: 'MANAGER',
-    roleLabel: '主持人',
+    id: 'worker-config',
+    name: '测试专家',
+    role: 'WORKER',
+    roleLabel: '测试执行',
     provider: 'claude-code',
-    systemPrompt: '专业主持人',
+    systemPrompt: '专业测试执行',
   }),
 }));
 
@@ -58,6 +58,13 @@ vi.mock('../src/services/socketEmitter.js', () => ({
 
 vi.mock('../src/services/workspace.js', () => ({
   ensureWorkspace: vi.fn().mockResolvedValue('/tmp/test-workspace'),
+  captureWorkspaceSnapshot: vi.fn().mockResolvedValue({ files: {} }),
+  summarizeWorkspaceChanges: vi.fn().mockReturnValue({
+    hasChanges: false,
+    created: [],
+    modified: [],
+    deleted: [],
+  }),
 }));
 
 vi.mock('../src/services/skills.js', () => ({
@@ -76,7 +83,7 @@ vi.mock('../src/services/skills.js', () => ({
 }));
 
 // 动态导入以获取最新代码
-describe('F004: Manager 路由器', () => {
+describe('F004: 直接路由', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     // Default mock for scenesRepo — prevents scenePromptBuilder from throwing on old rooms without sceneId
@@ -220,6 +227,68 @@ describe('F004: Manager 路由器', () => {
       );
     });
 
+    it('session telemetry 应该按稳定的 configId 持久化，而不是按展示名', async () => {
+      const { routeToAgent } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { sessionsRepo } = await import('../src/db/index.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-1',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '同名专家', domainLabel: '架构设计', configId: 'worker-config', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: '同名专家', domainLabel: '实现工程', configId: 'worker-config-2', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: { 'worker-config-2': 'session-other' },
+        sessionTelemetryByAgent: {},
+        a2aDepth: 0,
+        a2aCallChain: [],
+      };
+
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+      vi.mocked(getProvider).mockReturnValueOnce(async function* () {
+        yield { type: 'delta', agentId: 'worker-1', text: '完成' };
+        yield {
+          type: 'end',
+          agentId: 'worker-1',
+          duration_ms: 100,
+          total_cost_usd: 0.01,
+          input_tokens: 100,
+          output_tokens: 50,
+          sessionId: 'session-worker-1',
+        };
+      });
+
+      await routeToAgent('room-1', '@同名专家 帮我看看这个方案', 'worker-1');
+
+      expect(sessionsRepo.upsert).toHaveBeenCalledWith(
+        'worker-config',
+        'room-1',
+        'session-worker-1',
+        expect.objectContaining({
+          sessionId: 'session-worker-1',
+        }),
+      );
+      expect(store.update).toHaveBeenCalledWith(
+        'room-1',
+        expect.objectContaining({
+          sessionIds: expect.objectContaining({
+            'worker-config': 'session-worker-1',
+            'worker-config-2': 'session-other',
+          }),
+          sessionTelemetryByAgent: expect.objectContaining({
+            'worker-config': expect.objectContaining({
+              sessionId: 'session-worker-1',
+            }),
+          }),
+        }),
+      );
+    });
+
     it('人工手动触发新一轮消息时，应该重置房间级 A2A 深度和调用链', async () => {
       const { routeToAgent } = await import('../src/services/stateMachine.js');
       const { store } = await import('../src/store.js');
@@ -234,7 +303,7 @@ describe('F004: Manager 路由器', () => {
         messages: [],
         sessionIds: {},
         a2aDepth: 5,
-        a2aCallChain: ['需求分析师', '架构师', 'Reviewer', '实现工程师', '测试工程师'],
+        a2aCallChain: ['架构师', '实现工程师', 'Reviewer'],
       };
 
       vi.mocked(store.get).mockReturnValue(mockRoom);
@@ -653,7 +722,7 @@ describe('F004: Manager 路由器', () => {
     });
   });
 
-  describe('Manager 决策路由', () => {
+  describe('A2A mention 路由', () => {
     it('应该能解析 @mention 并路由到 Worker', async () => {
       const { scanForA2AMentions } = await import('../src/services/routing/A2ARouter.js');
 
@@ -706,6 +775,36 @@ describe('F004: Manager 路由器', () => {
 
       expect(detectRoundtableHandoff('我不同意这个判断。\n@张一鸣\n@芒格', ['张一鸣', '查理·芒格', '芒格']))
         .toBeNull();
+    });
+
+    it('软件开发场景的 effective mentions 只保留第一个交接对象', async () => {
+      const { computeEffectiveMessageMentions } = await import('../src/services/routing/A2ARouter.js');
+
+      const mentions = computeEffectiveMessageMentions(
+        '@Reviewer 请看实现\n@主架构师 我还想补一个设计问题',
+        'software-development',
+        [
+          { id: 'worker-1', role: 'WORKER' as const, name: '主架构师', domainLabel: '方案设计', configId: 'dev-architect', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'dev-reviewer', status: 'idle' as const },
+        ],
+      );
+
+      expect(mentions).toEqual(['Reviewer']);
+    });
+
+    it('没有行首 handoff 时，唯一句内 @ 会被自动修正为单目标交接', async () => {
+      const { computeEffectiveMessageMentions } = await import('../src/services/routing/A2ARouter.js');
+
+      const mentions = computeEffectiveMessageMentions(
+        '方案转交 @挑战架构师 审议。',
+        'software-development',
+        [
+          { id: 'worker-1', role: 'WORKER' as const, name: '主架构师', domainLabel: '方案设计', configId: 'dev-architect', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: '挑战架构师', domainLabel: '方案质疑', configId: 'dev-challenge-architect', status: 'idle' as const },
+        ],
+      );
+
+      expect(mentions).toEqual(['挑战架构师']);
     });
   });
 
@@ -822,15 +921,14 @@ describe('F004: Manager 路由器', () => {
         topic: '测试话题',
         state: 'RUNNING' as const,
         agents: [
-          { id: 'worker-1', role: 'WORKER' as const, name: '需求分析师', domainLabel: '需求澄清', configId: 'requirements', status: 'idle' as const },
-          { id: 'worker-2', role: 'WORKER' as const, name: '架构师', domainLabel: '架构设计', configId: 'architect', status: 'idle' as const },
+          { id: 'worker-1', role: 'WORKER' as const, name: '架构师', domainLabel: '架构设计', configId: 'architect', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'reviewer', status: 'idle' as const },
           { id: 'worker-3', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'implementer', status: 'idle' as const },
-          { id: 'worker-4', role: 'WORKER' as const, name: '测试工程师', domainLabel: '测试验证', configId: 'qa', status: 'idle' as const },
         ],
         messages: [],
         sessionIds: {},
         a2aDepth: 4,
-        a2aCallChain: ['需求分析师', '架构师', '需求分析师', '实现工程师'],
+        a2aCallChain: ['架构师', '实现工程师', '架构师', 'Reviewer'],
         sceneId: 'software-development',
         maxA2ADepth: 0,
         createdAt: Date.now(),
@@ -840,7 +938,7 @@ describe('F004: Manager 路由器', () => {
       vi.mocked(store.get).mockReturnValue(mockRoom);
       vi.mocked(store.update).mockImplementation(() => {});
 
-      await a2aOrchestrate('room-cycle-revisit', 'worker-4', '测试工程师', '@实现工程师 请继续确认实现细节');
+      await a2aOrchestrate('room-cycle-revisit', 'worker-2', 'Reviewer', '@实现工程师 请继续确认实现细节');
 
       expect(getProvider).toHaveBeenCalledTimes(1);
     });
@@ -857,13 +955,13 @@ describe('F004: Manager 路由器', () => {
         state: 'RUNNING' as const,
         agents: [
           { id: 'worker-1', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'implementer', status: 'idle' as const },
-          { id: 'worker-2', role: 'WORKER' as const, name: '测试工程师', domainLabel: '测试验证', configId: 'qa', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'reviewer', status: 'idle' as const },
         ],
         messages: [],
         sessionIds: {},
         a2aDepth: 2,
-        a2aCallChain: ['实现工程师', '测试工程师'],
-        sceneId: 'software-development',
+        a2aCallChain: ['实现工程师', 'Reviewer'],
+        sceneId: 'custom-collab',
         maxA2ADepth: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -872,7 +970,7 @@ describe('F004: Manager 路由器', () => {
       vi.mocked(store.get).mockReturnValue(mockRoom);
       vi.mocked(store.update).mockImplementation(() => {});
 
-      await a2aOrchestrate('room-cycle-blocked', 'worker-1', '实现工程师', '@测试工程师 请再确认一次');
+      await a2aOrchestrate('room-cycle-blocked', 'worker-1', '实现工程师', '@Reviewer 请再确认一次');
 
       expect(messagesRepo.insert).toHaveBeenCalledWith(
         'room-cycle-blocked',
@@ -883,6 +981,316 @@ describe('F004: Manager 路由器', () => {
         }),
       );
       expect(getProvider).not.toHaveBeenCalled();
+    });
+
+    it('软件开发场景遇到多目标 @ 时，只保留第一个交接对象', async () => {
+      const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { messagesRepo } = await import('../src/db/index.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-single-handoff',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'dev-implementer', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'dev-reviewer', status: 'idle' as const },
+          { id: 'worker-3', role: 'WORKER' as const, name: '主架构师', domainLabel: '方案设计', configId: 'dev-architect', status: 'idle' as const },
+          { id: 'worker-4', role: 'WORKER' as const, name: '挑战架构师', domainLabel: '方案质疑', configId: 'dev-challenge-architect', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 0,
+        a2aCallChain: [],
+        sceneId: 'software-development',
+        maxA2ADepth: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+
+      await a2aOrchestrate('room-single-handoff', 'worker-1', '实现工程师', '@Reviewer 请做门禁\n@主架构师 我还有一个设计问题');
+
+      expect(messagesRepo.insert).toHaveBeenCalledWith(
+        'room-single-handoff',
+        expect.objectContaining({
+          agentName: '系统',
+          type: 'system',
+          content: expect.stringContaining('每轮只允许 @ 1 位专家'),
+        }),
+      );
+      expect(getProvider).toHaveBeenCalledTimes(1);
+    });
+
+    it('软件开发场景遇到唯一句内 @ 时，自动按单目标交接并追加纠偏提示', async () => {
+      const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { messagesRepo } = await import('../src/db/index.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-inline-fallback',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '主架构师', domainLabel: '方案设计', configId: 'dev-architect', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: '挑战架构师', domainLabel: '方案质疑', configId: 'dev-challenge-architect', status: 'idle' as const },
+          { id: 'worker-3', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'dev-implementer', status: 'idle' as const },
+          { id: 'worker-4', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'dev-reviewer', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 0,
+        a2aCallChain: [],
+        sceneId: 'software-development',
+        maxA2ADepth: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+
+      await a2aOrchestrate('room-inline-fallback', 'worker-1', '主架构师', '方案转交 @挑战架构师 审议。');
+
+      expect(messagesRepo.insert).toHaveBeenCalledWith(
+        'room-inline-fallback',
+        expect.objectContaining({
+          agentName: '系统',
+          type: 'system',
+          content: expect.stringContaining('已自动按单目标交接处理'),
+        }),
+      );
+      expect(getProvider).toHaveBeenCalledTimes(1);
+    });
+
+    it('主架构师在第一次被退回后，仍然可以合法回给挑战架构师继续第二轮收敛', async () => {
+      const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-architect-second-round',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '主架构师', domainLabel: '方案设计', configId: 'dev-architect', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: '挑战架构师', domainLabel: '方案质疑', configId: 'dev-challenge-architect', status: 'idle' as const },
+          { id: 'worker-3', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'dev-implementer', status: 'idle' as const },
+          { id: 'worker-4', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'dev-reviewer', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 2,
+        a2aCallChain: ['主架构师', '挑战架构师'],
+        sceneId: 'software-development',
+        maxA2ADepth: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+
+      await a2aOrchestrate('room-architect-second-round', 'worker-1', '主架构师', '我补充了回滚路径与失败模式。\n@挑战架构师 请做第二轮质疑');
+
+      expect(getProvider).toHaveBeenCalledTimes(1);
+    });
+
+    it('挑战架构师只有写出“架构结论：通过”后才能交给实现工程师', async () => {
+      const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { messagesRepo } = await import('../src/db/index.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-architect-gate',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '主架构师', domainLabel: '方案设计', configId: 'dev-architect', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: '挑战架构师', domainLabel: '方案质疑', configId: 'dev-challenge-architect', status: 'idle' as const },
+          { id: 'worker-3', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'dev-implementer', status: 'idle' as const },
+          { id: 'worker-4', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'dev-reviewer', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 1,
+        a2aCallChain: ['主架构师'],
+        sceneId: 'software-development',
+        maxA2ADepth: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+
+      await a2aOrchestrate('room-architect-gate', 'worker-2', '挑战架构师', '架构结论：退回\n@实现工程师 先按这个方案做一版');
+
+      expect(messagesRepo.insert).toHaveBeenCalledWith(
+        'room-architect-gate',
+        expect.objectContaining({
+          agentName: '系统',
+          type: 'system',
+          content: expect.stringContaining('架构结论：通过'),
+        }),
+      );
+      expect(getProvider).not.toHaveBeenCalled();
+    });
+
+    it('双架构连续两轮未收敛时，停止继续自动回流并要求用户确认', async () => {
+      const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { messagesRepo } = await import('../src/db/index.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-architect-deadlock',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '主架构师', domainLabel: '方案设计', configId: 'dev-architect', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: '挑战架构师', domainLabel: '方案质疑', configId: 'dev-challenge-architect', status: 'idle' as const },
+          { id: 'worker-3', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'dev-implementer', status: 'idle' as const },
+          { id: 'worker-4', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'dev-reviewer', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 3,
+        a2aCallChain: ['主架构师', '挑战架构师', '主架构师'],
+        sceneId: 'software-development',
+        maxA2ADepth: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+
+      await a2aOrchestrate('room-architect-deadlock', 'worker-2', '挑战架构师', '架构结论：退回\n@主架构师 这个回滚策略还是不成立');
+
+      expect(messagesRepo.insert).toHaveBeenCalledWith(
+        'room-architect-deadlock',
+        expect.objectContaining({
+          agentName: '系统',
+          type: 'system',
+          content: expect.stringContaining('连续两轮仍未收敛'),
+        }),
+      );
+      expect(getProvider).not.toHaveBeenCalled();
+    });
+
+    it('实现工程师没有写文件也没有交给 Reviewer 时，追加系统提示并停止继续路由', async () => {
+      const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { messagesRepo } = await import('../src/db/index.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-implementer-gate',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '主架构师', domainLabel: '方案设计', configId: 'dev-architect', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: '挑战架构师', domainLabel: '方案质疑', configId: 'dev-challenge-architect', status: 'idle' as const },
+          { id: 'worker-3', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'dev-implementer', status: 'idle' as const },
+          { id: 'worker-4', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'dev-reviewer', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 0,
+        a2aCallChain: [],
+        sceneId: 'software-development',
+        maxA2ADepth: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+
+      await a2aOrchestrate(
+        'room-implementer-gate',
+        'worker-3',
+        '实现工程师',
+        '我先整理一下实现计划，稍后再补。',
+        {
+          workspaceChanges: {
+            hasChanges: false,
+            created: [],
+            modified: [],
+            deleted: [],
+          },
+        },
+      );
+
+      expect(messagesRepo.insert).toHaveBeenCalledWith(
+        'room-implementer-gate',
+        expect.objectContaining({
+          agentName: '系统',
+          type: 'system',
+          content: expect.stringContaining('未检测到工作目录中的文件改动'),
+        }),
+      );
+      expect(messagesRepo.insert).toHaveBeenCalledWith(
+        'room-implementer-gate',
+        expect.objectContaining({
+          agentName: '系统',
+          type: 'system',
+          content: expect.stringContaining('没有把结果交给 @Reviewer'),
+        }),
+      );
+      expect(getProvider).not.toHaveBeenCalled();
+    });
+
+    it('实现工程师写了文件并把结果交给 Reviewer 时，可以继续进入审查', async () => {
+      const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      const mockRoom = {
+        id: 'room-implementer-review-pass',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: '主架构师', domainLabel: '方案设计', configId: 'dev-architect', status: 'idle' as const },
+          { id: 'worker-2', role: 'WORKER' as const, name: '挑战架构师', domainLabel: '方案质疑', configId: 'dev-challenge-architect', status: 'idle' as const },
+          { id: 'worker-3', role: 'WORKER' as const, name: '实现工程师', domainLabel: '代码实现', configId: 'dev-implementer', status: 'idle' as const },
+          { id: 'worker-4', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'dev-reviewer', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 0,
+        a2aCallChain: [],
+        sceneId: 'software-development',
+        maxA2ADepth: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      vi.mocked(store.get).mockReturnValue(mockRoom);
+      vi.mocked(store.update).mockImplementation(() => {});
+
+      await a2aOrchestrate(
+        'room-implementer-review-pass',
+        'worker-3',
+        '实现工程师',
+        '@Reviewer 请审查实现结果。',
+        {
+          workspaceChanges: {
+            hasChanges: true,
+            created: ['index.html'],
+            modified: [],
+            deleted: [],
+          },
+        },
+      );
+
+      expect(getProvider).toHaveBeenCalledTimes(1);
     });
 
     it('圆桌论坛支持用专家简称交棒，并路由到对应参与者', async () => {

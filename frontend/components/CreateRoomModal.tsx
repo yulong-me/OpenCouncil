@@ -85,9 +85,16 @@ export default function CreateRoomModal({
 
   const workers = allAgents.filter(a => a.role === 'WORKER' && a.enabled)
   const sceneAgentTag = scenes.find(s => s.id === sceneId)?.name ?? null
-  const minimumWorkerCount = sceneId === 'roundtable-forum' ? 3 : 1
+  const sceneFilterHint = sceneId === 'software-development'
+    ? '已默认筛选双架构、实现、审查核心角色。创建时必须包含主架构师、挑战架构师、实现工程师、Reviewer。'
+    : sceneAgentTag
+      ? `已默认筛选 ${sceneAgentTag} 相关专家，可切换为全部。`
+      : ''
+  const minimumWorkerCount = sceneId === 'roundtable-forum' ? 3 : sceneId === 'software-development' ? 4 : 1
   const minimumWorkerError = sceneId === 'roundtable-forum'
     ? '圆桌论坛至少选择 3 位专家'
+    : sceneId === 'software-development'
+      ? '软件开发至少选择 4 位核心专家（主架构师、挑战架构师、实现工程师、Reviewer）'
     : '请至少选择 1 位专家'
 
   useEffect(() => {
@@ -314,7 +321,7 @@ export default function CreateRoomModal({
               {loadingScenes && <p className="text-[11px] text-ink-soft mt-1">加载场景中…</p>}
               {!loadingScenes && sceneAgentTag && (
                 <p className="text-[11px] text-ink-soft mt-1">
-                  已默认筛选 {sceneAgentTag} 相关专家，可切换为全部。
+                  {sceneFilterHint}
                   {sceneId === 'roundtable-forum' ? ' 圆桌论坛强制 3 人及以上。' : ''}
                 </p>
               )}

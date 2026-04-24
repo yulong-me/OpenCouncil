@@ -1,6 +1,6 @@
-// F004: Manager 路由器 - 简化状态机
+// F004: 简化状态机
 export type DiscussionState = 'RUNNING' | 'DONE';
-// Agent 角色：MANAGER 只调度不执行，WORKER 执行具体任务
+// Agent 角色：运行期只会创建 WORKER；保留 MANAGER 仅用于兼容历史数据
 export type AgentRole = 'MANAGER' | 'WORKER';
 export type MessageType = 'system' | 'statement' | 'question' | 'rebuttal' | 'summary' | 'report' | 'user_action' | 'a2a_handoff';
 export type AgentExecutionErrorCode =
@@ -61,6 +61,38 @@ export interface ToolCall {
   timestamp?: number;
 }
 
+export interface InvocationUsage {
+  provider?: string;
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  lastTurnInputTokens?: number;
+  contextWindowSize?: number;
+  costUsd?: number;
+  latencyMs?: number;
+}
+
+export interface ContextHealth {
+  usedTokens: number;
+  windowSize: number;
+  leftTokens: number;
+  leftPct: number;
+  fillRatio: number;
+  source: 'exact' | 'approx';
+  state: 'healthy' | 'warn' | 'danger';
+}
+
+export interface SessionTelemetry {
+  sessionId: string;
+  invocationUsage?: InvocationUsage;
+  contextHealth?: ContextHealth;
+  measuredAt: number;
+}
+
 export interface Message {
   id: string;
   agentRole: AgentRole | 'USER';
@@ -77,6 +109,9 @@ export interface Message {
   total_cost_usd?: number;
   input_tokens?: number;
   output_tokens?: number;
+  sessionId?: string;
+  invocationUsage?: InvocationUsage;
+  contextHealth?: ContextHealth;
   /** Temporary ID used during streaming (replaced by real id after completion) */
   tempMsgId?: string;
   /** A2A 调用链信息 */
@@ -84,7 +119,7 @@ export interface Message {
     depth: number;
     callChain: string[];
   };
-  /** F0042: 直接路由的接收人 agentId（MANAGER 时为空） */
+  /** F0042: 直接路由的接收人 agentId */
   toAgentId?: string;
   /** F014: structured agent execution error persisted for reconnect/poll recovery */
   runError?: AgentRunError;
@@ -105,8 +140,10 @@ export interface DiscussionRoom {
   sceneId: string;
   createdAt: number;
   updatedAt: number;
-  /** agentId → session ID for CLI resume/continue support */
+  /** agentConfigId → session ID for CLI resume/continue support */
   sessionIds: Record<string, string>;
+  /** agentConfigId → latest session telemetry snapshot */
+  sessionTelemetryByAgent?: Record<string, SessionTelemetry>;
   /** A2A 深度追踪（每次 A2A 调用递增） */
   a2aDepth: number;
   /** A2A 调用链 */

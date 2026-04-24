@@ -7,4 +7,4 @@
  */
 
 export { routeToAgent, stopAgentRun, isRoomBusy } from './stateMachine/routing.js';
-export { generateReportInline, a2aOrchestrate } from './stateMachine/execution.js';
+export { generateReportInline, generateTitleSuggestionsInline, a2aOrchestrate } from './stateMachine/execution.js';
