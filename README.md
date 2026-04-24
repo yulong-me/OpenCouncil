@@ -4,6 +4,10 @@
   <img src="assets/opencouncil-icon-tile-light.svg" alt="OpenCouncil logo" width="112">
 </p>
 
+<p align="center">
+  中文 | <a href="README.en.md">English</a>
+</p>
+
 > Custom agent councils for real work.
 
 OpenCouncil 把“一个 AI 单独回答”升级成“一场可编排的专家会”。你可以为不同任务创建 Scene，例如功能评审、架构决策、市场调研或代码实现，再把不同角色的 Agent 放进同一个房间。
