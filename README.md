@@ -5,8 +5,8 @@
 一个让多个 AI 专家协作讨论、交叉质疑并逐步收敛观点的工作台。用户创建讨论室、选择专家、把消息明确发给目标专家，专家之间可以继续 `@mention` 其他专家协作。
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Node](https://img.shields.io/badge/node-22.x-green)
-![pnpm](https://img.shields.io/badge/pnpm-%3E%3D8-orange)
+![Node](https://img.shields.io/badge/node-20.19%2B%20%7C%2022.12%2B--25.x-green)
+![pnpm](https://img.shields.io/badge/pnpm-10.x-orange)
 
 ## 核心能力
 
@@ -62,15 +62,17 @@
 
 ## 前置依赖
 
-### 1. Node.js 22.x
+### 1. Node.js 20.19+ / 22.12+ 至 25.x
 
 ```bash
 node --version
 ```
 
-仓库根目录提供了 `.nvmrc` / `.node-version`。`dev/build/test` 现在会在启动前显式校验 Node 主版本，不再让不兼容的版本一路运行到半路才报 native / bundler 错误。
+仓库根目录提供了 `.nvmrc` / `.node-version`，默认推荐 Node 22.22.1。`dev/build/test` 现在会在启动前显式校验当前依赖真实支持的 Node 范围，不再只锁死在 22.x，也不会让不兼容的版本一路运行到半路才报 native / bundler 错误。
 
-### 2. pnpm >= 8
+CI 会在 Linux、macOS、Windows 上覆盖 Node 20.19.x、22.x、24.x、25.x。Node 23.x 也在本地版本门禁支持范围内。Node 18 和 21 不在支持范围内；当前后端测试工具链和 `better-sqlite3` native binding 不支持它们。
+
+### 2. pnpm 10.x
 
 ```bash
 pnpm --version
