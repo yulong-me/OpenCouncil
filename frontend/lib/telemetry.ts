@@ -92,3 +92,44 @@ export function getPreferredContextHealth(
 ): ContextHealth | undefined {
   return telemetry?.contextHealth ?? message?.contextHealth
 }
+
+export function getRemainingContextRatio(contextHealth?: Pick<ContextHealth, 'fillRatio'>): number {
+  const usedRatio = isFiniteNonNegative(contextHealth?.fillRatio) ? contextHealth.fillRatio : 0
+  return Math.max(0, Math.min(1 - usedRatio, 1))
+}
+
+export function mergeSessionTelemetryMaps(
+  current: Record<string, SessionTelemetry>,
+  incoming: Record<string, SessionTelemetry> | undefined,
+): Record<string, SessionTelemetry> {
+  if (!incoming) return current
+
+  const next: Record<string, SessionTelemetry> = { ...current }
+
+  for (const [agentKey, telemetry] of Object.entries(incoming)) {
+    const existing = next[agentKey]
+    if (!existing) {
+      next[agentKey] = telemetry
+      continue
+    }
+
+    const existingMeasuredAt = isFiniteNonNegative(existing.measuredAt) ? existing.measuredAt : 0
+    const incomingMeasuredAt = isFiniteNonNegative(telemetry.measuredAt) ? telemetry.measuredAt : 0
+
+    if (incomingMeasuredAt > existingMeasuredAt) {
+      next[agentKey] = telemetry
+      continue
+    }
+
+    if (incomingMeasuredAt === existingMeasuredAt) {
+      next[agentKey] = {
+        ...existing,
+        ...telemetry,
+        invocationUsage: telemetry.invocationUsage ?? existing.invocationUsage,
+        contextHealth: telemetry.contextHealth ?? existing.contextHealth,
+      }
+    }
+  }
+
+  return next
+}
