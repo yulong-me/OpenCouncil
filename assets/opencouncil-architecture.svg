@@ -122,14 +122,11 @@
   <rect x="535" y="414" width="210" height="40" rx="20" fill="#FFFDF9" stroke="#E4D2C2" stroke-width="1.4"/>
   <text x="563" y="439" class="label chip accent">REST + Socket.IO</text>
 
-  <path d="M930 510L805 560" stroke="#8C6A51" stroke-width="2.4" fill="none" marker-end="url(#arrow)"/>
-  <text x="838" y="530" class="label muted tiny">dispatch runs</text>
+  <path d="M1015 510V546H805" stroke="#8C6A51" stroke-width="2.4" fill="none" marker-end="url(#arrow)"/>
 
   <path d="M805 612H888" stroke="#8C6A51" stroke-width="2.4" marker-end="url(#arrow)"/>
-  <text x="826" y="598" class="label muted tiny">invoke</text>
 
   <path d="M475 612H392" stroke="#8C6A51" stroke-width="2.4" marker-end="url(#arrow)"/>
-  <text x="413" y="598" class="label muted tiny">persist</text>
 
   <rect x="88" y="678" width="118" height="30" rx="15" fill="#FAF6F1" stroke="#E4D2C2" stroke-width="1.4"/>
   <text x="106" y="699" class="label chip warm">local-first</text>
