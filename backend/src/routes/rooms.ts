@@ -12,7 +12,7 @@ import { debug, error, info, warn } from '../lib/logger.js';
 import { v4 as uuid } from 'uuid';
 import { store } from '../store.js';
 import type { DiscussionRoom } from '../types.js';
-import { routeToAgent, generateReportInline, stopAgentRun, isRoomBusy } from '../services/stateMachine.js';
+import { routeToAgent, generateReportInline, generateTitleSuggestionsInline, stopAgentRun, isRoomBusy } from '../services/stateMachine.js';
 import { roomsRepo, sessionsRepo, messagesRepo, scenesRepo } from '../db/index.js';
 import { auditRepo } from '../db/index.js';
 import { archiveWorkspace, validateWorkspacePath } from '../services/workspace.js';
@@ -143,6 +143,7 @@ roomsRouter.post('/', async (req, res) => {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     sessionIds: {},
+    sessionTelemetryByAgent: {},
     a2aDepth: 0,
     a2aCallChain: [],
     maxA2ADepth: null, // F017: null = inherit from scene
@@ -260,7 +261,7 @@ roomsRouter.patch('/:id', (req, res) => {
     return res.status(404).json({ error: 'Room not found' });
   }
 
-  const { maxA2ADepth } = req.body as { maxA2ADepth?: number | null };
+  const { maxA2ADepth, topic } = req.body as { maxA2ADepth?: number | null; topic?: string };
 
   // 有效值：3, 5, 10, 0(无限), null(继承scene)
   const validValues = new Set([3, 5, 10, 0, null]);
@@ -269,14 +270,32 @@ roomsRouter.patch('/:id', (req, res) => {
     return res.status(400).json({ error: 'maxA2ADepth must be 3, 5, 10, 0, or null' });
   }
 
-  const updated = roomsRepo.update(id, { maxA2ADepth });
+  const trimmedTopic = typeof topic === 'string' ? topic.trim() : undefined;
+  if (topic !== undefined && !trimmedTopic) {
+    warn('room:update:invalid_topic', { roomId: id, reason: 'empty_topic' });
+    return res.status(400).json({ error: 'topic cannot be empty' });
+  }
+  if (trimmedTopic && trimmedTopic.length > 100) {
+    warn('room:update:invalid_topic', { roomId: id, reason: 'topic_too_long', topicLength: trimmedTopic.length });
+    return res.status(400).json({ error: 'topic must be 100 characters or fewer' });
+  }
+
+  const updated = roomsRepo.update(id, {
+    ...(trimmedTopic ? { topic: trimmedTopic } : {}),
+    ...(maxA2ADepth !== undefined ? { maxA2ADepth } : {}),
+  });
   if (!updated) return res.status(404).json({ error: 'Room not found' });
 
   // 同步更新 in-memory store
-  store.update(id, { maxA2ADepth: updated.maxA2ADepth });
+  store.update(id, {
+    topic: updated.topic,
+    maxA2ADepth: updated.maxA2ADepth,
+  });
 
   info('room:update:max_depth', {
     roomId: id,
+    topicChanged: trimmedTopic !== undefined,
+    topic: trimmedTopic ?? room.topic,
     maxA2ADepth: updated.maxA2ADepth,
     effectiveMaxDepth: resolveEffectiveMaxDepth(updated.maxA2ADepth, updated.sceneId),
   });
@@ -287,10 +306,47 @@ roomsRouter.patch('/:id', (req, res) => {
   });
 });
 
+roomsRouter.post('/:id/title-suggestions', async (req, res) => {
+  const room = store.get(req.params.id);
+  if (!room) {
+    warn('room:title_suggestions:not_found', { roomId: req.params.id });
+    return res.status(404).json({ error: 'Room not found' });
+  }
+  if (isRoomBusy(req.params.id)) {
+    warn('room:title_suggestions:busy', { roomId: req.params.id });
+    return res.status(409).json({ code: 'ROOM_BUSY', error: 'Room has an Agent currently executing' });
+  }
+
+  const worker = room.agents.find(agent => agent.role === 'WORKER');
+  if (!worker) {
+    warn('room:title_suggestions:no_worker', { roomId: req.params.id });
+    return res.status(400).json({ error: 'No expert available to generate title suggestions' });
+  }
+
+  try {
+    const titles = await generateTitleSuggestionsInline(req.params.id, worker);
+    info('room:title_suggestions', {
+      roomId: req.params.id,
+      agentId: worker.id,
+      agentName: worker.name,
+      titleCount: titles.length,
+    });
+    return res.json({
+      titles,
+      agentId: worker.id,
+      agentName: worker.name,
+    });
+  } catch (err) {
+    warn('room:title_suggestions:failed', { roomId: req.params.id, error: err });
+    return res.status(500).json({ error: (err as Error).message || 'Failed to generate title suggestions' });
+  }
+});
+
 // GET /api/rooms/:id/messages — 轮询获取消息
 roomsRouter.get('/:id/messages', (req, res) => {
   const room = store.get(req.params.id);
   if (!room) return res.status(404).json({ error: 'Room not found' });
+  const sessionTelemetryByAgent = sessionsRepo?.getTelemetryByRoom?.(req.params.id) ?? {};
   res.setHeader('Cache-Control', 'no-store');
   res.json({
     state: room.state,
@@ -307,6 +363,7 @@ roomsRouter.get('/:id/messages', (req, res) => {
     a2aDepth: room.a2aDepth ?? 0, // F017: current A2A depth
     effectiveMaxDepth: resolveEffectiveMaxDepth(room.maxA2ADepth, room.sceneId), // F017: computed max depth
     workspace: room.workspace, // F006: workspace path for file browser
+    sessionTelemetryByAgent,
   });
 });
 
@@ -551,7 +608,7 @@ roomsRouter.delete('/archived/:id', (req, res) => {
     return res.status(404).json({ error: 'Archived room not found' });
   }
   roomsRepo.permanentDelete(id);
-  sessionsRepo.deleteByRoom(id);
+  sessionsRepo?.deleteByRoom?.(id);
   auditRepo.log('room:permanent_delete', archived.topic, undefined, { roomId: id });
   info('room:permanent_delete', { roomId: id, topic: archived.topic });
   res.json({ status: 'ok' });

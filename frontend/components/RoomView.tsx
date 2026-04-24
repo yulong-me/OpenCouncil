@@ -77,6 +77,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     effectiveSkills,
     globalSkillCount,
     workspaceDiscoveredCount,
+    sessionTelemetryByAgent,
   } = useRoomRealtime({ roomId, queuedDispatchPendingRef })
   const {
     sending,
@@ -267,6 +268,74 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     setShowInviteDrawer(true)
   }, [roomId])
 
+  const handleGenerateTitleSuggestions = useCallback(async () => {
+    if (!roomId) return []
+
+    info('ui:room:title_suggestions:start', { roomId })
+    const response = await fetch(`${API}/api/rooms/${roomId}/title-suggestions`, {
+      method: 'POST',
+    })
+    const data = await response.json().catch(() => ({})) as { titles?: string[]; error?: string }
+    if (!response.ok) {
+      warn('ui:room:title_suggestions:failed', {
+        roomId,
+        status: response.status,
+        error: data.error ?? 'unknown_error',
+      })
+      throw new Error(data.error ?? 'AI 标题生成失败，请重试')
+    }
+
+    const titles = Array.isArray(data.titles) ? data.titles.filter(title => typeof title === 'string') : []
+    info('ui:room:title_suggestions:success', { roomId, titleCount: titles.length })
+    return titles
+  }, [roomId])
+
+  const handleRenameRoom = useCallback(async (nextTopic: string) => {
+    if (!roomId) return
+
+    const trimmedTopic = nextTopic.trim()
+    if (!trimmedTopic) {
+      throw new Error('标题不能为空')
+    }
+
+    const previousTopic = currentRoomTopic
+    setRooms(previous => previous.map(room =>
+      room.id === roomId
+        ? { ...room, topic: trimmedTopic }
+        : room,
+    ))
+
+    try {
+      const response = await fetch(`${API}/api/rooms/${roomId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: trimmedTopic }),
+      })
+      const data = await response.json().catch(() => ({})) as { topic?: string; error?: string }
+      if (!response.ok) {
+        throw new Error(data.error ?? `PATCH /api/rooms/${roomId} failed: ${response.status}`)
+      }
+
+      const savedTopic = typeof data.topic === 'string' && data.topic.trim() ? data.topic.trim() : trimmedTopic
+      setRooms(previous => previous.map(room =>
+        room.id === roomId
+          ? { ...room, topic: savedTopic }
+          : room,
+      ))
+      info('ui:room:title_update:success', { roomId, topicLength: savedTopic.length })
+    } catch (error) {
+      warn('ui:room:title_update:failed', { roomId, nextTopic: trimmedTopic, error })
+      if (previousTopic) {
+        setRooms(previous => previous.map(room =>
+          room.id === roomId
+            ? { ...room, topic: previousTopic }
+            : room,
+        ))
+      }
+      throw error instanceof Error ? error : new Error('标题更新失败，请重试')
+    }
+  }, [currentRoomTopic, roomId, setRooms])
+
   const handleDownload = useCallback(() => {
     if (!report) return
     const anchor = document.createElement('a')
@@ -329,6 +398,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
             onOpenInviteDrawer={openInviteDrawer}
             agentPanelCollapsed={agentPanelCollapsed}
             onToggleAgentPanel={toggleAgentPanel}
+            onGenerateTitleSuggestions={handleGenerateTitleSuggestions}
+            onRenameRoom={handleRenameRoom}
           />
 
           <MessageList
@@ -356,8 +427,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
             report={report}
             onDownload={handleDownload}
             busyAgents={busyAgents}
-            stoppingAgentIds={stoppingAgentIds}
-            onStopAgent={handleStopAgent}
             outgoingQueue={outgoingQueue}
             recallableQueueItemId={recallableQueueItemId}
             composerDraft={composerDraft}
@@ -384,6 +453,9 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
             globalSkillCount,
             workspaceDiscoveredCount,
           }}
+          sessionTelemetryByAgent={sessionTelemetryByAgent}
+          stoppingAgentIds={stoppingAgentIds}
+          onStopAgent={handleStopAgent}
           isMobileOpen={agentDrawerOpen}
           onMobileClose={() => setAgentDrawerOpen(false)}
           desktopWidth={agentPanelWidth}
