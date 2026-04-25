@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS skills (
   enabled         INTEGER NOT NULL DEFAULT 1,
   read_only       INTEGER NOT NULL DEFAULT 0,
   builtin         INTEGER NOT NULL DEFAULT 0,
-  provider_compat TEXT NOT NULL DEFAULT '["claude-code","opencode"]',
+  provider_compat TEXT NOT NULL DEFAULT '["claude-code","opencode","codex"]',
   updated_at      INTEGER NOT NULL,
   checksum        TEXT NOT NULL
 );

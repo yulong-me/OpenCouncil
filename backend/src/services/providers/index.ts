@@ -3,6 +3,7 @@
  * Callers use getProvider() to get the right implementation based on agent config.
  */
 import { streamClaudeCodeProvider } from './claudeCode.js';
+import { streamCodexProvider } from './codex.js';
 import { streamOpenCodeProvider } from './opencode.js';
 import type { ProviderName } from '../../config/agentConfig.js';
 import { warn } from '../../lib/logger.js';
@@ -40,6 +41,7 @@ export type StreamFn = (
 const PROVIDERS: Record<ProviderName, StreamFn> = {
   'claude-code': streamClaudeCodeProvider,
   'opencode': streamOpenCodeProvider,
+  'codex': streamCodexProvider,
 };
 
 export function getProvider(name: ProviderName): StreamFn {

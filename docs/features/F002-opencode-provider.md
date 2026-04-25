@@ -1,7 +1,7 @@
 ---
 feature_ids: [F002]
 related_features: [F001]
-topics: [opencode, provider, streaming, multi-agent]
+topics: [opencode, codex, provider, streaming, multi-agent]
 doc_kind: spec
 created: 2026-04-10
 updated: 2026-04-20
@@ -23,6 +23,7 @@ F001 早期只支持 `claude -p` 作为 Agent 调用源，所有 Agent 绑定同
 ## What
 
 - 新增 `streamOpenCodeProvider()`，与 `streamClaudeCodeProvider()` 共用统一 `ClaudeEvent` 类型
+- 新增 `streamCodexProvider()`，通过 `codex exec --json` 接入 OpenAI Codex CLI
 - 统一 Provider 抽象接口（`getProvider()` factory），新增 provider 无需修改调用方
 - Agent 配置持久化到 `agents` 表，Provider 配置持久化到 `providers` 表；首次启动只 seed 一次
 - 系统级配置页面支持 `/settings/agents`、`/settings/providers`、`/settings/scenes`
@@ -101,7 +102,7 @@ interface AgentConfig {
   id: string
   name: string
   role: 'MANAGER' | 'WORKER'
-  provider: 'claude-code' | 'opencode'
+  provider: 'claude-code' | 'opencode' | 'codex'
   providerOpts: {
     model?: string
     thinking?: boolean
@@ -159,6 +160,7 @@ const gen = provider(prompt, agentId, {
 ## Changelog
 
 - 2026-04-20: 完成 Agent 级模型配置闭环。`provider.defaultModel` 与 `agent.providerOpts.model` 会透传到 `claude` / `opencode` CLI；Agent 设置页新增模型输入框；新增 `/settings/[tab]` 路由以支持 `/settings/agents`、`/settings/providers`、`/settings/scenes`。
+- 2026-04-25: 扩展 provider 抽象以支持 OpenAI Codex CLI（`codex exec --json`），包含 provider factory、Provider/Agent 设置类型、fresh DB provider seed、Codex JSONL 解析和 `.codex/skills` 注入。
 
 ## Verification
 

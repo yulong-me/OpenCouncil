@@ -19,15 +19,11 @@ import {
   buildBuiltinProviderOptsForMigration,
   type BuiltinAgentDefinition,
 } from '../prompts/builtinAgents.js';
+import { BUILTIN_PROVIDER_DEFINITIONS } from '../config/builtinProviders.js';
 import { runtimePaths } from '../config/runtimePaths.js';
 import { matchesResolvedBuiltinAgent } from './builtinAgentCatalog.js';
 import fs from 'fs';
 import path from 'path';
-
-const SEEDED_PROVIDERS = [
-  { name: 'claude-code', label: 'Claude Code', cliPath: 'claude', defaultModel: 'claude-sonnet-4-6', contextWindow: 200000, apiKey: '', baseUrl: '', timeout: 1800, thinking: true },
-  { name: 'opencode',    label: 'OpenCode',    cliPath: '~/.opencode/bin/opencode', defaultModel: 'MiniMax-M2.7', contextWindow: 200000, apiKey: '', baseUrl: '', timeout: 1800, thinking: true },
-] as const;
 
 function countRows(tableName: 'agents' | 'providers' | 'scenes' | 'rooms'): number {
   return (db.prepare(`SELECT COUNT(*) as cnt FROM ${tableName}`).get() as { cnt: number }).cnt;
@@ -35,7 +31,7 @@ function countRows(tableName: 'agents' | 'providers' | 'scenes' | 'rooms'): numb
 
 function seedBuiltinProviders(): number {
   let providersSeeded = 0;
-  for (const p of SEEDED_PROVIDERS) {
+  for (const p of BUILTIN_PROVIDER_DEFINITIONS) {
     providersRepo.insertIfNotExists(p.name, p);
     providersSeeded++;
   }

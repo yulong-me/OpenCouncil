@@ -50,7 +50,7 @@ Production mode uses a single public entry point on `7000`. Development mode kee
 - `Frontend :7002`: Next.js UI for room lists, council rooms, and Agent / Provider / Scene settings.
 - `Backend :7001`: Express API + Socket.IO for rooms, messages, reports, configuration, workspace browsing, and streaming events.
 - `Council Engine`: builds Scene prompts, runs A2A `@mention` routing, and manages Agent run state.
-- `Local AI CLI Providers`: invokes Claude Code, OpenCode, or other local CLI providers through `child_process`.
+- `Local AI CLI Providers`: invokes Claude Code, OpenCode, Codex, or other local CLI providers through `child_process`.
 - `Local Data`: stores rooms, messages, Providers, Scenes, and Agent configuration in SQLite; workspace files stay local.
 
 ## Requirements
@@ -86,6 +86,14 @@ Install from the [OpenCode website](https://opencode.ai), then verify:
 
 ```bash
 opencode --version
+```
+
+#### Codex CLI
+
+Install the OpenAI Codex CLI, then verify:
+
+```bash
+codex --version
 ```
 
 ## Quick Start

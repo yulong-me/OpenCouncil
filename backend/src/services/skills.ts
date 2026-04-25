@@ -21,7 +21,7 @@ import {
 import type { ProviderName } from '../db/repositories/agents.js';
 
 const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const DEFAULT_PROVIDER_COMPAT: SkillProviderCompat[] = ['claude-code', 'opencode'];
+const DEFAULT_PROVIDER_COMPAT: SkillProviderCompat[] = ['claude-code', 'opencode', 'codex'];
 
 export interface SkillBindingInput {
   skillId?: string;
@@ -137,7 +137,7 @@ function scaffoldSkillContent(name: string, description: string): string {
 
 function normalizeProviderCompat(providerCompat?: SkillProviderCompat[]): SkillProviderCompat[] {
   const next = Array.from(new Set((providerCompat ?? DEFAULT_PROVIDER_COMPAT).filter(
-    provider => provider === 'claude-code' || provider === 'opencode',
+    provider => provider === 'claude-code' || provider === 'opencode' || provider === 'codex',
   )));
   return next.length > 0 ? next : [...DEFAULT_PROVIDER_COMPAT];
 }
@@ -438,7 +438,8 @@ async function discoverGlobalSkills(): Promise<DiscoveredSkill[]> {
     { dir: path.join(home, '.claude', 'skills'), providerCompat: ['claude-code'] },
     { dir: path.join(home, '.config', 'opencode', 'skills'), providerCompat: ['opencode'] },
     { dir: path.join(home, '.opencode', 'skills'), providerCompat: ['opencode'] },
-    { dir: path.join(home, '.agents', 'skills'), providerCompat: ['claude-code', 'opencode'] },
+    { dir: path.join(home, '.codex', 'skills'), providerCompat: ['codex'] },
+    { dir: path.join(home, '.agents', 'skills'), providerCompat: ['claude-code', 'opencode', 'codex'] },
   ];
 
   for (const source of sources) {
@@ -480,9 +481,10 @@ export async function discoverWorkspaceSkills(workspacePath: string): Promise<{
   let current = workspaceRoot;
   while (true) {
     const candidates = await Promise.all([
-      discoverBundlesFromDirectory(path.join(current, '.agents', 'skills'), ['claude-code', 'opencode']),
+      discoverBundlesFromDirectory(path.join(current, '.agents', 'skills'), ['claude-code', 'opencode', 'codex']),
       discoverBundlesFromDirectory(path.join(current, '.claude', 'skills'), ['claude-code']),
       discoverBundlesFromDirectory(path.join(current, '.opencode', 'skills'), ['opencode']),
+      discoverBundlesFromDirectory(path.join(current, '.codex', 'skills'), ['codex']),
     ]);
     for (const skill of candidates.flat()) {
       if (!byName.has(skill.name)) {
@@ -640,9 +642,13 @@ export async function resolveEffectiveSkills(input: {
 }
 
 function providerSkillDir(providerName: ProviderName, providerRuntimeDir: string): string {
-  return providerName === 'claude-code'
-    ? path.join(providerRuntimeDir, '.claude', 'skills')
-    : path.join(providerRuntimeDir, '.opencode', 'skills');
+  if (providerName === 'claude-code') {
+    return path.join(providerRuntimeDir, '.claude', 'skills');
+  }
+  if (providerName === 'codex') {
+    return path.join(providerRuntimeDir, '.codex', 'skills');
+  }
+  return path.join(providerRuntimeDir, '.opencode', 'skills');
 }
 
 export async function assembleProviderRuntime(input: {
