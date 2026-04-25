@@ -16,7 +16,7 @@ interface AgentConfig {
   name: string
   roleLabel: string
   role: 'MANAGER' | 'WORKER' | 'USER'
-  provider: 'claude-code' | 'opencode'
+  provider: 'claude-code' | 'opencode' | 'codex'
   providerOpts: { thinking?: boolean; [key: string]: unknown }
   systemPrompt: string
   enabled: boolean
@@ -26,6 +26,7 @@ interface AgentConfig {
 const PROVIDER_LABELS: Record<string, string> = {
   'claude-code': 'Claude',
   'opencode': 'OpenCode',
+  'codex': 'Codex',
 }
 
 const DOMAIN_COLORS: Record<string, { bg: string; text: string; border: string }> = {

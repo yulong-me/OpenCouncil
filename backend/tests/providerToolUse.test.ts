@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ProviderConfig } from '../src/config/providerConfig.js';
 import { parseClaudeAssistantToolUseEvents } from '../src/services/providers/claudeCode.js';
+import { buildCodexProviderLaunch, parseCodexJsonEvents } from '../src/services/providers/codex.js';
 import { extractOpenCodeErrorMessage, parseOpenCodeToolUseEvent } from '../src/services/providers/opencode.js';
 import { buildClaudeProviderLaunch } from '../src/services/providers/claudeCode.js';
 import { buildOpenCodeProviderLaunch } from '../src/services/providers/opencode.js';
@@ -159,6 +160,168 @@ describe('provider tool_use parsing', () => {
       timeout: 90000,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+  });
+
+  it('builds Codex launch config with json output and provider runtime workspace', () => {
+    const workspace = '/Users/yulong/work/sample-project';
+    const providerRuntimeDir = '/tmp/opencouncil/provider-runtime/room-1/codex';
+    const launch = buildCodexProviderLaunch(
+      'hello from codex',
+      { workspace, providerRuntimeDir, model: 'gpt-5.2', thinking: true },
+      { ...baseProviderConfig, name: 'codex', label: 'Codex CLI', cliPath: '~/bin/codex', defaultModel: '' },
+      { HOME: '/Users/tester', PATH: '/usr/bin' },
+    );
+
+    expect(launch.cliPath).toBe('/Users/tester/bin/codex');
+    expect(launch.cwd).toBe(providerRuntimeDir);
+    expect(launch.args).toEqual(expect.arrayContaining([
+      'exec',
+      '--json',
+      '--color',
+      'never',
+      '--skip-git-repo-check',
+      '-C',
+      `${providerRuntimeDir}/workspace`,
+      '-m',
+      'gpt-5.2',
+      '-c',
+      'model_reasoning_effort=high',
+      '--dangerously-bypass-approvals-and-sandbox',
+      'hello from codex',
+    ]));
+    expect(launch.spawnOptions).toMatchObject({
+      cwd: providerRuntimeDir,
+      timeout: 90000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    expect(launch.env).toMatchObject({
+      PATH: '/usr/bin',
+      OPENAI_API_KEY: 'test-key',
+      OPENAI_BASE_URL: 'https://provider.example.com',
+    });
+  });
+
+  it('builds Codex resume launch config when a session id exists', () => {
+    const launch = buildCodexProviderLaunch(
+      'continue with codex',
+      { sessionId: 'thread-123', thinking: false },
+      { ...baseProviderConfig, name: 'codex', label: 'Codex CLI', cliPath: 'codex', defaultModel: 'gpt-5.2' },
+      { PATH: '/usr/bin' },
+    );
+
+    expect(launch.args).toEqual(expect.arrayContaining([
+      'exec',
+      '--json',
+      '--color',
+      'never',
+      '-m',
+      'gpt-5.2',
+      '-c',
+      'model_reasoning_effort=low',
+      'resume',
+      'thread-123',
+      'continue with codex',
+    ]));
+  });
+
+  it('honors disabled provider-level thinking for Codex launch config', () => {
+    const launch = buildCodexProviderLaunch(
+      'hello from codex',
+      { thinking: true },
+      { ...baseProviderConfig, name: 'codex', label: 'Codex CLI', cliPath: 'codex', thinking: false },
+      { PATH: '/usr/bin' },
+    );
+
+    expect(launch.args).toEqual(expect.arrayContaining([
+      '-c',
+      'model_reasoning_effort=low',
+    ]));
+    expect(launch.args).not.toContain('model_reasoning_effort=high');
+  });
+
+  it('parses current Codex exec JSONL events', () => {
+    const state = { startTime: 1000, now: () => 1500 };
+
+    expect(parseCodexJsonEvents({ type: 'thread.started', thread_id: 'thread-1' }, 'agent-1', state)).toEqual([]);
+    expect(parseCodexJsonEvents({
+      type: 'item.completed',
+      item: { id: 'item-1', type: 'reasoning', text: 'Thinking summary' },
+    }, 'agent-1', state)).toEqual([
+      { type: 'thinking_delta', agentId: 'agent-1', thinking: 'Thinking summary' },
+    ]);
+    expect(parseCodexJsonEvents({
+      type: 'item.completed',
+      item: { id: 'item-2', type: 'agent_message', text: 'Final answer' },
+    }, 'agent-1', state)).toEqual([
+      { type: 'delta', agentId: 'agent-1', text: 'Final answer' },
+    ]);
+    expect(parseCodexJsonEvents({
+      type: 'item.started',
+      item: { id: 'item-3', type: 'command_execution', command: 'pwd', aggregated_output: '', status: 'in_progress' },
+    }, 'agent-1', state)).toEqual([
+      { type: 'tool_use', agentId: 'agent-1', toolName: 'command_execution', toolInput: { command: 'pwd', status: 'in_progress' }, callId: 'item-3' },
+    ]);
+    expect(parseCodexJsonEvents({
+      type: 'turn.completed',
+      usage: { input_tokens: 12, cached_input_tokens: 3, output_tokens: 4, reasoning_output_tokens: 5 },
+    }, 'agent-1', state)).toEqual([
+      {
+        type: 'end',
+        agentId: 'agent-1',
+        duration_ms: 500,
+        total_cost_usd: 0,
+        input_tokens: 12,
+        output_tokens: 4,
+        sessionId: 'thread-1',
+        total_tokens: 24,
+        cache_read_tokens: 3,
+        cache_write_tokens: 0,
+        reasoning_tokens: 5,
+        last_turn_input_tokens: 12,
+      },
+    ]);
+  });
+
+  it('parses legacy Codex exec msg-wrapped events', () => {
+    const state = { startTime: 1000, now: () => 1750 };
+
+    expect(parseCodexJsonEvents({
+      id: '0',
+      msg: { type: 'task_started', model_context_window: 272000 },
+    }, 'agent-1', state)).toEqual([
+      { type: 'start', agentId: 'agent-1', timestamp: 1750, messageId: '0' },
+    ]);
+    expect(parseCodexJsonEvents({
+      id: '0',
+      msg: { type: 'agent_message_delta', delta: 'Hello' },
+    }, 'agent-1', state)).toEqual([
+      { type: 'delta', agentId: 'agent-1', text: 'Hello' },
+    ]);
+    expect(parseCodexJsonEvents({
+      id: '0',
+      msg: {
+        type: 'token_count',
+        info: {
+          total_token_usage: { input_tokens: 2, cached_input_tokens: 1, output_tokens: 3, reasoning_output_tokens: 4, total_tokens: 10 },
+          model_context_window: 272000,
+        },
+      },
+    }, 'agent-1', state)).toEqual([
+      {
+        type: 'end',
+        agentId: 'agent-1',
+        duration_ms: 750,
+        total_cost_usd: 0,
+        input_tokens: 2,
+        output_tokens: 3,
+        total_tokens: 10,
+        cache_read_tokens: 1,
+        cache_write_tokens: 0,
+        reasoning_tokens: 4,
+        last_turn_input_tokens: 2,
+        context_window_tokens: 272000,
+      },
+    ]);
   });
 
   it('does not force the provider default model for OpenCode', () => {

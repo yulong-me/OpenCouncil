@@ -10,6 +10,7 @@ import {
 } from '../config/providerConfig.js'
 import { debug, error as logError, info, warn } from '../lib/logger.js'
 import { buildClaudeProviderLaunch } from '../services/providers/claudeCode.js'
+import { buildCodexProviderLaunch, parseCodexJsonEvents } from '../services/providers/codex.js'
 import { buildOpenCodeProviderLaunch } from '../services/providers/opencode.js'
 
 /**
@@ -143,6 +144,26 @@ router.get('/:name/preview', (req, res) => {
       timeout: p.timeout,
       note: `Agent 调用时: ${cliPath} ${launch.args.join(' ')}`,
     })
+  } else if (p.name === 'codex') {
+    const launch = buildCodexProviderLaunch('<prompt>', {}, p)
+    debug('provider:preview', {
+      provider: p.name,
+      cliPath,
+      timeout: p.timeout,
+      hasDefaultModel: Boolean(p.defaultModel.trim()),
+      thinking: p.thinking,
+    })
+    res.json({
+      provider: 'codex',
+      cli: cliPath,
+      args: launch.args,
+      env: {
+        ...(p.apiKey ? { OPENAI_API_KEY: '(已设置)' } : {}),
+        ...(p.baseUrl ? { OPENAI_BASE_URL: p.baseUrl } : {}),
+      },
+      timeout: p.timeout,
+      note: `Agent 调用时: ${cliPath} ${launch.args.join(' ')}`,
+    })
   } else {
     warn('provider:preview:unknown', { provider: p.name })
     res.json({ provider: p.name, cli: cliPath, note: '未知 Provider 类型' })
@@ -180,6 +201,13 @@ router.post('/:name/test', (req, res) => {
     timeout = Math.max(launch.timeout, 30000)
     cwd = launch.cwd
     resultCli = `${cliPath} ${args.join(' ')}`
+  } else if (p.name === 'codex') {
+    const launch = buildCodexProviderLaunch(testPrompt, {}, p)
+    args = launch.args
+    env = launch.env
+    timeout = Math.max(launch.timeout, 30000)
+    cwd = launch.cwd
+    resultCli = `${cliPath} ${args.join(' ')}`
   } else {
     warn('provider:test:unknown', { provider: p.name })
     return res.status(400).json({ error: 'Unknown provider type' })
@@ -190,7 +218,7 @@ router.post('/:name/test', (req, res) => {
     cliPath,
     timeout_ms: timeout,
     hasDefaultModel: Boolean(p.defaultModel.trim()),
-    thinking: p.name === 'opencode' ? p.thinking : undefined,
+    thinking: p.name === 'opencode' || p.name === 'codex' ? p.thinking : undefined,
   })
 
   const proc = spawn(cliPath, args, { timeout, env, cwd, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -198,6 +226,7 @@ router.post('/:name/test', (req, res) => {
   let stderr = ''
   let outputLines: string[] = []
   let capturedOutput = ''
+  const codexParseState = { startTime: Date.now(), now: () => Date.now() }
 
   // Normalize subprocess stdout to UTF-8 via TextDecoder auto-detection (handles UTF-16LE on Windows)
   const stdoutStream = toUtf8(proc.stdout!)
@@ -220,6 +249,25 @@ router.post('/:name/test', (req, res) => {
           if ((obj.type === 'delta' || obj.type === 'text') && textPart) {
             capturedOutput += textPart
             outputLines.push(`[text] ${textPart}`)
+          }
+        } catch { /* skip */ }
+      }
+    } else if (p.name === 'codex') {
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue
+        try {
+          const obj = JSON.parse(line) as Record<string, unknown>
+          for (const event of parseCodexJsonEvents(obj, 'provider-test', codexParseState)) {
+            if (event.type === 'delta') {
+              capturedOutput += event.text
+              outputLines.push(`[text] ${event.text}`)
+            } else if (event.type === 'thinking_delta') {
+              outputLines.push(`[thinking] ${event.thinking}`)
+            } else if (event.type === 'tool_use') {
+              outputLines.push(`[tool] ${event.toolName}`)
+            } else if (event.type === 'error') {
+              outputLines.push(`[error] ${event.message}`)
+            }
           }
         } catch { /* skip */ }
       }

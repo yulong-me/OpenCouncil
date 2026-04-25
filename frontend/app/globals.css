@@ -36,6 +36,7 @@
     --warning-deep: #986127;
     --provider-claude: #c43a2f;
     --provider-opencode: #9a6d38;
+    --provider-codex: #2f7d68;
     --provider-host: #b87933;
     --provider-worker: #8f5e46;
     --panel: #fff8f2;
@@ -73,6 +74,7 @@
     --warning-deep: #ae783d;
     --provider-claude: #d4453a;
     --provider-opencode: #c78d4b;
+    --provider-codex: #45b08f;
     --provider-host: #c78d4b;
     --provider-worker: #9a6d57;
     --panel: #101012;
@@ -608,7 +610,8 @@ textarea {
 }
 
 .provider-badge-claude-code,
-.provider-badge-opencode {
+.provider-badge-opencode,
+.provider-badge-codex {
   border-width: 1px;
   font-weight: 700;
 }
@@ -625,8 +628,15 @@ textarea {
   border-color: color-mix(in srgb, var(--provider-opencode) 24%, transparent) !important;
 }
 
+.provider-badge-codex {
+  color: var(--provider-codex) !important;
+  background-color: color-mix(in srgb, var(--provider-codex) 11%, transparent) !important;
+  border-color: color-mix(in srgb, var(--provider-codex) 24%, transparent) !important;
+}
+
 .provider-swatch-claude-code,
 .provider-swatch-opencode,
+.provider-swatch-codex,
 .provider-swatch-host,
 .provider-swatch-worker {
   color: #fff !important;
@@ -640,6 +650,11 @@ textarea {
 .provider-swatch-opencode {
   background-color: var(--provider-opencode) !important;
   box-shadow: 0 10px 18px color-mix(in srgb, var(--provider-opencode) 24%, transparent);
+}
+
+.provider-swatch-codex {
+  background-color: var(--provider-codex) !important;
+  box-shadow: 0 10px 18px color-mix(in srgb, var(--provider-codex) 24%, transparent);
 }
 
 .provider-swatch-host {

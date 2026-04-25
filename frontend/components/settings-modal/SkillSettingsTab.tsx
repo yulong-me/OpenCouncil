@@ -365,7 +365,7 @@ export function SkillSettingsTab({
           <p className="text-[13px] font-bold text-ink">系统全局 Skills（只读）</p>
         </div>
         {globalSkills.length === 0 ? (
-          <p className="text-[12px] text-ink-soft">当前没有发现 `~/.claude/skills`、`~/.config/opencode/skills`、`~/.agents/skills` 下的全局 skills。</p>
+          <p className="text-[12px] text-ink-soft">当前没有发现 `~/.claude/skills`、`~/.config/opencode/skills`、`~/.codex/skills`、`~/.agents/skills` 下的全局 skills。</p>
         ) : (
           <div className="space-y-2">
             {globalSkills.map(skill => (
