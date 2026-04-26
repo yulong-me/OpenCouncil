@@ -125,6 +125,25 @@ function createMockChildProcess() {
 }
 
 describe('providersRouter opencode test command', () => {
+  runIfPortAvailable('returns lightweight CLI readiness without spawning the provider', async () => {
+    providerConfigMocks.getAllProviders.mockReturnValue({
+      opencode: {
+        ...opencodeProvider,
+        cliPath: '/definitely/not/an/opencode',
+      },
+    })
+
+    const res = await requestJson('GET', '/api/providers/readiness')
+
+    expect(res.status).toBe(200)
+    expect(spawnMock).not.toHaveBeenCalled()
+    expect(res.data.opencode).toMatchObject({
+      provider: 'opencode',
+      status: 'cli_missing',
+      cliAvailable: false,
+    })
+  })
+
   runIfPortAvailable('omits model and permissions flags from opencode preview', async () => {
     const res = await requestJson('GET', '/api/providers/opencode/preview')
 

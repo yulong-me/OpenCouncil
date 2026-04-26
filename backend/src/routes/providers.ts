@@ -9,6 +9,7 @@ import {
   updateTestResult,
 } from '../config/providerConfig.js'
 import { debug, error as logError, info, warn } from '../lib/logger.js'
+import { buildProvidersReadiness } from '../services/providerReadiness.js'
 
 /**
  * Normalize subprocess stdout to UTF-8 text stream.
@@ -37,6 +38,16 @@ router.get('/', (_req, res) => {
   const providers = getAllProviders()
   debug('provider:list', { count: Object.keys(providers).length })
   res.json(providers)
+})
+
+// GET /api/providers/readiness — lightweight CLI availability, no model call
+router.get('/readiness', (_req, res) => {
+  const readiness = buildProvidersReadiness(getAllProviders())
+  debug('provider:readiness', {
+    count: Object.keys(readiness).length,
+    blockers: Object.values(readiness).filter(provider => provider.status === 'cli_missing').length,
+  })
+  res.json(readiness)
 })
 
 // GET /api/providers/:name
