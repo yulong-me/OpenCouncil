@@ -4,11 +4,12 @@ function isFiniteNonNegative(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
-function normalizeProviderKey(provider?: string): 'claude-code' | 'opencode' | undefined {
+function normalizeProviderKey(provider?: string): 'claude-code' | 'opencode' | 'codex' | undefined {
   if (!provider) return undefined
   const normalized = provider.trim().toLowerCase()
   if (normalized === 'claude code' || normalized === 'claude-code') return 'claude-code'
   if (normalized === 'opencode' || normalized === 'open code') return 'opencode'
+  if (normalized === 'codex' || normalized === 'codex cli' || normalized === 'codex-cli') return 'codex'
   return undefined
 }
 
@@ -38,6 +39,7 @@ export function getProviderBadgeClass(provider?: string): string {
   const normalized = normalizeProviderKey(provider)
   if (normalized === 'claude-code') return 'provider-badge-claude-code'
   if (normalized === 'opencode') return 'provider-badge-opencode'
+  if (normalized === 'codex') return 'provider-badge-codex'
   return 'border-line bg-surface text-ink'
 }
 
@@ -45,6 +47,7 @@ export function getProviderSwatchClass(provider?: string): string {
   const normalized = normalizeProviderKey(provider)
   if (normalized === 'claude-code') return 'provider-swatch-claude-code'
   if (normalized === 'opencode') return 'provider-swatch-opencode'
+  if (normalized === 'codex') return 'provider-swatch-codex'
   return 'bg-ink-soft/55'
 }
 
@@ -91,4 +94,45 @@ export function getPreferredContextHealth(
   message?: Message,
 ): ContextHealth | undefined {
   return telemetry?.contextHealth ?? message?.contextHealth
+}
+
+export function getRemainingContextRatio(contextHealth?: Pick<ContextHealth, 'fillRatio'>): number {
+  const usedRatio = isFiniteNonNegative(contextHealth?.fillRatio) ? contextHealth.fillRatio : 0
+  return Math.max(0, Math.min(1 - usedRatio, 1))
+}
+
+export function mergeSessionTelemetryMaps(
+  current: Record<string, SessionTelemetry>,
+  incoming: Record<string, SessionTelemetry> | undefined,
+): Record<string, SessionTelemetry> {
+  if (!incoming) return current
+
+  const next: Record<string, SessionTelemetry> = { ...current }
+
+  for (const [agentKey, telemetry] of Object.entries(incoming)) {
+    const existing = next[agentKey]
+    if (!existing) {
+      next[agentKey] = telemetry
+      continue
+    }
+
+    const existingMeasuredAt = isFiniteNonNegative(existing.measuredAt) ? existing.measuredAt : 0
+    const incomingMeasuredAt = isFiniteNonNegative(telemetry.measuredAt) ? telemetry.measuredAt : 0
+
+    if (incomingMeasuredAt > existingMeasuredAt) {
+      next[agentKey] = telemetry
+      continue
+    }
+
+    if (incomingMeasuredAt === existingMeasuredAt) {
+      next[agentKey] = {
+        ...existing,
+        ...telemetry,
+        invocationUsage: telemetry.invocationUsage ?? existing.invocationUsage,
+        contextHealth: telemetry.contextHealth ?? existing.contextHealth,
+      }
+    }
+  }
+
+  return next
 }

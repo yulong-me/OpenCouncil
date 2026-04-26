@@ -9,6 +9,9 @@ import {
   updateTestResult,
 } from '../config/providerConfig.js'
 import { debug, error as logError, info, warn } from '../lib/logger.js'
+import { buildClaudeProviderLaunch } from '../services/providers/claudeCode.js'
+import { buildCodexProviderLaunch, parseCodexJsonEvents } from '../services/providers/codex.js'
+import { buildOpenCodeProviderLaunch } from '../services/providers/opencode.js'
 import { buildProvidersReadiness } from '../services/providerReadiness.js'
 
 /**
@@ -111,49 +114,66 @@ router.get('/:name/preview', (req, res) => {
   }
 
   const cliPath = p.cliPath.replace(/^~/, process.env.HOME || '/root')
-  const defaultModel = p.defaultModel.trim()
   if (p.name === 'claude-code') {
-    const args = ['-p', '<prompt>', '--verbose', '--output-format=stream-json', '--include-partial-messages']
-    args.push('--dangerously-skip-permissions')
-    if (defaultModel) args.push('--model', defaultModel)
+    const launch = buildClaudeProviderLaunch('<prompt>', {}, p)
     debug('provider:preview', {
       provider: p.name,
       cliPath,
       timeout: p.timeout,
-      hasDefaultModel: Boolean(defaultModel),
+      hasDefaultModel: Boolean(p.defaultModel.trim()),
     })
     res.json({
       provider: 'claude-code',
       cli: cliPath,
-      args,
+      args: launch.args,
       env: {
         ...(p.apiKey ? { ANTHROPIC_API_KEY: p.apiKey ? '(已设置)' : '(未设置)' } : {}),
         ...(p.baseUrl ? { ANTHROPIC_BASE_URL: p.baseUrl } : {}),
       },
       timeout: p.timeout,
-      note: defaultModel
-        ? `Agent 调用时会拼接: claude -p "<角色定义>\\n\\n<用户消息>" --verbose --model ${defaultModel} ...`
-        : 'Agent 调用时会拼接: claude -p "<角色定义>\\n\\n<用户消息>" --verbose ...',
+      note: p.defaultModel.trim()
+        ? `Agent 调用时会拼接: claude -p "<角色定义>\\n\\n<用户消息>" --verbose --dangerously-skip-permissions --model ${p.defaultModel.trim()} ...`
+        : 'Agent 调用时会拼接: claude -p "<角色定义>\\n\\n<用户消息>" --verbose --dangerously-skip-permissions ...',
     })
   } else if (p.name === 'opencode') {
-    const args = ['run', ...(p.thinking ? ['--thinking'] : []), '--format', 'json', '--', '<prompt>']
+    const launch = buildOpenCodeProviderLaunch('<prompt>', {}, p)
     debug('provider:preview', {
       provider: p.name,
       cliPath,
       timeout: p.timeout,
-      hasDefaultModel: Boolean(defaultModel),
+      hasDefaultModel: Boolean(p.defaultModel.trim()),
       thinking: p.thinking,
     })
     res.json({
       provider: 'opencode',
       cli: cliPath,
-      args,
+      args: launch.args,
       env: {
         ...(p.apiKey ? { ANTHROPIC_API_KEY: '(已设置)' } : {}),
         ...(p.baseUrl ? { ANTHROPIC_BASE_URL: p.baseUrl } : {}),
       },
       timeout: p.timeout,
-      note: `Agent 调用时: opencode run${p.thinking ? ' --thinking' : ''} --format json -- "<prompt>"`,
+      note: `Agent 调用时: ${cliPath} ${launch.args.join(' ')}`,
+    })
+  } else if (p.name === 'codex') {
+    const launch = buildCodexProviderLaunch('<prompt>', {}, p)
+    debug('provider:preview', {
+      provider: p.name,
+      cliPath,
+      timeout: p.timeout,
+      hasDefaultModel: Boolean(p.defaultModel.trim()),
+      thinking: p.thinking,
+    })
+    res.json({
+      provider: 'codex',
+      cli: cliPath,
+      args: launch.args,
+      env: {
+        ...(p.apiKey ? { OPENAI_API_KEY: '(已设置)' } : {}),
+        ...(p.baseUrl ? { OPENAI_BASE_URL: p.baseUrl } : {}),
+      },
+      timeout: p.timeout,
+      note: `Agent 调用时: ${cliPath} ${launch.args.join(' ')}`,
     })
   } else {
     warn('provider:preview:unknown', { provider: p.name })
@@ -170,26 +190,34 @@ router.post('/:name/test', (req, res) => {
   }
 
   const cliPath = p.cliPath.replace(/^~/, process.env.HOME || '/root')
-  const timeout = Math.max((p.timeout ?? 1800) * 1000, 30000)
   const testPrompt = '说一个简单的词，比如"你好"'
-  const defaultModel = p.defaultModel.trim()
-
-  const env: Record<string, string> = { ...(process.env as Record<string, string>) }
-  if (p.apiKey) env.ANTHROPIC_API_KEY = p.apiKey
-  if (p.baseUrl) env.ANTHROPIC_BASE_URL = p.baseUrl
 
   let args: string[]
   let resultCli: string
+  let env: Record<string, string>
+  let timeout: number
+  let cwd: string
 
   if (p.name === 'claude-code') {
-    args = ['-p', testPrompt, '--verbose', '--output-format=stream-json', '--include-partial-messages']
-    args.push('--dangerously-skip-permissions')
-    if (defaultModel) args.push('--model', defaultModel)
+    const launch = buildClaudeProviderLaunch(testPrompt, {}, p)
+    args = launch.args
+    env = launch.env
+    timeout = Math.max(launch.timeout, 30000)
+    cwd = launch.cwd
     resultCli = `${cliPath} ${args.join(' ')}`
   } else if (p.name === 'opencode') {
-    args = ['run']
-    if (p.thinking) args.push('--thinking')
-    args.push('--format', 'json', '--', testPrompt)
+    const launch = buildOpenCodeProviderLaunch(testPrompt, {}, p)
+    args = launch.args
+    env = launch.env
+    timeout = Math.max(launch.timeout, 30000)
+    cwd = launch.cwd
+    resultCli = `${cliPath} ${args.join(' ')}`
+  } else if (p.name === 'codex') {
+    const launch = buildCodexProviderLaunch(testPrompt, {}, p)
+    args = launch.args
+    env = launch.env
+    timeout = Math.max(launch.timeout, 30000)
+    cwd = launch.cwd
     resultCli = `${cliPath} ${args.join(' ')}`
   } else {
     warn('provider:test:unknown', { provider: p.name })
@@ -200,15 +228,16 @@ router.post('/:name/test', (req, res) => {
     provider: p.name,
     cliPath,
     timeout_ms: timeout,
-    hasDefaultModel: Boolean(defaultModel),
-    thinking: p.name === 'opencode' ? p.thinking : undefined,
+    hasDefaultModel: Boolean(p.defaultModel.trim()),
+    thinking: p.name === 'opencode' || p.name === 'codex' ? p.thinking : undefined,
   })
 
-  const proc = spawn(cliPath, args, { timeout, env, cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] })
+  const proc = spawn(cliPath, args, { timeout, env, cwd, stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   let stderr = ''
   let outputLines: string[] = []
   let capturedOutput = ''
+  const codexParseState = { startTime: Date.now(), now: () => Date.now() }
 
   // Normalize subprocess stdout to UTF-8 via TextDecoder auto-detection (handles UTF-16LE on Windows)
   const stdoutStream = toUtf8(proc.stdout!)
@@ -231,6 +260,25 @@ router.post('/:name/test', (req, res) => {
           if ((obj.type === 'delta' || obj.type === 'text') && textPart) {
             capturedOutput += textPart
             outputLines.push(`[text] ${textPart}`)
+          }
+        } catch { /* skip */ }
+      }
+    } else if (p.name === 'codex') {
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue
+        try {
+          const obj = JSON.parse(line) as Record<string, unknown>
+          for (const event of parseCodexJsonEvents(obj, 'provider-test', codexParseState)) {
+            if (event.type === 'delta') {
+              capturedOutput += event.text
+              outputLines.push(`[text] ${event.text}`)
+            } else if (event.type === 'thinking_delta') {
+              outputLines.push(`[thinking] ${event.thinking}`)
+            } else if (event.type === 'tool_use') {
+              outputLines.push(`[tool] ${event.toolName}`)
+            } else if (event.type === 'error') {
+              outputLines.push(`[error] ${event.message}`)
+            }
           }
         } catch { /* skip */ }
       }

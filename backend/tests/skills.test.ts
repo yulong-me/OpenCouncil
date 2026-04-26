@@ -47,6 +47,7 @@ describe('skills service', () => {
 
     await writeSkill(path.join(repoRoot, '.agents', 'skills', 'review'), 'review', 'repo review');
     await writeSkill(path.join(repoRoot, '.claude', 'skills', 'claude-only'), 'claude-only', 'claude only');
+    await writeSkill(path.join(repoRoot, '.codex', 'skills', 'codex-only'), 'codex-only', 'codex only');
 
     const workspace = path.join(repoRoot, 'packages', 'app');
     await fs.mkdir(workspace, { recursive: true });
@@ -56,9 +57,10 @@ describe('skills service', () => {
     const discovered = await discoverWorkspaceSkills(workspace);
     const byName = Object.fromEntries(discovered.skills.map(skill => [skill.name, skill]));
 
-    expect(Object.keys(byName).sort()).toEqual(['claude-only', 'opencode-only', 'review']);
+    expect(Object.keys(byName).sort()).toEqual(['claude-only', 'codex-only', 'opencode-only', 'review']);
     expect(byName.review?.description).toBe('workspace review');
     expect(byName['claude-only']?.providerCompat).toEqual(['claude-code']);
+    expect(byName['codex-only']?.providerCompat).toEqual(['codex']);
     expect(byName['opencode-only']?.providerCompat).toEqual(['opencode']);
   });
 
@@ -95,22 +97,57 @@ describe('skills service', () => {
     expect(skillLink).toBe(skillBundle);
   });
 
-  it('discovers system global skills from claude and opencode home directories', async () => {
+  it('assembles Codex provider runtime under .codex/skills', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'opencouncil-runtime-workspace-'));
+    const skillBundle = await fs.mkdtemp(path.join(os.tmpdir(), 'opencouncil-runtime-skill-'));
+    cleanupDirs.push(workspace, skillBundle);
+    await fs.writeFile(path.join(skillBundle, 'SKILL.md'), '# test\n');
+
+    const roomId = `room-${randomUUID()}`;
+    const result = await assembleProviderRuntime({
+      roomId,
+      providerName: 'codex',
+      effectiveWorkspace: workspace,
+      effectiveSkills: [{
+        name: 'review',
+        description: 'Review code',
+        mode: 'required',
+        source: 'room',
+        sourceLabel: 'Room',
+        sourcePath: path.join(skillBundle, 'SKILL.md'),
+        bundlePath: skillBundle,
+        providerCompat: ['codex'],
+        enabled: true,
+        checksum: 'abc',
+      }],
+    });
+    cleanupDirs.push(path.join(runtimePaths.providerRuntimeBaseDir, 'rooms', roomId));
+
+    const workspaceLink = await fs.readlink(path.join(result.providerRuntimeDir, 'workspace'));
+    const skillLink = await fs.readlink(path.join(result.providerRuntimeDir, '.codex', 'skills', 'review'));
+
+    expect(workspaceLink).toBe(workspace);
+    expect(skillLink).toBe(skillBundle);
+  });
+
+  it('discovers system global skills from claude, opencode, and codex home directories', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'opencouncil-home-'));
     cleanupDirs.push(home);
     process.env.HOME = home;
 
     await writeSkill(path.join(home, '.claude', 'skills', 'claude-global'), 'claude-global', 'global claude');
     await writeSkill(path.join(home, '.config', 'opencode', 'skills', 'opencode-global'), 'opencode-global', 'global opencode');
+    await writeSkill(path.join(home, '.codex', 'skills', 'codex-global'), 'codex-global', 'global codex');
     await writeSkill(path.join(home, '.agents', 'skills', 'shared-global'), 'shared-global', 'global shared');
 
     const discovered = await discoverSystemGlobalSkills();
     const byName = Object.fromEntries(discovered.map(skill => [skill.name, skill]));
 
-    expect(Object.keys(byName).sort()).toEqual(['claude-global', 'opencode-global', 'shared-global']);
+    expect(Object.keys(byName).sort()).toEqual(['claude-global', 'codex-global', 'opencode-global', 'shared-global']);
     expect(byName['claude-global']?.sourceType).toBe('global');
     expect(byName['opencode-global']?.providerCompat).toEqual(['opencode']);
-    expect(byName['shared-global']?.providerCompat).toEqual(['claude-code', 'opencode']);
+    expect(byName['codex-global']?.providerCompat).toEqual(['codex']);
+    expect(byName['shared-global']?.providerCompat).toEqual(['claude-code', 'opencode', 'codex']);
   });
 
   it('imports a skill folder into managed skills', async () => {
