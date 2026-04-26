@@ -4,11 +4,12 @@ function isFiniteNonNegative(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
-function normalizeProviderKey(provider?: string): 'claude-code' | 'opencode' | undefined {
+function normalizeProviderKey(provider?: string): 'claude-code' | 'opencode' | 'codex' | undefined {
   if (!provider) return undefined
   const normalized = provider.trim().toLowerCase()
   if (normalized === 'claude code' || normalized === 'claude-code') return 'claude-code'
   if (normalized === 'opencode' || normalized === 'open code') return 'opencode'
+  if (normalized === 'codex' || normalized === 'codex cli' || normalized === 'codex-cli') return 'codex'
   return undefined
 }
 
@@ -38,6 +39,7 @@ export function getProviderBadgeClass(provider?: string): string {
   const normalized = normalizeProviderKey(provider)
   if (normalized === 'claude-code') return 'provider-badge-claude-code'
   if (normalized === 'opencode') return 'provider-badge-opencode'
+  if (normalized === 'codex') return 'provider-badge-codex'
   return 'border-line bg-surface text-ink'
 }
 
@@ -45,6 +47,7 @@ export function getProviderSwatchClass(provider?: string): string {
   const normalized = normalizeProviderKey(provider)
   if (normalized === 'claude-code') return 'provider-swatch-claude-code'
   if (normalized === 'opencode') return 'provider-swatch-opencode'
+  if (normalized === 'codex') return 'provider-swatch-codex'
   return 'bg-ink-soft/55'
 }
 

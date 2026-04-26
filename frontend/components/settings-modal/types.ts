@@ -1,4 +1,4 @@
-export type ProviderName = 'claude-code' | 'opencode'
+export type ProviderName = 'claude-code' | 'opencode' | 'codex'
 
 export interface AgentConfig {
   id: string
@@ -74,19 +74,23 @@ export interface ReadOnlySkill {
 export const PROVIDER_LABELS: Record<ProviderName, string> = {
   'claude-code': 'Claude Code',
   'opencode': 'OpenCode',
+  'codex': 'Codex CLI',
 }
 
 export const PROVIDER_COLORS: Record<ProviderName, string> = {
   'claude-code': 'provider-badge-claude-code',
   'opencode': 'provider-badge-opencode',
+  'codex': 'provider-badge-codex',
 }
 
 export const PROVIDER_SWATCHES: Record<ProviderName, string> = {
   'claude-code': 'provider-swatch provider-orb provider-swatch-claude-code',
   'opencode': 'provider-swatch provider-orb provider-swatch-opencode',
+  'codex': 'provider-swatch provider-orb provider-swatch-codex',
 }
 
 export const PROVIDER_DOTS: Record<ProviderName, string> = {
   'claude-code': 'provider-swatch-claude-code',
   'opencode': 'provider-swatch-opencode',
+  'codex': 'provider-swatch-codex',
 }

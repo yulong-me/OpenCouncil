@@ -2,7 +2,7 @@ export interface BuiltinAgentDefinition {
   id: string;
   name: string;
   roleLabel: string;
-  provider: 'claude-code' | 'opencode';
+  provider: 'claude-code' | 'opencode' | 'codex';
   providerOpts: { thinking?: boolean };
   tags: string[];
   skillId?: string;

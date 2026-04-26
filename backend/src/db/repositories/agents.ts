@@ -1,6 +1,6 @@
 import { db } from '../db.js';
 
-export type ProviderName = 'claude-code' | 'opencode';
+export type ProviderName = 'claude-code' | 'opencode' | 'codex';
 
 export interface AgentConfig {
   id: string;
