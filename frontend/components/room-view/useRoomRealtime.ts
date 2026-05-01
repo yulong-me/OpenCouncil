@@ -29,6 +29,10 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
   const [currentA2ADepth, setCurrentA2ADepth] = useState(0)
   const [effectiveMaxDepth, setEffectiveMaxDepth] = useState(5)
   const [workspace, setWorkspace] = useState<string | undefined>(undefined)
+  const [teamId, setTeamId] = useState<string | undefined>(undefined)
+  const [teamVersionId, setTeamVersionId] = useState<string | undefined>(undefined)
+  const [teamName, setTeamName] = useState<string | undefined>(undefined)
+  const [teamVersionNumber, setTeamVersionNumber] = useState<number | undefined>(undefined)
   const [effectiveSkills, setEffectiveSkills] = useState<Array<{ name: string; mode: 'auto' | 'required'; sourceLabel: string }>>([])
   const [globalSkillCount, setGlobalSkillCount] = useState(0)
   const [workspaceDiscoveredCount, setWorkspaceDiscoveredCount] = useState(0)
@@ -60,6 +64,10 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
     setCurrentA2ADepth(0)
     setEffectiveMaxDepth(5)
     setWorkspace(undefined)
+    setTeamId(undefined)
+    setTeamVersionId(undefined)
+    setTeamName(undefined)
+    setTeamVersionNumber(undefined)
     setEffectiveSkills([])
     setGlobalSkillCount(0)
     setWorkspaceDiscoveredCount(0)
@@ -358,6 +366,10 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
         if (data.workspace !== undefined) {
           setWorkspace(data.workspace)
         }
+        setTeamId(data.teamId)
+        setTeamVersionId(data.teamVersionId)
+        setTeamName(data.teamName)
+        setTeamVersionNumber(data.teamVersionNumber)
         if (data.sessionTelemetryByAgent !== undefined) {
           setSessionTelemetryByAgent(previous =>
             mergeSessionTelemetryMaps(previous, data.sessionTelemetryByAgent as Record<string, SessionTelemetry>),
@@ -451,6 +463,10 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
     effectiveMaxDepth,
     setEffectiveMaxDepth,
     workspace,
+    teamId,
+    teamVersionId,
+    teamName,
+    teamVersionNumber,
     effectiveSkills,
     globalSkillCount,
     workspaceDiscoveredCount,

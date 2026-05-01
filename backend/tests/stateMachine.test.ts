@@ -24,6 +24,9 @@ vi.mock('../src/db/index.js', () => ({
   sessionsRepo: { upsert: vi.fn() },
   auditRepo: { log: vi.fn() },
   scenesRepo: { get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  teamsRepo: { list: vi.fn(), get: vi.fn(), getActiveVersion: vi.fn(), getVersion: vi.fn(), ensureFromScenes: vi.fn() },
+  agentsRepo: { list: vi.fn(), get: vi.fn(), upsert: vi.fn(), delete: vi.fn() },
+  evolutionRepo: { create: vi.fn(), get: vi.fn(), listByRoom: vi.fn(), latestTargetVersionNumber: vi.fn(), setChangeDecision: vi.fn(), merge: vi.fn() },
 }));
 
 vi.mock('../src/config/agentConfig.js', () => ({

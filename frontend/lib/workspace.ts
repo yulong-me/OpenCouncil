@@ -99,6 +99,12 @@ export function previewWorkspaceFile(path: string) {
   })
 }
 
+export function getWorkspaceMediaUrl(path: string) {
+  const url = new URL(`${API_URL}/api/browse/media`)
+  url.searchParams.set('path', path)
+  return url.toString()
+}
+
 export function fetchGitStatus(workspacePath: string) {
   const url = new URL(`${API_URL}/api/git/status`)
   url.searchParams.set('workspacePath', workspacePath)

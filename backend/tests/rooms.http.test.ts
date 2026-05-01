@@ -26,6 +26,28 @@ vi.mock('../src/db/index.js', () => ({
   roomsRepo: { create: vi.fn(), update: vi.fn(), listSidebar: vi.fn() },
   auditRepo: { log: vi.fn() },
   scenesRepo: { get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  teamsRepo: {
+    list: vi.fn(),
+    get: vi.fn(),
+    getActiveVersion: vi.fn(),
+    getVersion: vi.fn(),
+    ensureFromScenes: vi.fn(),
+    generateDraftFromGoal: vi.fn(),
+    createFromDraft: vi.fn(),
+  },
+  agentsRepo: { list: vi.fn(), get: vi.fn(), upsert: vi.fn(), delete: vi.fn() },
+  evolutionRepo: {
+    create: vi.fn(),
+    get: vi.fn(),
+    listByRoom: vi.fn(),
+    latestTargetVersionNumber: vi.fn(),
+    setChangeDecision: vi.fn(),
+    reject: vi.fn(),
+    listValidationCasesForProposal: vi.fn(),
+    runPreflight: vi.fn(),
+    getTeamQualityTimeline: vi.fn(),
+    merge: vi.fn(),
+  },
 }));
 
 vi.mock('../src/config/agentConfig.js', () => ({
@@ -57,9 +79,20 @@ vi.mock('../src/services/stateMachine.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../src/services/teamDrafts.js', () => ({
+  generateTeamDraftFromGoal: vi.fn(),
+}));
+
+vi.mock('../src/services/teamEvolution.js', () => ({
+  createEvolutionProposalFromRoom: vi.fn(),
+}));
+
 import { roomsRouter } from '../src/routes/rooms.js';
+import { teamsRouter } from '../src/routes/teams.js';
 import { store } from '../src/store.js';
-import { roomsRepo, scenesRepo } from '../src/db/index.js';
+import { roomsRepo, scenesRepo, teamsRepo, evolutionRepo } from '../src/db/index.js';
+import { generateTeamDraftFromGoal } from '../src/services/teamDrafts.js';
+import { createEvolutionProposalFromRoom } from '../src/services/teamEvolution.js';
 import { getAgent } from '../src/config/agentConfig.js';
 import { getProvider as getProviderConfig } from '../src/config/providerConfig.js';
 import { generateTitleSuggestionsInline, stopAgentRun } from '../src/services/stateMachine.js';
@@ -69,6 +102,7 @@ function makeApp() {
   const app = express();
   app.use(express.json());
   app.use('/api/rooms', roomsRouter);
+  app.use('/api/teams', teamsRouter);
   return app;
 }
 
@@ -478,6 +512,117 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
     }));
   });
 
+  _skipIfNoPort('POST /api/rooms accepts teamId, resolves active TeamVersion, and defaults workers from the version', async () => {
+    vi.mocked(scenesRepo.get).mockReturnValue({
+      id: 'custom-scene',
+      name: '自定义场景',
+      prompt: '自定义场景 prompt',
+      builtin: false,
+      maxA2ADepth: 5,
+    });
+    vi.mocked(teamsRepo.getActiveVersion).mockReturnValue({
+      id: 'custom-scene-v1',
+      teamId: 'custom-scene',
+      versionNumber: 1,
+      name: '自定义团队',
+      sourceSceneId: 'custom-scene',
+      memberIds: ['worker-1'],
+      workflowPrompt: 'team workflow',
+      routingPolicy: {},
+      teamMemory: [],
+      maxA2ADepth: 5,
+      createdAt: 1,
+      createdFrom: 'scene-seed',
+    });
+    vi.mocked(getAgent).mockImplementation((id: string) => {
+      if (id !== 'worker-1') return undefined;
+      return {
+        id,
+        name: '测试员',
+        role: 'WORKER',
+        roleLabel: '测试',
+        provider: 'claude-code',
+        providerOpts: { thinking: true },
+        systemPrompt: '你是测试员',
+        enabled: true,
+        tags: ['自定义场景'],
+      };
+    });
+
+    const result = await requestJson('POST', '/api/rooms', {
+      topic: 'Team room',
+      teamId: 'custom-scene',
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.data).toMatchObject({
+      topic: 'Team room',
+      sceneId: 'custom-scene',
+      teamId: 'custom-scene',
+      teamVersionId: 'custom-scene-v1',
+      teamName: '自定义团队',
+      teamVersionNumber: 1,
+    });
+    expect(roomsRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      sceneId: 'custom-scene',
+      teamId: 'custom-scene',
+      teamVersionId: 'custom-scene-v1',
+    }));
+  });
+
+  _skipIfNoPort('POST /api/rooms accepts teamVersionId before teamId and pins that exact version', async () => {
+    vi.mocked(scenesRepo.get).mockReturnValue({
+      id: 'custom-scene',
+      name: '自定义场景',
+      prompt: '自定义场景 prompt',
+      builtin: false,
+      maxA2ADepth: 5,
+    });
+    vi.mocked(teamsRepo.getVersion).mockReturnValue({
+      id: 'custom-scene-v2',
+      teamId: 'custom-scene',
+      versionNumber: 2,
+      name: '自定义团队',
+      sourceSceneId: 'custom-scene',
+      memberIds: ['worker-2'],
+      workflowPrompt: 'team workflow v2',
+      routingPolicy: {},
+      teamMemory: [],
+      maxA2ADepth: 5,
+      createdAt: 2,
+      createdFrom: 'manual',
+    });
+    vi.mocked(getAgent).mockImplementation((id: string) => {
+      if (id !== 'worker-2') return undefined;
+      return {
+        id,
+        name: '测试员二',
+        role: 'WORKER',
+        roleLabel: '测试',
+        provider: 'claude-code',
+        providerOpts: { thinking: true },
+        systemPrompt: '你是测试员二',
+        enabled: true,
+        tags: ['自定义场景'],
+      };
+    });
+
+    const result = await requestJson('POST', '/api/rooms', {
+      topic: 'Pinned team room',
+      teamId: 'custom-scene',
+      teamVersionId: 'custom-scene-v2',
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.data).toMatchObject({
+      sceneId: 'custom-scene',
+      teamId: 'custom-scene',
+      teamVersionId: 'custom-scene-v2',
+      teamVersionNumber: 2,
+    });
+    expect(teamsRepo.getActiveVersion).not.toHaveBeenCalled();
+  });
+
   _skipIfNoPort('PATCH /api/rooms/:id returns scene effective depth when clearing room override', async () => {
     vi.mocked(store.get).mockReturnValue({
       id: 'room-depth',
@@ -525,6 +670,865 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
     expect(store.update).toHaveBeenCalledWith('room-depth', expect.objectContaining({
       maxA2ADepth: null,
     }));
+  });
+
+  _skipIfNoPort('POST /api/rooms/:id/evolution-proposals creates a pending proposal for the pinned TeamVersion', async () => {
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-team',
+      topic: 'Team run',
+      state: 'RUNNING' as const,
+      agents: [{
+        id: 'agent-runtime-1',
+        role: 'WORKER' as const,
+        name: 'Reviewer',
+        domainLabel: '审查',
+        configId: 'reviewer',
+        status: 'idle' as const,
+      }],
+      messages: [{
+        id: 'msg-1',
+        agentRole: 'USER' as const,
+        agentName: '你',
+        content: 'Reviewer 没有验证代码，我不满意',
+        timestamp: 1,
+        type: 'user_action' as const,
+      }],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'software-development',
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
+      teamName: '软件开发团队',
+      teamVersionNumber: 1,
+      maxA2ADepth: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    vi.mocked(teamsRepo.getVersion).mockReturnValue({
+      id: 'software-development-v1',
+      teamId: 'software-development',
+      versionNumber: 1,
+      name: '软件开发团队',
+      sourceSceneId: 'software-development',
+      memberIds: ['reviewer'],
+      memberSnapshots: [{
+        id: 'reviewer',
+        name: 'Reviewer',
+        roleLabel: '审查',
+        provider: 'claude-code',
+        providerOpts: {},
+        systemPrompt: '旧 reviewer prompt',
+      }],
+      workflowPrompt: '旧工作流',
+      routingPolicy: {},
+      teamMemory: [],
+      maxA2ADepth: 5,
+      createdAt: 1,
+      createdFrom: 'scene-seed',
+    });
+    vi.mocked(evolutionRepo.latestTargetVersionNumber).mockReturnValue(2);
+    const proposal = {
+      id: 'evo-1',
+      roomId: 'room-team',
+      teamId: 'software-development',
+      baseVersionId: 'software-development-v1',
+      targetVersionNumber: 2,
+      status: 'pending',
+      summary: 'Team Architect 根据本次讨论生成 2 项进化建议。',
+      feedback: 'Reviewer 没有验证代码',
+      createdAt: 1,
+      updatedAt: 1,
+      changes: [
+        {
+          id: 'change-0',
+          proposalId: 'evo-1',
+          ordinal: 0,
+          kind: 'edit-agent-prompt',
+          title: '强化 Reviewer 验证职责',
+          why: '用户反馈 Reviewer 没有验证代码。',
+          evidenceMessageIds: ['msg-1'],
+          targetLayer: 'member-prompt',
+          before: '旧 reviewer prompt',
+          after: { agentId: 'reviewer', systemPrompt: '新 reviewer prompt，必须给出验证证据。' },
+          impact: '后续新房间会要求 Reviewer 明确验证证据。',
+        },
+      ],
+    } as const;
+    vi.mocked(createEvolutionProposalFromRoom).mockResolvedValueOnce(proposal);
+    vi.mocked(evolutionRepo.create).mockImplementation(input => ({
+      id: 'evo-1',
+      roomId: input.roomId,
+      teamId: input.teamId,
+      baseVersionId: input.baseVersionId,
+      targetVersionNumber: input.targetVersionNumber,
+      status: 'pending',
+      summary: input.summary,
+      feedback: input.feedback,
+      createdAt: 1,
+      updatedAt: 1,
+      changes: input.changes.map((change, index) => ({
+        ...change,
+        id: `change-${index}`,
+        proposalId: 'evo-1',
+        ordinal: index,
+      })),
+    }));
+
+    const result = await requestJson('POST', '/api/rooms/room-team/evolution-proposals', {
+      feedback: 'Reviewer 没有验证代码',
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.data).toMatchObject({
+      id: 'evo-1',
+      roomId: 'room-team',
+      teamId: 'software-development',
+      baseVersionId: 'software-development-v1',
+      targetVersionNumber: 2,
+      status: 'pending',
+    });
+    expect(createEvolutionProposalFromRoom).toHaveBeenCalledWith(expect.objectContaining({ id: 'room-team' }), 'Reviewer 没有验证代码');
+  });
+
+  _skipIfNoPort('POST /api/rooms/:id/evolution-proposals returns 503 when Team Architect cannot generate a valid proposal', async () => {
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-team',
+      topic: 'Team run',
+      state: 'RUNNING' as const,
+      agents: [],
+      messages: [{
+        id: 'msg-1',
+        agentRole: 'USER' as const,
+        agentName: '你',
+        content: 'Reviewer 没有验证代码，我不满意',
+        timestamp: 1,
+        type: 'user_action' as const,
+      }],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'software-development',
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
+      teamName: '软件开发团队',
+      teamVersionNumber: 1,
+      maxA2ADepth: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    vi.mocked(createEvolutionProposalFromRoom).mockRejectedValueOnce(Object.assign(
+      new Error('生成 Team 改进提案失败，请补充改进意见后重试'),
+      { code: 'EVOLUTION_PROPOSAL_AGENT_FAILED' },
+    ));
+
+    const result = await requestJson('POST', '/api/rooms/room-team/evolution-proposals', {
+      feedback: 'Reviewer 没有验证代码',
+    });
+
+    expect(result.status).toBe(503);
+    expect(result.data).toMatchObject({
+      code: 'EVOLUTION_PROPOSAL_AGENT_FAILED',
+      error: '生成 Team 改进提案失败，请补充改进意见后重试',
+    });
+  });
+
+  _skipIfNoPort('POST /api/rooms/:id/evolution-proposals returns 409 ROOM_BUSY during an active run', async () => {
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-team-busy',
+      topic: 'Team run',
+      state: 'RUNNING' as const,
+      agents: [{
+        id: 'agent-runtime-1',
+        role: 'WORKER' as const,
+        name: 'Reviewer',
+        domainLabel: '审查',
+        configId: 'reviewer',
+        status: 'thinking' as const,
+      }],
+      messages: [{
+        id: 'msg-1',
+        agentRole: 'USER' as const,
+        agentName: '你',
+        content: 'Reviewer 还没跑完',
+        timestamp: 1,
+        type: 'user_action' as const,
+      }],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'software-development',
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
+      teamName: '软件开发团队',
+      teamVersionNumber: 1,
+      maxA2ADepth: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const result = await requestJson('POST', '/api/rooms/room-team-busy/evolution-proposals', {
+      feedback: '不要从未完成 transcript 生成 EVO PR',
+    });
+
+    expect(result.status).toBe(409);
+    expect(result.data).toHaveProperty('code', 'ROOM_BUSY');
+    expect(evolutionRepo.create).not.toHaveBeenCalled();
+  });
+
+  _skipIfNoPort('POST /api/rooms/:id/evolution-proposals can replace a disliked pending proposal with new feedback', async () => {
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-team',
+      topic: 'Team run',
+      state: 'RUNNING' as const,
+      agents: [],
+      messages: [{
+        id: 'msg-1',
+        agentRole: 'USER' as const,
+        agentName: '你',
+        content: '旧提案没有解决验证问题',
+        timestamp: 1,
+        type: 'user_action' as const,
+      }],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'software-development',
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
+      teamName: '软件开发团队',
+      teamVersionNumber: 1,
+      maxA2ADepth: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    vi.mocked(evolutionRepo.get).mockReturnValue({
+      id: 'evo-old',
+      roomId: 'room-team',
+      teamId: 'software-development',
+      baseVersionId: 'software-development-v1',
+      targetVersionNumber: 2,
+      status: 'pending',
+      summary: '旧提案',
+      createdAt: 1,
+      updatedAt: 1,
+      changes: [],
+    });
+    vi.mocked(evolutionRepo.reject).mockReturnValue({
+      id: 'evo-old',
+      roomId: 'room-team',
+      teamId: 'software-development',
+      baseVersionId: 'software-development-v1',
+      targetVersionNumber: 2,
+      status: 'rejected',
+      summary: '旧提案',
+      createdAt: 1,
+      updatedAt: 2,
+      changes: [],
+    });
+    const regeneratedProposal = {
+      id: 'evo-new',
+      roomId: 'room-team',
+      teamId: 'software-development',
+      baseVersionId: 'software-development-v1',
+      targetVersionNumber: 2,
+      status: 'pending',
+      summary: '按补充意见重新生成',
+      feedback: '请不要只加记忆，要修改 Reviewer prompt',
+      createdAt: 3,
+      updatedAt: 3,
+      changes: [],
+    } as const;
+    vi.mocked(createEvolutionProposalFromRoom).mockResolvedValueOnce(regeneratedProposal);
+
+    const result = await requestJson('POST', '/api/rooms/room-team/evolution-proposals', {
+      feedback: '请不要只加记忆，要修改 Reviewer prompt',
+      replacesProposalId: 'evo-old',
+    });
+
+    expect(result.status).toBe(200);
+    expect(evolutionRepo.get).toHaveBeenCalledWith('evo-old');
+    expect(evolutionRepo.reject).not.toHaveBeenCalled();
+    expect(createEvolutionProposalFromRoom).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'room-team' }),
+      '请不要只加记忆，要修改 Reviewer prompt',
+      { replacesProposalId: 'evo-old' },
+    );
+    expect(result.data).toMatchObject({ id: 'evo-new', status: 'pending', feedback: '请不要只加记忆，要修改 Reviewer prompt' });
+  });
+
+  _skipIfNoPort('POST /api/rooms/:id/evolution-proposals returns 409 without generation when replaced proposal is terminal', async () => {
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-team',
+      topic: 'Team run',
+      state: 'RUNNING' as const,
+      agents: [],
+      messages: [{
+        id: 'msg-1',
+        agentRole: 'USER' as const,
+        agentName: '你',
+        content: '旧提案已经合并了',
+        timestamp: 1,
+        type: 'user_action' as const,
+      }],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'software-development',
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
+      teamName: '软件开发团队',
+      teamVersionNumber: 1,
+      maxA2ADepth: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    vi.mocked(evolutionRepo.get).mockReturnValue({
+      id: 'evo-old',
+      roomId: 'room-team',
+      teamId: 'software-development',
+      baseVersionId: 'software-development-v1',
+      targetVersionNumber: 2,
+      status: 'applied',
+      summary: '已应用提案',
+      createdAt: 1,
+      updatedAt: 2,
+      changes: [],
+    });
+
+    const result = await requestJson('POST', '/api/rooms/room-team/evolution-proposals', {
+      feedback: '请重新生成',
+      replacesProposalId: 'evo-old',
+    });
+
+    expect(result.status).toBe(409);
+    expect(result.data).toMatchObject({
+      code: 'EVOLUTION_PROPOSAL_STATE_CONFLICT',
+      error: 'Cannot replace applied proposal',
+    });
+    expect(createEvolutionProposalFromRoom).not.toHaveBeenCalled();
+    expect(evolutionRepo.create).not.toHaveBeenCalled();
+    expect(evolutionRepo.reject).not.toHaveBeenCalled();
+  });
+
+  _skipIfNoPort('POST /api/rooms/:id/evolution-proposals keeps replaced proposal pending when regeneration fails', async () => {
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-team',
+      topic: 'Team run',
+      state: 'RUNNING' as const,
+      agents: [],
+      messages: [{
+        id: 'msg-1',
+        agentRole: 'USER' as const,
+        agentName: '你',
+        content: '旧提案没有解决验证问题',
+        timestamp: 1,
+        type: 'user_action' as const,
+      }],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'software-development',
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
+      teamName: '软件开发团队',
+      teamVersionNumber: 1,
+      maxA2ADepth: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    vi.mocked(evolutionRepo.get).mockReturnValue({
+      id: 'evo-old',
+      roomId: 'room-team',
+      teamId: 'software-development',
+      baseVersionId: 'software-development-v1',
+      targetVersionNumber: 2,
+      status: 'pending',
+      summary: '旧提案',
+      createdAt: 1,
+      updatedAt: 1,
+      changes: [],
+    });
+    vi.mocked(createEvolutionProposalFromRoom).mockRejectedValueOnce(Object.assign(
+      new Error('生成 Team 改进提案失败，请补充改进意见后重试'),
+      { code: 'EVOLUTION_PROPOSAL_AGENT_FAILED' },
+    ));
+
+    const result = await requestJson('POST', '/api/rooms/room-team/evolution-proposals', {
+      feedback: '请重新生成',
+      replacesProposalId: 'evo-old',
+    });
+
+    expect(result.status).toBe(503);
+    expect(evolutionRepo.get).toHaveBeenCalledWith('evo-old');
+    expect(evolutionRepo.reject).not.toHaveBeenCalled();
+  });
+
+  _skipIfNoPort('POST /api/rooms/:id/evolution-proposals rejects scene-only rooms', async () => {
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-scene',
+      topic: 'Scene-only room',
+      state: 'RUNNING' as const,
+      agents: [],
+      messages: [],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'roundtable-forum',
+      maxA2ADepth: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    vi.mocked(createEvolutionProposalFromRoom).mockRejectedValueOnce(
+      new Error('Team-backed room required for evolution proposals'),
+    );
+
+    const result = await requestJson('POST', '/api/rooms/room-scene/evolution-proposals', {});
+
+    expect(result.status).toBe(400);
+    expect(result.data).toHaveProperty('error', 'Team-backed room required for evolution proposals');
+  });
+
+  _skipIfNoPort('PATCH /api/teams/evolution-proposals/:proposalId/changes/:changeId persists a decision', async () => {
+    vi.mocked(evolutionRepo.setChangeDecision).mockReturnValue({
+      id: 'evo-1',
+      roomId: 'room-team',
+      teamId: 'software-development',
+      baseVersionId: 'software-development-v1',
+      targetVersionNumber: 2,
+      status: 'in-review',
+      summary: '建议强化验证',
+      createdAt: 1,
+      updatedAt: 2,
+      changes: [{
+        id: 'change-1',
+        proposalId: 'evo-1',
+        ordinal: 0,
+        kind: 'edit-team-workflow',
+        title: '增加验证阶段',
+        why: '流程缺验证',
+        evidenceMessageIds: ['msg-1'],
+        targetLayer: 'workflow',
+        before: '旧工作流',
+        after: '新工作流',
+        impact: '新房间生效',
+        decision: 'accepted',
+        decidedAt: 2,
+      }],
+    });
+
+    const result = await requestJson('PATCH', '/api/teams/evolution-proposals/evo-1/changes/change-1', {
+      decision: 'accepted',
+    });
+
+    expect(result.status).toBe(200);
+    expect(evolutionRepo.setChangeDecision).toHaveBeenCalledWith('evo-1', 'change-1', 'accepted');
+    expect(result.data).toMatchObject({ id: 'evo-1', status: 'in-review' });
+  });
+
+  _skipIfNoPort('PATCH /api/teams/evolution-proposals/:proposalId/changes/:changeId returns 404 for missing proposal or change', async () => {
+    vi.mocked(evolutionRepo.setChangeDecision).mockImplementation(() => {
+      throw Object.assign(new Error('Evolution change not found: change-missing'), {
+        code: 'EVOLUTION_CHANGE_NOT_FOUND',
+      });
+    });
+
+    const result = await requestJson('PATCH', '/api/teams/evolution-proposals/evo-1/changes/change-missing', {
+      decision: 'accepted',
+    });
+
+    expect(result.status).toBe(404);
+    expect(result.data).toHaveProperty('code', 'EVOLUTION_CHANGE_NOT_FOUND');
+  });
+
+  _skipIfNoPort('PATCH /api/teams/evolution-proposals/:proposalId/changes/:changeId returns 409 for stale proposal state', async () => {
+    vi.mocked(evolutionRepo.setChangeDecision).mockImplementation(() => {
+      throw Object.assign(new Error('Cannot decide change for applied proposal'), {
+        code: 'EVOLUTION_PROPOSAL_STATE_CONFLICT',
+      });
+    });
+
+    const result = await requestJson('PATCH', '/api/teams/evolution-proposals/evo-1/changes/change-1', {
+      decision: 'accepted',
+    });
+
+    expect(result.status).toBe(409);
+    expect(result.data).toHaveProperty('code', 'EVOLUTION_PROPOSAL_STATE_CONFLICT');
+  });
+
+  _skipIfNoPort('POST /api/teams/evolution-proposals/:proposalId/reject abandons a pending proposal', async () => {
+    vi.mocked(evolutionRepo.reject).mockReturnValue({
+      id: 'evo-1',
+      roomId: 'room-team',
+      teamId: 'software-development',
+      baseVersionId: 'software-development-v1',
+      targetVersionNumber: 2,
+      status: 'rejected',
+      summary: '不满意的提案',
+      createdAt: 1,
+      updatedAt: 2,
+      changes: [],
+    });
+
+    const result = await requestJson('POST', '/api/teams/evolution-proposals/evo-1/reject');
+
+    expect(result.status).toBe(200);
+    expect(evolutionRepo.reject).toHaveBeenCalledWith('evo-1');
+    expect(result.data).toMatchObject({ id: 'evo-1', status: 'rejected' });
+  });
+
+  _skipIfNoPort('POST /api/teams/evolution-proposals/:proposalId/merge returns the new TeamVersion when accepted changes exist', async () => {
+    vi.mocked(evolutionRepo.merge).mockReturnValue({
+      proposal: {
+        id: 'evo-1',
+        roomId: 'room-team',
+        teamId: 'software-development',
+        baseVersionId: 'software-development-v1',
+        targetVersionNumber: 2,
+        status: 'applied',
+        summary: '建议强化验证',
+        createdAt: 1,
+        updatedAt: 2,
+        appliedVersionId: 'software-development-v2',
+        changes: [],
+      },
+      version: {
+        id: 'software-development-v2',
+        teamId: 'software-development',
+        versionNumber: 2,
+        name: '软件开发团队',
+        sourceSceneId: 'software-development',
+        memberIds: ['reviewer'],
+        memberSnapshots: [],
+        workflowPrompt: '新工作流',
+        routingPolicy: {},
+        teamMemory: [],
+        maxA2ADepth: 5,
+        createdAt: 2,
+        createdFrom: 'evolution-pr',
+      },
+    });
+
+    const result = await requestJson('POST', '/api/teams/evolution-proposals/evo-1/merge');
+
+    expect(result.status).toBe(200);
+    expect(evolutionRepo.merge).toHaveBeenCalledWith('evo-1', { confirmFailedValidation: false });
+    expect(result.data).toMatchObject({
+      proposal: { id: 'evo-1', status: 'applied', appliedVersionId: 'software-development-v2' },
+      version: { id: 'software-development-v2', versionNumber: 2 },
+    });
+  });
+
+  _skipIfNoPort('GET /api/teams/evolution-proposals/:proposalId/validation-cases returns related cases', async () => {
+    vi.mocked(evolutionRepo.listValidationCasesForProposal).mockReturnValue([
+      {
+        id: 'case-1',
+        teamId: 'software-development',
+        sourceRoomId: 'room-team',
+        sourceProposalId: 'evo-1',
+        sourceChangeId: 'change-1',
+        baseVersionId: 'software-development-v1',
+        createdVersionId: 'software-development-v2',
+        failureSummary: 'Reviewer 缺少验证证据',
+        inputSnapshot: { prompt: '完成后直接交付' },
+        expectedBehavior: '必须给出验证证据',
+        assertionType: 'checklist',
+        createdFromChangeId: 'change-1',
+        status: 'active',
+        evidenceMessageIds: ['msg-1'],
+        createdAt: 1,
+      },
+    ]);
+
+    const result = await requestJson('GET', '/api/teams/evolution-proposals/evo-1/validation-cases');
+
+    expect(result.status).toBe(200);
+    expect(evolutionRepo.listValidationCasesForProposal).toHaveBeenCalledWith('evo-1');
+    expect(result.data).toMatchObject([{ id: 'case-1', expectedBehavior: '必须给出验证证据' }]);
+  });
+
+  _skipIfNoPort('POST /api/teams/evolution-proposals/:proposalId/preflight persists and returns validation results', async () => {
+    vi.mocked(evolutionRepo.runPreflight).mockReturnValue({
+      proposalId: 'evo-1',
+      targetVersionId: 'software-development-v2',
+      summary: { pass: 0, fail: 1, needsReview: 0 },
+      results: [{
+        id: 'run-1',
+        proposalId: 'evo-1',
+        validationCaseId: 'case-1',
+        targetVersionId: 'software-development-v2',
+        result: 'fail',
+        reason: 'Draft TeamVersion does not contain expected behavior',
+        checkedAt: 2,
+      }],
+    });
+
+    const result = await requestJson('POST', '/api/teams/evolution-proposals/evo-1/preflight');
+
+    expect(result.status).toBe(200);
+    expect(evolutionRepo.runPreflight).toHaveBeenCalledWith('evo-1');
+    expect(result.data).toMatchObject({ summary: { fail: 1 }, results: [{ result: 'fail' }] });
+  });
+
+  _skipIfNoPort('POST /api/teams/evolution-proposals/:proposalId/merge forwards failed validation confirmation', async () => {
+    vi.mocked(evolutionRepo.merge).mockReturnValue({
+      proposal: {
+        id: 'evo-1',
+        roomId: 'room-team',
+        teamId: 'software-development',
+        baseVersionId: 'software-development-v1',
+        targetVersionNumber: 2,
+        status: 'applied',
+        summary: '建议强化验证',
+        createdAt: 1,
+        updatedAt: 2,
+        appliedVersionId: 'software-development-v2',
+        changes: [],
+      },
+    });
+
+    const result = await requestJson('POST', '/api/teams/evolution-proposals/evo-1/merge', {
+      confirmFailedValidation: true,
+    });
+
+    expect(result.status).toBe(200);
+    expect(evolutionRepo.merge).toHaveBeenCalledWith('evo-1', { confirmFailedValidation: true });
+  });
+
+  _skipIfNoPort('GET /api/teams/:id/quality-timeline returns version validation evidence', async () => {
+    vi.mocked(teamsRepo.get).mockReturnValue({
+      id: 'software-development',
+      name: '软件开发团队',
+      builtin: true,
+      sourceSceneId: 'software-development',
+      activeVersionId: 'software-development-v2',
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    vi.mocked(evolutionRepo.getTeamQualityTimeline).mockReturnValue([
+      {
+        versionId: 'software-development-v2',
+        versionNumber: 2,
+        createdAt: 2,
+        createdFrom: 'evolution-pr',
+        sourceProposalId: 'evo-1',
+        acceptedChangeCount: 2,
+        addedValidationCaseCount: 1,
+        preflightSummary: { pass: 1, fail: 0, needsReview: 0 },
+        validationCases: [],
+        rollbackEvidence: {
+          comparedToVersionId: 'software-development-v2',
+          validationCasesAddedAfterThisVersion: 0,
+          failingPreflightsAfterThisVersion: 0,
+        },
+      },
+    ]);
+
+    const result = await requestJson('GET', '/api/teams/software-development/quality-timeline');
+
+    expect(result.status).toBe(200);
+    expect(evolutionRepo.getTeamQualityTimeline).toHaveBeenCalledWith('software-development');
+    expect(result.data).toMatchObject([{ versionId: 'software-development-v2', preflightSummary: { pass: 1 } }]);
+  });
+
+  _skipIfNoPort('POST /api/teams/evolution-proposals/:proposalId/merge returns 404 for a missing proposal', async () => {
+    vi.mocked(evolutionRepo.merge).mockImplementation(() => {
+      throw Object.assign(new Error('Evolution proposal not found: evo-missing'), {
+        code: 'EVOLUTION_PROPOSAL_NOT_FOUND',
+      });
+    });
+
+    const result = await requestJson('POST', '/api/teams/evolution-proposals/evo-missing/merge');
+
+    expect(result.status).toBe(404);
+    expect(result.data).toHaveProperty('code', 'EVOLUTION_PROPOSAL_NOT_FOUND');
+  });
+
+  _skipIfNoPort('POST /api/teams/evolution-proposals/:proposalId/merge returns 409 for merge conflicts', async () => {
+    vi.mocked(evolutionRepo.merge).mockImplementation(() => {
+      throw Object.assign(new Error('Target TeamVersion already exists: software-development-v2'), {
+        code: 'EVOLUTION_TARGET_VERSION_EXISTS',
+      });
+    });
+
+    const result = await requestJson('POST', '/api/teams/evolution-proposals/evo-1/merge');
+
+    expect(result.status).toBe(409);
+    expect(result.data).toHaveProperty('code', 'EVOLUTION_TARGET_VERSION_EXISTS');
+  });
+
+  _skipIfNoPort('POST /api/teams/drafts returns a reviewed TeamDraft without creating a Team', async () => {
+    vi.mocked(generateTeamDraftFromGoal).mockResolvedValue({
+      name: '软件交付团队',
+      mission: '交付可验证的软件功能',
+      members: [
+        {
+          displayName: '产品澄清员',
+          role: '需求澄清',
+          responsibility: '收敛目标和验收标准',
+          systemPrompt: '你负责需求澄清，遇到范围变化必须请求用户确认。',
+          whenToUse: '需求不清晰时',
+        },
+        {
+          displayName: '实现工程师',
+          role: '实现',
+          responsibility: '修改代码并运行验证',
+          systemPrompt: '你负责实现和验证证据。',
+          whenToUse: '方案确认后',
+        },
+        {
+          displayName: 'Reviewer',
+          role: '审查',
+          responsibility: '检查回归风险',
+          systemPrompt: '你负责 review。',
+          whenToUse: '交付前',
+        },
+      ],
+      workflow: '澄清 → 实现 → 验证',
+      teamProtocol: '关键范围变化需要用户确认。',
+      routingPolicy: { rules: [{ when: '需要实现', memberRole: '实现' }] },
+      teamMemory: ['必须保留验证证据'],
+      validationCases: [{
+        title: '验证证据',
+        failureSummary: '交付缺少验证',
+        inputSnapshot: { goal: '实现功能' },
+        expectedBehavior: '最终汇报包含验证命令和结果',
+        assertionType: 'checklist',
+      }],
+      generationRationale: '根据目标选择软件交付角色。',
+      generationSource: 'agent',
+    });
+
+    const result = await requestJson('POST', '/api/teams/drafts', {
+      goal: '帮我做一个软件功能，从需求澄清、方案设计、实现、review 到验收',
+    });
+
+    expect(result.status).toBe(200);
+    expect(generateTeamDraftFromGoal).toHaveBeenCalledWith('帮我做一个软件功能，从需求澄清、方案设计、实现、review 到验收');
+    expect(teamsRepo.createFromDraft).not.toHaveBeenCalled();
+    expect(result.data).toMatchObject({ name: '软件交付团队', generationRationale: '根据目标选择软件交付角色。', generationSource: 'agent' });
+  });
+
+  _skipIfNoPort('POST /api/teams/drafts returns retryable error when Team Architect generation fails', async () => {
+    vi.mocked(generateTeamDraftFromGoal).mockImplementation(() => {
+      throw Object.assign(new Error('生成 Team 草案失败，请重试'), {
+        code: 'TEAM_DRAFT_AGENT_FAILED',
+      });
+    });
+
+    const result = await requestJson('POST', '/api/teams/drafts', {
+      goal: '帮我做一个软件功能，从需求澄清、方案设计、实现、review 到验收',
+    });
+
+    expect(result.status).toBe(503);
+    expect(teamsRepo.createFromDraft).not.toHaveBeenCalled();
+    expect(result.data).toMatchObject({
+      code: 'TEAM_DRAFT_AGENT_FAILED',
+      error: '生成 Team 草案失败，请重试',
+    });
+  });
+
+  _skipIfNoPort('POST /api/teams/drafts returns actionable errors for vague goals', async () => {
+    vi.mocked(generateTeamDraftFromGoal).mockImplementation(() => {
+      throw Object.assign(new Error('请补充目标、交付物和边界后再生成 Team 草案'), {
+        code: 'TEAM_GOAL_TOO_VAGUE',
+      });
+    });
+
+    const result = await requestJson('POST', '/api/teams/drafts', { goal: '做事' });
+
+    expect(result.status).toBe(400);
+    expect(result.data).toMatchObject({
+      code: 'TEAM_GOAL_TOO_VAGUE',
+      error: '请补充目标、交付物和边界后再生成 Team 草案',
+    });
+    expect(teamsRepo.createFromDraft).not.toHaveBeenCalled();
+  });
+
+  _skipIfNoPort('POST /api/teams creates Team v1 from a reviewed draft', async () => {
+    vi.mocked(teamsRepo.createFromDraft).mockReturnValue({
+      team: {
+        id: 'custom-team',
+        name: '我的功能交付 Team',
+        builtin: false,
+        sourceSceneId: 'software-development',
+        activeVersionId: 'custom-team-v1',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      version: {
+        id: 'custom-team-v1',
+        teamId: 'custom-team',
+        versionNumber: 1,
+        name: '我的功能交付 Team',
+        sourceSceneId: 'software-development',
+        memberIds: ['draft-member-1'],
+        memberSnapshots: [],
+        workflowPrompt: '工作流',
+        routingPolicy: {},
+        teamMemory: [],
+        maxA2ADepth: 5,
+        createdAt: 1,
+        createdFrom: 'manual',
+      },
+      validationCases: [],
+    });
+
+    const draft = {
+      name: '我的功能交付 Team',
+      mission: '交付软件功能',
+      members: [{
+        displayName: '实现工程师',
+        role: '实现',
+        responsibility: '实现代码',
+        systemPrompt: '实现并验证',
+        whenToUse: '方案确认后',
+      }],
+      workflow: '实现并验证',
+      teamProtocol: '需要用户确认',
+      routingPolicy: { rules: [] },
+      teamMemory: [],
+      validationCases: [],
+      generationRationale: '目标需要实现角色',
+    };
+
+    const result = await requestJson('POST', '/api/teams', { draft });
+
+    expect(result.status).toBe(200);
+    expect(teamsRepo.createFromDraft).toHaveBeenCalledWith(draft);
+    expect(result.data).toMatchObject({
+      team: { id: 'custom-team', activeVersionId: 'custom-team-v1' },
+      version: { id: 'custom-team-v1', versionNumber: 1, createdFrom: 'manual' },
+    });
+  });
+
+  _skipIfNoPort('POST /api/teams returns 400 for a malformed draft and does not create a Team', async () => {
+    vi.mocked(teamsRepo.createFromDraft).mockImplementation(() => {
+      throw Object.assign(new Error('Team draft requires workflow'), {
+        code: 'TEAM_DRAFT_INVALID',
+      });
+    });
+
+    const result = await requestJson('POST', '/api/teams', {
+      draft: {
+        name: '伪造 Team',
+        mission: '交付软件功能',
+        members: [{
+          displayName: '实现工程师',
+          role: '实现',
+          responsibility: '实现代码',
+          systemPrompt: '实现并验证',
+          whenToUse: '方案确认后',
+        }],
+      },
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.data).toMatchObject({
+      code: 'TEAM_DRAFT_INVALID',
+      error: 'Team draft requires workflow',
+    });
+    expect(teamsRepo.createFromDraft).toHaveBeenCalledTimes(1);
   });
 
   _skipIfNoPort('PATCH /api/rooms/:id trims and persists a renamed topic', async () => {

@@ -8,7 +8,7 @@
  */
 
 import { Router } from 'express';
-import { scenesRepo } from '../db/index.js';
+import { scenesRepo, teamsRepo } from '../db/index.js';
 import { log } from '../lib/logger.js';
 
 export const scenesRouter = Router();
@@ -46,7 +46,11 @@ scenesRouter.post('/', (req, res) => {
       description: description?.trim() || undefined,
       prompt: prompt.trim(),
     });
+    const teamSeedResult = teamsRepo.ensureFromScenes();
     log('INFO', 'scene:create', { id: scene.id, name: scene.name });
+    if (teamSeedResult.teamsInserted > 0 || teamSeedResult.versionsInserted > 0) {
+      log('INFO', 'scene:create:teams_seeded', { id: scene.id, ...teamSeedResult });
+    }
     res.status(201).json(scene);
   } catch (err) {
     log('ERROR', 'scene:create:failed', { error: String(err) });

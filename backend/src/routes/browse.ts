@@ -6,9 +6,10 @@
 
 import { Router } from 'express';
 import { execFile } from 'node:child_process';
+import { createReadStream } from 'node:fs';
 import { mkdir, open, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, resolve } from 'node:path';
+import { basename, extname, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { debug, info, warn } from '../lib/logger.js';
 
@@ -39,6 +40,18 @@ interface FilePreviewResult {
 
 export const browseRouter = Router();
 const MAX_FILE_PREVIEW_BYTES = 128 * 1024;
+const MEDIA_TYPES: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac',
+};
 
 /** 安全校验：解析 symlink 后返回真实路径 */
 async function validatePath(targetPath: string): Promise<string | null> {
@@ -137,6 +150,94 @@ function looksBinary(buffer: Buffer): boolean {
   }
   return suspicious / buffer.length > 0.1;
 }
+
+function parseRangeHeader(rangeHeader: string, fileSize: number): { start: number; end: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return null;
+
+  const [, startRaw, endRaw] = match;
+  if (!startRaw && !endRaw) return null;
+
+  if (!startRaw) {
+    const suffixLength = Number(endRaw);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return null;
+    const start = Math.max(fileSize - suffixLength, 0);
+    return { start, end: fileSize - 1 };
+  }
+
+  const start = Number(startRaw);
+  const end = endRaw ? Number(endRaw) : fileSize - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return null;
+  if (start < 0 || end < start || start >= fileSize) return null;
+  return { start, end: Math.min(end, fileSize - 1) };
+}
+
+/**
+ * GET /api/browse/media?path=/some/file.mp4 — 流式播放本地音视频文件
+ */
+browseRouter.get('/media', async (req, res) => {
+  const query = req.query as { path?: string };
+  const targetPath = query.path;
+  if (!targetPath) {
+    return res.status(400).json({ error: 'path 为必填' });
+  }
+
+  const validatedPath = await validatePath(targetPath);
+  if (!validatedPath) {
+    warn('browse:media:not_found', { targetPath });
+    return res.status(404).json({ error: '文件不存在或无权访问' });
+  }
+
+  const contentType = MEDIA_TYPES[extname(validatedPath).toLowerCase()];
+  if (!contentType) {
+    warn('browse:media:unsupported_type', { targetPath: validatedPath });
+    return res.status(415).json({ error: '仅支持音频或视频文件' });
+  }
+
+  try {
+    const fileStat = await stat(validatedPath);
+    if (!fileStat.isFile()) {
+      return res.status(400).json({ error: '仅支持普通文件' });
+    }
+
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(basename(validatedPath))}"`);
+
+    const rangeHeader = req.headers.range;
+    if (rangeHeader) {
+      const range = parseRangeHeader(rangeHeader, fileStat.size);
+      if (!range) {
+        res.setHeader('Content-Range', `bytes */${fileStat.size}`);
+        return res.status(416).end();
+      }
+
+      const chunkSize = range.end - range.start + 1;
+      res.status(206);
+      res.setHeader('Content-Length', String(chunkSize));
+      res.setHeader('Content-Range', `bytes ${range.start}-${range.end}/${fileStat.size}`);
+      debug('browse:media:range', {
+        targetPath: validatedPath,
+        contentType,
+        start: range.start,
+        end: range.end,
+        size: fileStat.size,
+      });
+      return createReadStream(validatedPath, { start: range.start, end: range.end }).pipe(res);
+    }
+
+    res.setHeader('Content-Length', String(fileStat.size));
+    debug('browse:media:stream', {
+      targetPath: validatedPath,
+      contentType,
+      size: fileStat.size,
+    });
+    return createReadStream(validatedPath).pipe(res);
+  } catch (err) {
+    warn('browse:media:failed', { targetPath, error: err });
+    return res.status(400).json({ error: `无法读取媒体文件: ${(err as Error).message}` });
+  }
+});
 
 /**
  * GET /api/browse/file?path=/some/file — 预览文件内容

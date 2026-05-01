@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTheme } from 'next-themes'
+import { Loader2, X } from 'lucide-react'
 
 import { API_URL } from '@/lib/api'
 import { debug, info, warn } from '@/lib/logger'
@@ -16,9 +17,11 @@ import type { RoomComposerHandle } from './RoomComposer'
 import { EmptyRoomQuickStart, type QuickStartTemplate } from './room-view/EmptyRoomQuickStart'
 import { RoomActionArea } from './room-view/RoomActionArea'
 import { RoomHeader } from './room-view/RoomHeader'
+import { EvolutionReviewModal } from './room-view/EvolutionReviewModal'
 import { useRoomList } from './room-view/useRoomList'
 import { useRoomMessaging } from './room-view/useRoomMessaging'
 import { useRoomRealtime } from './room-view/useRoomRealtime'
+import type { EvolutionChangeDecision, EvolutionProposal } from './room-view/types'
 
 const API = API_URL
 
@@ -66,6 +69,16 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [showInviteDrawer, setShowInviteDrawer] = useState(false)
   const [agentPanelWidth, setAgentPanelWidth] = useState(AGENT_PANEL_DEFAULT_WIDTH)
   const [agentPanelCollapsed, setAgentPanelCollapsed] = useState(false)
+  const [evolutionProposals, setEvolutionProposals] = useState<EvolutionProposal[]>([])
+  const [selectedEvolutionId, setSelectedEvolutionId] = useState<string | null>(null)
+  const [creatingEvolutionProposal, setCreatingEvolutionProposal] = useState(false)
+  const [decidingEvolutionChangeId, setDecidingEvolutionChangeId] = useState<string | null>(null)
+  const [mergingEvolutionProposal, setMergingEvolutionProposal] = useState(false)
+  const [rejectingEvolutionProposal, setRejectingEvolutionProposal] = useState(false)
+  const [regeneratingEvolutionProposal, setRegeneratingEvolutionProposal] = useState(false)
+  const [evolutionError, setEvolutionError] = useState<string | null>(null)
+  const [evolutionFeedbackOpen, setEvolutionFeedbackOpen] = useState(false)
+  const [evolutionFeedbackDraft, setEvolutionFeedbackDraft] = useState('')
 
   const { theme, resolvedTheme, setTheme } = useTheme()
   const currentTheme = resolvedTheme ?? theme
@@ -86,6 +99,10 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     effectiveMaxDepth,
     setEffectiveMaxDepth,
     workspace,
+    teamId,
+    teamVersionId,
+    teamName,
+    teamVersionNumber,
     effectiveSkills,
     globalSkillCount,
     workspaceDiscoveredCount,
@@ -137,6 +154,14 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     }
     return null
   }, [messages, agents])
+  const pendingEvolutionProposals = useMemo(
+    () => evolutionProposals.filter(proposal => proposal.status === 'pending' || proposal.status === 'in-review'),
+    [evolutionProposals],
+  )
+  const activeEvolutionProposal = useMemo(
+    () => evolutionProposals.find(proposal => proposal.id === selectedEvolutionId) ?? pendingEvolutionProposals[0],
+    [evolutionProposals, pendingEvolutionProposals, selectedEvolutionId],
+  )
 
   const scrollMessageListToBottom = useCallback((behavior: ScrollBehavior) => {
     const el = messagesContainerRef.current
@@ -206,7 +231,42 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   useEffect(() => {
     userScrolledRef.current = false
     setShowScrollBtn(false)
+    setEvolutionProposals([])
+    setSelectedEvolutionId(null)
+    setEvolutionError(null)
   }, [activeRoomId])
+
+  const refreshEvolutionProposals = useCallback(async () => {
+    if (!activeRoomId) {
+      setEvolutionProposals([])
+      return []
+    }
+    const response = await fetch(`${API}/api/rooms/${activeRoomId}/evolution-proposals`)
+    const data = await response.json().catch(() => []) as EvolutionProposal[] | { error?: string }
+    if (!response.ok) {
+      throw new Error(!Array.isArray(data) && data.error ? data.error : '读取 EVO PR 失败')
+    }
+    const proposals = Array.isArray(data) ? data : []
+    setEvolutionProposals(proposals)
+    return proposals
+  }, [activeRoomId])
+
+  useEffect(() => {
+    if (!activeRoomId) return
+    let cancelled = false
+    refreshEvolutionProposals()
+      .then(() => {
+        if (cancelled) return
+      })
+      .catch(error => {
+        if (!cancelled) {
+          warn('ui:evolution:list_failed', { roomId: activeRoomId, error })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeRoomId, refreshEvolutionProposals])
 
   useEffect(() => {
     if (!activeRoomId) return
@@ -399,6 +459,163 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     }
   }, [activeRoomId, currentRoomTopic, setRooms])
 
+  const handleCreateEvolutionProposal = useCallback(async (feedback: string) => {
+    if (!activeRoomId || creatingEvolutionProposal) return
+    const trimmedFeedback = feedback.trim()
+    if (!trimmedFeedback) {
+      setEvolutionError('请先写下你希望 Team 怎么改进')
+      return
+    }
+    setCreatingEvolutionProposal(true)
+    setEvolutionError(null)
+    try {
+      const response = await fetch(`${API}/api/rooms/${activeRoomId}/evolution-proposals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedback: trimmedFeedback }),
+      })
+      const data = await response.json().catch(() => ({})) as EvolutionProposal | { error?: string }
+      if (!response.ok) {
+        throw new Error('error' in data && data.error ? data.error : '创建 EVO PR 失败')
+      }
+      const proposal = data as EvolutionProposal
+      setEvolutionProposals(previous => [proposal, ...previous.filter(item => item.id !== proposal.id)])
+      setSelectedEvolutionId(proposal.id)
+      setEvolutionFeedbackOpen(false)
+      setEvolutionFeedbackDraft('')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '创建 EVO PR 失败'
+      setEvolutionError(message)
+      warn('ui:evolution:create_failed', { roomId: activeRoomId, error })
+    } finally {
+      setCreatingEvolutionProposal(false)
+    }
+  }, [activeRoomId, creatingEvolutionProposal])
+
+  const handleEvolutionDecision = useCallback(async (changeId: string, decision: EvolutionChangeDecision) => {
+    if (!activeEvolutionProposal || decidingEvolutionChangeId) return
+    setDecidingEvolutionChangeId(changeId)
+    setEvolutionError(null)
+    try {
+      const response = await fetch(`${API}/api/teams/evolution-proposals/${activeEvolutionProposal.id}/changes/${changeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision }),
+      })
+      const data = await response.json().catch(() => ({})) as EvolutionProposal | { error?: string }
+      if (!response.ok) {
+        throw new Error('error' in data && data.error ? data.error : '更新 change decision 失败')
+      }
+      const proposal = data as EvolutionProposal
+      setEvolutionProposals(previous => previous.map(item => item.id === proposal.id ? proposal : item))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '更新 change decision 失败'
+      setEvolutionError(message)
+      warn('ui:evolution:decision_failed', { proposalId: activeEvolutionProposal.id, changeId, decision, error })
+    } finally {
+      setDecidingEvolutionChangeId(null)
+    }
+  }, [activeEvolutionProposal, decidingEvolutionChangeId])
+
+  const handleRejectEvolutionProposal = useCallback(async () => {
+    if (!activeEvolutionProposal || rejectingEvolutionProposal) return
+    setRejectingEvolutionProposal(true)
+    setEvolutionError(null)
+    try {
+      const response = await fetch(`${API}/api/teams/evolution-proposals/${activeEvolutionProposal.id}/reject`, {
+        method: 'POST',
+      })
+      const data = await response.json().catch(() => ({})) as EvolutionProposal | { error?: string }
+      if (!response.ok) {
+        throw new Error('error' in data && data.error ? data.error : '放弃 EVO PR 失败')
+      }
+      const proposal = data as EvolutionProposal
+      setEvolutionProposals(previous => previous.map(item => item.id === proposal.id ? proposal : item))
+      setSelectedEvolutionId(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '放弃 EVO PR 失败'
+      setEvolutionError(message)
+      warn('ui:evolution:reject_failed', { proposalId: activeEvolutionProposal.id, error })
+    } finally {
+      setRejectingEvolutionProposal(false)
+    }
+  }, [activeEvolutionProposal, rejectingEvolutionProposal])
+
+  const handleRegenerateEvolutionProposal = useCallback(async (feedback: string) => {
+    if (!activeRoomId || !activeEvolutionProposal || regeneratingEvolutionProposal) return
+    const trimmedFeedback = feedback.trim()
+    if (!trimmedFeedback) {
+      setEvolutionError('请先写下你对当前提案哪里不满意')
+      return
+    }
+    const replacedProposalId = activeEvolutionProposal.id
+    setRegeneratingEvolutionProposal(true)
+    setEvolutionError(null)
+    try {
+      const response = await fetch(`${API}/api/rooms/${activeRoomId}/evolution-proposals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feedback: trimmedFeedback,
+          replacesProposalId: replacedProposalId,
+        }),
+      })
+      const data = await response.json().catch(() => ({})) as EvolutionProposal | { error?: string }
+      if (!response.ok) {
+        throw new Error('error' in data && data.error ? data.error : '重新生成 EVO PR 失败')
+      }
+      const proposal = data as EvolutionProposal
+      const rejectedAt = Date.now()
+      setEvolutionProposals(previous => [
+        proposal,
+        ...previous
+          .filter(item => item.id !== proposal.id)
+          .map(item => item.id === replacedProposalId
+            ? { ...item, status: 'rejected' as const, updatedAt: rejectedAt }
+            : item),
+      ])
+      setSelectedEvolutionId(proposal.id)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '重新生成 EVO PR 失败'
+      setEvolutionError(message)
+      try {
+        await refreshEvolutionProposals()
+      } catch (refreshError) {
+        warn('ui:evolution:regenerate_refresh_failed', { proposalId: replacedProposalId, roomId: activeRoomId, error: refreshError })
+      }
+      warn('ui:evolution:regenerate_failed', { proposalId: activeEvolutionProposal.id, roomId: activeRoomId, error })
+    } finally {
+      setRegeneratingEvolutionProposal(false)
+    }
+  }, [activeEvolutionProposal, activeRoomId, refreshEvolutionProposals, regeneratingEvolutionProposal])
+
+  const handleMergeEvolutionProposal = useCallback(async () => {
+    if (!activeEvolutionProposal || mergingEvolutionProposal) return
+    setMergingEvolutionProposal(true)
+    setEvolutionError(null)
+    try {
+      const response = await fetch(`${API}/api/teams/evolution-proposals/${activeEvolutionProposal.id}/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await response.json().catch(() => ({})) as { proposal?: EvolutionProposal; error?: string }
+      if (!response.ok || !data.proposal) {
+        throw new Error(data.error ?? '合并 EVO PR 失败')
+      }
+      setEvolutionProposals(previous => previous.map(item => item.id === data.proposal!.id ? data.proposal! : item))
+      if (data.proposal.status === 'applied' || data.proposal.status === 'rejected') {
+        setSelectedEvolutionId(null)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '合并 EVO PR 失败'
+      setEvolutionError(message)
+      warn('ui:evolution:merge_failed', { proposalId: activeEvolutionProposal.id, error })
+    } finally {
+      setMergingEvolutionProposal(false)
+    }
+  }, [activeEvolutionProposal, mergingEvolutionProposal])
+
   const handleDownload = useCallback(() => {
     if (!report) return
     const anchor = document.createElement('a')
@@ -458,6 +675,9 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           <RoomHeader
             roomId={activeRoomId}
             currentRoomTopic={currentRoomTopic}
+            isTeamRoom={Boolean(teamId && teamVersionId)}
+            teamName={teamName}
+            teamVersionNumber={teamVersionNumber}
             maxA2ADepth={maxA2ADepth}
             currentA2ADepth={currentA2ADepth}
             displayMaxDepth={displayMaxDepth}
@@ -469,6 +689,17 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
             onToggleAgentPanel={toggleAgentPanel}
             onGenerateTitleSuggestions={handleGenerateTitleSuggestions}
             onRenameRoom={handleRenameRoom}
+            pendingEvolutionCount={pendingEvolutionProposals.length}
+            creatingEvolutionProposal={creatingEvolutionProposal}
+            onCreateEvolutionProposal={async () => {
+              setEvolutionError(null)
+              setEvolutionFeedbackDraft('')
+              setEvolutionFeedbackOpen(true)
+            }}
+            onReviewEvolution={() => {
+              const proposal = pendingEvolutionProposals[0]
+              if (proposal) setSelectedEvolutionId(proposal.id)
+            }}
           />
 
           {activeRoomId ? (
@@ -554,6 +785,81 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           currentAgentIds={currentAgentConfigIds}
           onClose={() => setShowInviteDrawer(false)}
           onInvited={() => {}}
+        />
+      )}
+
+      {evolutionFeedbackOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 px-4">
+          <div className="w-full max-w-xl rounded-lg border border-line bg-nav-bg shadow-xl">
+            <div className="flex items-center justify-between border-b border-line px-5 py-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-accent">Team Architect</p>
+                <h2 className="mt-1 text-base font-semibold text-ink">生成 Team 改进提案</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEvolutionFeedbackOpen(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+                aria-label="关闭 Team 改进提案"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 p-5">
+              <label className="block text-[13px] font-semibold text-ink" htmlFor="team-evolution-feedback">
+                你的改进意见
+              </label>
+              <textarea
+                id="team-evolution-feedback"
+                value={evolutionFeedbackDraft}
+                onChange={event => setEvolutionFeedbackDraft(event.target.value)}
+                rows={6}
+                className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-5 text-ink outline-none transition-colors placeholder:text-ink-muted focus:border-accent"
+                placeholder="例如：新增一个负责验证的成员；让 Reviewer 必须贴出测试命令和结果；把最终交付前的路由改成先审查再回复。"
+              />
+              {evolutionError && (
+                <p className="rounded-lg bg-[color:var(--danger)]/8 px-3 py-2 text-[12px] text-[color:var(--danger)]">
+                  {evolutionError}
+                </p>
+              )}
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEvolutionFeedbackOpen(false)}
+                  className="inline-flex h-9 items-center rounded-lg border border-line px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void handleCreateEvolutionProposal(evolutionFeedbackDraft) }}
+                  disabled={creatingEvolutionProposal || !evolutionFeedbackDraft.trim()}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {creatingEvolutionProposal && <Loader2 className="h-4 w-4 animate-spin" />}
+                  生成提案
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeEvolutionProposal && selectedEvolutionId && (
+        <EvolutionReviewModal
+          proposal={activeEvolutionProposal}
+          teamName={teamName}
+          currentVersionNumber={teamVersionNumber}
+          decidingChangeId={decidingEvolutionChangeId}
+          merging={mergingEvolutionProposal}
+          rejecting={rejectingEvolutionProposal}
+          regenerating={regeneratingEvolutionProposal}
+          error={evolutionError}
+          onClose={() => setSelectedEvolutionId(null)}
+          onDecide={handleEvolutionDecision}
+          onMerge={handleMergeEvolutionProposal}
+          onReject={handleRejectEvolutionProposal}
+          onRegenerate={handleRegenerateEvolutionProposal}
         />
       )}
     </>

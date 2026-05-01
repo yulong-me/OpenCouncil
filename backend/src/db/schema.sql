@@ -11,6 +11,116 @@ CREATE TABLE IF NOT EXISTS scenes (
   max_a2a_depth INTEGER DEFAULT 5 NOT NULL
 );
 
+-- F052: Team — teams and team_versions for versioned team templates
+CREATE TABLE IF NOT EXISTS teams (
+  id                TEXT PRIMARY KEY,
+  name              TEXT NOT NULL,
+  description       TEXT,
+  builtin           INTEGER NOT NULL DEFAULT 0,
+  source_scene_id   TEXT NOT NULL,
+  active_version_id TEXT NOT NULL,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS team_versions (
+  id                 TEXT PRIMARY KEY,
+  team_id            TEXT NOT NULL,
+  version_number     INTEGER NOT NULL,
+  name               TEXT NOT NULL,
+  description        TEXT,
+  source_scene_id    TEXT NOT NULL,
+  member_ids_json    TEXT NOT NULL DEFAULT '[]',
+  member_snapshots_json TEXT NOT NULL DEFAULT '[]',
+  workflow_prompt    TEXT NOT NULL,
+  routing_policy_json TEXT NOT NULL DEFAULT '{}',
+  team_memory_json   TEXT NOT NULL DEFAULT '[]',
+  max_a2a_depth      INTEGER DEFAULT 5 NOT NULL,
+  created_at         INTEGER NOT NULL,
+  created_from       TEXT NOT NULL,
+  FOREIGN KEY (team_id) REFERENCES teams(id),
+  UNIQUE(team_id, version_number)
+);
+
+-- F053: Team Evolution PR — user-reviewed proposals that merge into new TeamVersions
+CREATE TABLE IF NOT EXISTS evolution_proposals (
+  id                    TEXT PRIMARY KEY,
+  room_id               TEXT NOT NULL,
+  team_id               TEXT NOT NULL,
+  base_version_id       TEXT NOT NULL,
+  target_version_number INTEGER NOT NULL,
+  status                TEXT NOT NULL
+                        CHECK (status IN ('draft','pending','in-review','applied','rejected','expired')),
+  summary               TEXT NOT NULL,
+  feedback              TEXT,
+  created_at            INTEGER NOT NULL,
+  updated_at            INTEGER NOT NULL,
+  preflight_checked_at  INTEGER,
+  applied_version_id    TEXT,
+  FOREIGN KEY (room_id) REFERENCES rooms(id),
+  FOREIGN KEY (team_id) REFERENCES teams(id),
+  FOREIGN KEY (base_version_id) REFERENCES team_versions(id),
+  FOREIGN KEY (applied_version_id) REFERENCES team_versions(id)
+);
+
+CREATE TABLE IF NOT EXISTS evolution_proposal_changes (
+  id                        TEXT PRIMARY KEY,
+  proposal_id               TEXT NOT NULL,
+  ordinal                   INTEGER NOT NULL,
+  kind                      TEXT NOT NULL
+                            CHECK (kind IN ('add-agent','edit-agent-prompt','edit-team-workflow','edit-routing-policy','add-team-memory','add-validation-case')),
+  title                     TEXT NOT NULL,
+  why                       TEXT NOT NULL,
+  evidence_message_ids_json TEXT NOT NULL DEFAULT '[]',
+  target_layer              TEXT NOT NULL,
+  before_json               TEXT NOT NULL DEFAULT 'null',
+  after_json                TEXT NOT NULL DEFAULT 'null',
+  impact                    TEXT NOT NULL,
+  decision                  TEXT
+                            CHECK (decision IS NULL OR decision IN ('accepted','rejected')),
+  decided_at                INTEGER,
+  FOREIGN KEY (proposal_id) REFERENCES evolution_proposals(id) ON DELETE CASCADE,
+  UNIQUE(proposal_id, ordinal)
+);
+
+CREATE TABLE IF NOT EXISTS team_validation_cases (
+  id                        TEXT PRIMARY KEY,
+  team_id                   TEXT NOT NULL,
+  proposal_id               TEXT,
+  change_id                 TEXT,
+  source_room_id            TEXT,
+  base_version_id           TEXT,
+  created_version_id        TEXT,
+  title                     TEXT NOT NULL,
+  failure_summary           TEXT NOT NULL DEFAULT '',
+  input_snapshot_json       TEXT NOT NULL DEFAULT 'null',
+  expected_behavior         TEXT NOT NULL DEFAULT '',
+  assertion_type            TEXT NOT NULL DEFAULT 'checklist'
+                            CHECK (assertion_type IN ('checklist','replay')),
+  status                    TEXT NOT NULL DEFAULT 'active'
+                            CHECK (status IN ('active','archived')),
+  prompt                    TEXT NOT NULL,
+  expected_outcome          TEXT NOT NULL,
+  evidence_message_ids_json TEXT NOT NULL DEFAULT '[]',
+  created_at                INTEGER NOT NULL,
+  FOREIGN KEY (team_id) REFERENCES teams(id),
+  FOREIGN KEY (base_version_id) REFERENCES team_versions(id),
+  FOREIGN KEY (created_version_id) REFERENCES team_versions(id)
+);
+
+CREATE TABLE IF NOT EXISTS team_validation_preflight_results (
+  id                  TEXT PRIMARY KEY,
+  proposal_id         TEXT NOT NULL,
+  validation_case_id  TEXT NOT NULL,
+  target_version_id   TEXT NOT NULL,
+  result              TEXT NOT NULL
+                      CHECK (result IN ('pass','fail','needs-review')),
+  reason              TEXT NOT NULL,
+  checked_at          INTEGER NOT NULL,
+  FOREIGN KEY (proposal_id) REFERENCES evolution_proposals(id) ON DELETE CASCADE,
+  FOREIGN KEY (validation_case_id) REFERENCES team_validation_cases(id)
+);
+
 -- F016: Room Scene — scene_id references scenes.id
 CREATE TABLE IF NOT EXISTS rooms (
   id          TEXT PRIMARY KEY,
@@ -22,6 +132,8 @@ CREATE TABLE IF NOT EXISTS rooms (
   workspace   TEXT,
   scene_id    TEXT NOT NULL DEFAULT 'roundtable-forum',
   max_a2a_depth INTEGER,
+  team_id     TEXT,
+  team_version_id TEXT,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
   deleted_at  INTEGER
@@ -152,3 +264,12 @@ CREATE INDEX IF NOT EXISTS idx_sessions_room_id ON sessions(room_id);
 CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
 CREATE INDEX IF NOT EXISTS idx_agent_skill_bindings_agent_id ON agent_skill_bindings(agent_id);
 CREATE INDEX IF NOT EXISTS idx_room_skill_bindings_room_id ON room_skill_bindings(room_id);
+CREATE INDEX IF NOT EXISTS idx_teams_active_version_id ON teams(active_version_id);
+CREATE INDEX IF NOT EXISTS idx_team_versions_team_id ON team_versions(team_id);
+CREATE INDEX IF NOT EXISTS idx_rooms_team_version_id ON rooms(team_version_id);
+CREATE INDEX IF NOT EXISTS idx_evolution_proposals_room_id ON evolution_proposals(room_id);
+CREATE INDEX IF NOT EXISTS idx_evolution_proposals_team_id ON evolution_proposals(team_id);
+CREATE INDEX IF NOT EXISTS idx_evolution_proposal_changes_proposal_id ON evolution_proposal_changes(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_team_validation_cases_team_id ON team_validation_cases(team_id);
+CREATE INDEX IF NOT EXISTS idx_team_validation_cases_proposal_id ON team_validation_cases(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_team_validation_preflight_proposal_id ON team_validation_preflight_results(proposal_id);

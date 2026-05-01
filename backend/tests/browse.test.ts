@@ -52,6 +52,34 @@ async function reqJson(pathname: string): Promise<{ status: number; data: Record
   });
 }
 
+async function reqRaw(pathname: string, headers: Record<string, string> = {}): Promise<{
+  status: number;
+  headers: http.IncomingHttpHeaders;
+  body: Buffer;
+}> {
+  return await new Promise((resolve) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: serverPort,
+      path: pathname,
+      method: 'GET',
+      headers,
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        resolve({
+          status: res.statusCode ?? 0,
+          headers: res.headers,
+          body: Buffer.concat(chunks),
+        });
+      });
+    });
+    req.on('error', () => resolve({ status: 0, headers: {}, body: Buffer.alloc(0) }));
+    req.end();
+  });
+}
+
 beforeAll(async () => {
   server = http.createServer(makeApp());
   await new Promise<void>((resolve) => server.listen(0, () => {
@@ -144,5 +172,35 @@ describe('browse route security', () => {
       isBinary: true,
       content: null,
     });
+  });
+
+  it('streams supported media files for in-browser playback', async () => {
+    const dir = await makeHomeTemp('browse-media');
+    const filePath = path.join(dir, 'final.mp4');
+    const content = Buffer.from('fake mp4 payload');
+    await writeFile(filePath, content);
+
+    const result = await reqRaw(`/api/browse/media?path=${encodeURIComponent(filePath)}`);
+
+    expect(result.status).toBe(200);
+    expect(result.headers['content-type']).toContain('video/mp4');
+    expect(result.headers['accept-ranges']).toBe('bytes');
+    expect(result.body).toEqual(content);
+  });
+
+  it('supports range requests for media playback seeking', async () => {
+    const dir = await makeHomeTemp('browse-media-range');
+    const filePath = path.join(dir, 'voice.mp3');
+    await writeFile(filePath, Buffer.from('0123456789'));
+
+    const result = await reqRaw(
+      `/api/browse/media?path=${encodeURIComponent(filePath)}`,
+      { Range: 'bytes=2-5' },
+    );
+
+    expect(result.status).toBe(206);
+    expect(result.headers['content-type']).toContain('audio/mpeg');
+    expect(result.headers['content-range']).toBe('bytes 2-5/10');
+    expect(result.body.toString()).toBe('2345');
   });
 });

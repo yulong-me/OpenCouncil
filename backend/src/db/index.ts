@@ -7,6 +7,8 @@ import { auditRepo } from './repositories/audit.js';
 import { agentsRepo } from './repositories/agents.js';
 import { providersRepo } from './repositories/providers.js';
 import { scenesRepo } from './repositories/scenes.js';
+import { teamsRepo } from './repositories/teams.js';
+import { evolutionRepo } from './repositories/teamEvolution.js';
 import { skillsRepo, agentSkillBindingsRepo, roomSkillBindingsRepo } from './repositories/skills.js';
 import { log } from '../log.js';
 import {
@@ -256,6 +258,12 @@ export function initDB(): void {
   ensureBuiltinAgentCatalogV6();
   ensureBuiltinSceneCatalogV2();
 
+  // F052: Seed Teams from Scenes after both are seeded
+  const teamSeedResult = teamsRepo.ensureFromScenes();
+  if (teamSeedResult.teamsInserted > 0 || teamSeedResult.versionsInserted > 0) {
+    log('INFO', 'db:seed:teams', teamSeedResult);
+  }
+
   log('INFO', 'db:init:done', { dbPath: DB_PATH });
 }
 
@@ -265,6 +273,8 @@ export { sessionsRepo };
 export { auditRepo };
 export { agentsRepo };
 export { providersRepo };
+export { teamsRepo };
+export { evolutionRepo };
 export { scenesRepo };
 export { skillsRepo };
 export { agentSkillBindingsRepo };

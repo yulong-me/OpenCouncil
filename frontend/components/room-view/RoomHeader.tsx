@@ -1,13 +1,16 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, Loader2, Menu, Sparkles, UserPlus, Users } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, GitPullRequest, Loader2, Menu, Sparkles, UserPlus, Users } from 'lucide-react'
 
 import { DepthSwitcher } from './DepthSwitcher'
 
 interface RoomHeaderProps {
   roomId?: string
   currentRoomTopic?: string
+  isTeamRoom?: boolean
+  teamName?: string
+  teamVersionNumber?: number
   maxA2ADepth: number | null
   currentA2ADepth: number
   displayMaxDepth: number
@@ -19,11 +22,18 @@ interface RoomHeaderProps {
   onToggleAgentPanel: () => void
   onGenerateTitleSuggestions?: () => Promise<string[]>
   onRenameRoom?: (topic: string) => Promise<void>
+  pendingEvolutionCount?: number
+  creatingEvolutionProposal?: boolean
+  onCreateEvolutionProposal?: () => Promise<void>
+  onReviewEvolution?: () => void
 }
 
 export function RoomHeader({
   roomId,
   currentRoomTopic,
+  isTeamRoom = false,
+  teamName,
+  teamVersionNumber,
   maxA2ADepth,
   currentA2ADepth,
   displayMaxDepth,
@@ -35,6 +45,10 @@ export function RoomHeader({
   onToggleAgentPanel,
   onGenerateTitleSuggestions,
   onRenameRoom,
+  pendingEvolutionCount = 0,
+  creatingEvolutionProposal = false,
+  onCreateEvolutionProposal,
+  onReviewEvolution,
 }: RoomHeaderProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
@@ -244,10 +258,53 @@ export function RoomHeader({
             </div>
           )}
         </div>
+        {teamName && teamVersionNumber && (
+          <span className="hidden shrink-0 rounded-full border border-line bg-surface-muted px-2.5 py-1 text-[11px] font-semibold text-ink-soft sm:inline-flex">
+            {teamName} · v{teamVersionNumber}
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-2">
         {roomId && (
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isTeamRoom) return
+                if (pendingEvolutionCount > 0 && onReviewEvolution) {
+                  onReviewEvolution()
+                  return
+                }
+                if (onCreateEvolutionProposal) {
+                  void onCreateEvolutionProposal()
+                }
+              }}
+              disabled={!isTeamRoom || creatingEvolutionProposal || (!onCreateEvolutionProposal && pendingEvolutionCount === 0)}
+              className="hidden h-9 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-[12px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
+              title={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看 EVO PR' : '让 Team 复盘') : '当前讨论不是 Team 创建的'}
+            >
+              {creatingEvolutionProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
+              {creatingEvolutionProposal ? '团队反思中' : pendingEvolutionCount > 0 ? '查看进化提案' : '让 Team 复盘'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isTeamRoom) return
+                if (pendingEvolutionCount > 0 && onReviewEvolution) {
+                  onReviewEvolution()
+                  return
+                }
+                if (onCreateEvolutionProposal) {
+                  void onCreateEvolutionProposal()
+                }
+              }}
+              disabled={!isTeamRoom || creatingEvolutionProposal || (!onCreateEvolutionProposal && pendingEvolutionCount === 0)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent disabled:cursor-not-allowed disabled:opacity-60 md:hidden"
+              title={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看 EVO PR' : '让 Team 复盘') : '当前讨论不是 Team 创建的'}
+              aria-label={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看 EVO PR' : '让 Team 复盘') : '当前讨论不是 Team 创建的'}
+            >
+              {creatingEvolutionProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
+            </button>
             <DepthSwitcher
               value={maxA2ADepth}
               currentDepth={currentA2ADepth}

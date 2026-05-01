@@ -4,7 +4,7 @@ import { memo, useMemo, useRef, useState, type MutableRefObject, type RefObject 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
-import { ChevronDown, BrainCircuit, Wrench, Copy, Maximize2 } from 'lucide-react'
+import { ChevronDown, BrainCircuit, Wrench, Copy, Maximize2, FileVideo, Music2 } from 'lucide-react'
 import {
   AGENT_COLORS,
   DEFAULT_AGENT_COLOR,
@@ -22,6 +22,7 @@ import { AgentAvatar } from './AgentAvatar'
 import { ErrorBubble, type AgentRunErrorEvent } from './ErrorBubble'
 import { BubbleErrorBoundary } from './BubbleErrorBoundary'
 import { MetadataBadge } from './MetadataBadge'
+import { getWorkspaceMediaUrl } from '../lib/workspace'
 
 const userMarkdownComponents = {
   ...mdComponents,
@@ -29,6 +30,54 @@ const userMarkdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
     <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 opacity-90 hover:opacity-100 text-accent">{children}</a>
   ),
+}
+
+type MediaAttachmentKind = 'video' | 'audio'
+
+interface MediaAttachment {
+  path: string
+  name: string
+  kind: MediaAttachmentKind
+  sourceUrl: string
+}
+
+const VIDEO_EXTENSIONS = new Set(['mp4', 'm4v', 'mov', 'webm'])
+const AUDIO_EXTENSIONS = new Set(['mp3', 'm4a', 'aac', 'wav', 'ogg', 'flac'])
+const MEDIA_PATH_PATTERN = /(^|[\s([`'"：:])((?:\/[^\n\r`'"<>|]+?)\.(?:mp4|m4v|mov|webm|mp3|m4a|aac|wav|ogg|flac))(?=$|[\s)\]`'"，。；;,.!?！?<>])/gi
+
+function mediaKindForPath(path: string): MediaAttachmentKind | null {
+  const extension = path.split('.').pop()?.toLowerCase()
+  if (!extension) return null
+  if (VIDEO_EXTENSIONS.has(extension)) return 'video'
+  if (AUDIO_EXTENSIONS.has(extension)) return 'audio'
+  return null
+}
+
+function fileNameForPath(path: string) {
+  return path.split('/').filter(Boolean).at(-1) ?? path
+}
+
+function extractMediaAttachments(content: string): MediaAttachment[] {
+  const attachments: MediaAttachment[] = []
+  const seen = new Set<string>()
+
+  for (const match of content.matchAll(MEDIA_PATH_PATTERN)) {
+    const path = match[2]?.trim()
+    if (!path || seen.has(path)) continue
+
+    const kind = mediaKindForPath(path)
+    if (!kind) continue
+
+    seen.add(path)
+    attachments.push({
+      path,
+      kind,
+      name: fileNameForPath(path),
+      sourceUrl: getWorkspaceMediaUrl(path),
+    })
+  }
+
+  return attachments
 }
 
 interface MessageListProps {
@@ -90,13 +139,53 @@ function getHandoffOffsetClass(handoffInfo?: A2AHandoffInfo) {
 
 function getStreamingStatusLabel(msg: Message, hasToolCalls: boolean, state: DiscussionState) {
   if (state === 'DONE') return '已结束'
-  if (hasToolCalls) {
-    const latestTool = msg.toolCalls?.[msg.toolCalls.length - 1]
-    return latestTool?.toolName ? `调用 ${latestTool.toolName}` : '调用工具'
-  }
   if (msg.thinking?.trim() && !msg.content.trim()) return '思考中'
   if (msg.content.trim()) return '输出中'
+  if (hasToolCalls) return '处理中'
   return '等待响应'
+}
+
+function MediaAttachments({ attachments }: { attachments: MediaAttachment[] }) {
+  if (attachments.length === 0) return null
+
+  return (
+    <div className="mt-3 space-y-3">
+      {attachments.map(attachment => (
+        <section key={attachment.path} className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
+          <div className="flex items-start justify-between gap-3 border-b border-line bg-surface-muted/60 px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                {attachment.kind === 'video' ? <FileVideo className="h-4 w-4" /> : <Music2 className="h-4 w-4" />}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-[12px] font-semibold text-ink">
+                  {attachment.kind === 'video' ? '视频文件' : '音频文件'} · {attachment.name}
+                </p>
+                <p className="truncate text-[11px] text-ink-soft/70" title={attachment.path}>
+                  {attachment.path}
+                </p>
+              </div>
+            </div>
+            <a
+              href={attachment.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 rounded-lg border border-line px-2.5 py-1 text-[11px] font-semibold text-ink-soft transition-colors hover:bg-surface hover:text-accent"
+            >
+              打开
+            </a>
+          </div>
+          <div className="bg-black/5 p-3">
+            {attachment.kind === 'video' ? (
+              <video controls preload="metadata" className="max-h-[420px] w-full rounded-lg bg-black" src={attachment.sourceUrl} />
+            ) : (
+              <audio controls preload="metadata" className="w-full" src={attachment.sourceUrl} />
+            )}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
 }
 
 export const MessageList = memo(function MessageList({
@@ -274,6 +363,10 @@ const MessageBubble = memo(function MessageBubble({
     hasDurationStat || hasCostStat || hasInputTokensStat || hasOutputTokensStat
   )
   const invocationUsage = getMessageInvocationUsage(msg)
+  const mediaAttachments = useMemo(
+    () => isStreaming ? [] : extractMediaAttachments(msg.content),
+    [isStreaming, msg.content],
+  )
 
   const validMentions = useMemo(() => {
     if (isUser) return []
@@ -320,6 +413,7 @@ const MessageBubble = memo(function MessageBubble({
                 {msg.content}
               </ReactMarkdown>
             </BubbleErrorBoundary>
+            <MediaAttachments attachments={mediaAttachments} />
           </div>
         </div>
       </div>
@@ -424,6 +518,7 @@ const MessageBubble = memo(function MessageBubble({
               />
             )}
             <BubbleSection label="回复" icon="output" content={msg.content} isStreaming={isStreaming} agentColor={agentColor} />
+            <MediaAttachments attachments={mediaAttachments} />
             {validMentions.length > 0 && (
               <div className="flex items-center gap-1.5 text-xs font-medium flex-wrap" style={{ color: agentColor }}>
                 <span className="opacity-50 mr-0.5">@点名</span>

@@ -23,6 +23,39 @@ export interface Agent {
   configId?: string
 }
 
+export interface TeamListItem {
+  id: string
+  name: string
+  description?: string
+  builtin: boolean
+  sourceSceneId: string
+  activeVersionId: string
+  activeVersion: {
+    id: string
+    teamId: string
+    versionNumber: number
+    name?: string
+    description?: string
+    sourceSceneId: string
+    memberIds: string[]
+    memberSnapshots?: Array<{
+      id: string
+      name: string
+      roleLabel: string
+      provider: 'claude-code' | 'opencode' | 'codex'
+      providerOpts?: Record<string, unknown>
+      systemPrompt: string
+      responsibility?: string
+      whenToUse?: string
+    }>
+    workflowPrompt?: string
+    routingPolicy?: Record<string, unknown>
+    teamMemory?: string[]
+    maxA2ADepth: number
+  }
+  members: Array<{ id: string; name: string; roleLabel: string; provider: string }>
+}
+
 export interface AgentRunErrorEvent {
   traceId: string
   messageId?: string

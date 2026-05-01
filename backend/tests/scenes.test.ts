@@ -6,7 +6,7 @@
  * This catches real implementation regressions (not just logic re-implementations).
  */
 
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
 import express from 'express';
 
@@ -19,10 +19,21 @@ const mockScenesRepo = vi.hoisted(() => ({
   delete: vi.fn(),
 }));
 
+const mockTeamsRepo = vi.hoisted(() => ({
+  list: vi.fn(),
+  get: vi.fn(),
+  getActiveVersion: vi.fn(),
+  getVersion: vi.fn(),
+  ensureFromScenes: vi.fn(),
+}));
+
 vi.mock('../src/db/index.js', () => ({
   scenesRepo: mockScenesRepo,
   roomsRepo: { create: vi.fn(), update: vi.fn() },
   auditRepo: { log: vi.fn() },
+  teamsRepo: mockTeamsRepo,
+  agentsRepo: { list: vi.fn(), get: vi.fn(), upsert: vi.fn(), delete: vi.fn() },
+  evolutionRepo: { create: vi.fn(), get: vi.fn(), listByRoom: vi.fn(), latestTargetVersionNumber: vi.fn(), setChangeDecision: vi.fn(), merge: vi.fn() },
 }));
 
 vi.mock('../src/store.js', () => ({
@@ -60,12 +71,14 @@ vi.mock('../src/services/workspace.js', () => ({
 // ── App setup (same pattern as rooms.http.test.ts) ──────────────────────────
 import { scenesRouter } from '../src/routes/scenes.js';
 import { roomsRouter } from '../src/routes/rooms.js';
+import { teamsRouter } from '../src/routes/teams.js';
 
 function makeApp() {
   const app = express();
   app.use(express.json());
   app.use('/api/scenes', scenesRouter);
   app.use('/api/rooms', roomsRouter);
+  app.use('/api/teams', teamsRouter);
   return app;
 }
 
@@ -89,6 +102,8 @@ let server: http.Server;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockTeamsRepo.list.mockReturnValue([]);
+  mockTeamsRepo.ensureFromScenes.mockReturnValue({ teamsInserted: 0, versionsInserted: 0 });
 });
 
 afterAll(() => {
@@ -199,6 +214,64 @@ describe('F016: scenesRouter — HTTP-level tests', () => {
       });
 
       expect(res.status).toBe(201);
+    });
+
+    _skip('makes the newly created custom scene available from /api/teams immediately', async () => {
+      mockScenesRepo.create.mockReturnValue({
+        id: 'custom-scene',
+        name: '我的场景',
+        description: 'desc',
+        prompt: 'some prompt',
+        builtin: false,
+        maxA2ADepth: 5,
+      });
+      mockTeamsRepo.ensureFromScenes.mockImplementation(() => {
+        mockTeamsRepo.list.mockReturnValue([{
+          id: 'custom-scene',
+          name: '我的场景团队',
+          description: 'desc',
+          builtin: false,
+          sourceSceneId: 'custom-scene',
+          activeVersionId: 'custom-scene-v1',
+          createdAt: 1,
+          updatedAt: 1,
+          activeVersion: {
+            id: 'custom-scene-v1',
+            teamId: 'custom-scene',
+            versionNumber: 1,
+            name: '我的场景团队',
+            sourceSceneId: 'custom-scene',
+            memberIds: [],
+            memberSnapshots: [],
+            workflowPrompt: 'some prompt',
+            routingPolicy: {},
+            teamMemory: [],
+            maxA2ADepth: 5,
+            createdAt: 1,
+            createdFrom: 'scene-seed',
+          },
+          members: [],
+        }]);
+        return { teamsInserted: 1, versionsInserted: 1 };
+      });
+
+      const created = await reqJson('POST', '/api/scenes', {
+        name: '我的场景',
+        description: 'desc',
+        prompt: 'some prompt',
+      });
+      const teams = await reqJson('GET', '/api/teams');
+
+      expect(created.status).toBe(201);
+      expect(mockTeamsRepo.ensureFromScenes).toHaveBeenCalledTimes(1);
+      expect(teams.status).toBe(200);
+      expect(teams.data).toEqual([
+        expect.objectContaining({
+          id: 'custom-scene',
+          sourceSceneId: 'custom-scene',
+          activeVersionId: 'custom-scene-v1',
+        }),
+      ]);
     });
   });
 
@@ -387,6 +460,181 @@ describe('F016: scenePromptBuilder — real export', () => {
     expect(prompt).toContain('需要协作时，另起一行行首 @专家名');
     expect(prompt).toContain('【回复区输出协议】');
     expect(prompt).toContain('回复区只保留结论、反驳、决定或下一步');
+  });
+
+  it('uses pinned TeamVersion workflowPrompt before Scene prompt', async () => {
+    const { buildRoomScopedSystemPrompt } = await import('../src/services/scenePromptBuilder.js');
+    const { store } = await import('../src/store.js');
+    const { teamsRepo } = await import('../src/db/index.js');
+
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-team',
+      topic: '实现登录态持久化',
+      state: 'RUNNING' as const,
+      agents: [
+        { id: 'worker-1', role: 'WORKER' as const, name: '架构师', domainLabel: '架构设计', configId: 'architect', status: 'idle' as const },
+      ],
+      messages: [],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'software-development',
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v2',
+      teamName: '软件开发团队',
+      teamVersionNumber: 2,
+      maxA2ADepth: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    mockScenesRepo.get.mockReturnValue({
+      id: 'software-development',
+      name: '软件开发',
+      prompt: 'Scene prompt should not lead',
+      builtin: true,
+      maxA2ADepth: 5,
+    });
+    vi.mocked(teamsRepo.getVersion).mockReturnValue({
+      id: 'software-development-v2',
+      teamId: 'software-development',
+      versionNumber: 2,
+      name: '软件开发团队',
+      sourceSceneId: 'software-development',
+      memberIds: ['architect'],
+      workflowPrompt: 'Pinned TeamVersion workflow',
+      routingPolicy: {},
+      teamMemory: [],
+      maxA2ADepth: 5,
+      createdAt: 2,
+      createdFrom: 'manual',
+    });
+
+    const prompt = buildRoomScopedSystemPrompt('room-team', 'base prompt', {
+      userMessage: '请先评估方案',
+    });
+
+    expect(prompt?.startsWith('Pinned TeamVersion workflow')).toBe(true);
+    expect(prompt).not.toContain('Scene prompt should not lead\n\nbase prompt');
+  });
+
+  it('uses pinned TeamVersion workflowPrompt even if the source Scene is missing', async () => {
+    const { buildRoomScopedSystemPrompt } = await import('../src/services/scenePromptBuilder.js');
+    const { store } = await import('../src/store.js');
+    const { teamsRepo } = await import('../src/db/index.js');
+
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-team-missing-scene',
+      topic: '实现登录态持久化',
+      state: 'RUNNING' as const,
+      agents: [
+        { id: 'worker-1', role: 'WORKER' as const, name: '架构师', domainLabel: '架构设计', configId: 'architect', status: 'idle' as const },
+      ],
+      messages: [],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'deleted-scene',
+      teamId: 'custom-team',
+      teamVersionId: 'custom-team-v1',
+      teamName: '自定义团队',
+      teamVersionNumber: 1,
+      maxA2ADepth: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    mockScenesRepo.get.mockReturnValue(undefined);
+    vi.mocked(teamsRepo.getVersion).mockReturnValue({
+      id: 'custom-team-v1',
+      teamId: 'custom-team',
+      versionNumber: 1,
+      name: '自定义团队',
+      sourceSceneId: 'deleted-scene',
+      memberIds: ['architect'],
+      memberSnapshots: [],
+      workflowPrompt: 'Pinned workflow survives deleted scene',
+      routingPolicy: {},
+      teamMemory: [],
+      maxA2ADepth: 5,
+      createdAt: 1,
+      createdFrom: 'scene-seed',
+    });
+
+    const prompt = buildRoomScopedSystemPrompt('room-team-missing-scene', 'base prompt', {
+      userMessage: '请先评估方案',
+    });
+
+    expect(prompt?.startsWith('Pinned workflow survives deleted scene')).toBe(true);
+    expect(prompt).toContain('base prompt');
+  });
+
+  it('uses pinned TeamVersion member prompt snapshot when assembling an agent base prompt', async () => {
+    const { buildRoomScopedSystemPrompt, buildAgentBasePrompt } = await import('../src/services/scenePromptBuilder.js');
+    const { store } = await import('../src/store.js');
+    const { teamsRepo } = await import('../src/db/index.js');
+
+    vi.mocked(store.get).mockReturnValue({
+      id: 'room-team-snapshot',
+      topic: '实现登录态持久化',
+      state: 'RUNNING' as const,
+      agents: [
+        { id: 'worker-1', role: 'WORKER' as const, name: '架构师', domainLabel: '架构设计', configId: 'architect', status: 'idle' as const },
+      ],
+      messages: [],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      sceneId: 'software-development',
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
+      teamName: '软件开发团队',
+      teamVersionNumber: 1,
+      maxA2ADepth: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    mockScenesRepo.get.mockReturnValue({
+      id: 'software-development',
+      name: '软件开发',
+      prompt: '软件开发场景',
+      builtin: true,
+      maxA2ADepth: 5,
+    });
+    vi.mocked(teamsRepo.getVersion).mockReturnValue({
+      id: 'software-development-v1',
+      teamId: 'software-development',
+      versionNumber: 1,
+      name: '软件开发团队',
+      sourceSceneId: 'software-development',
+      memberIds: ['architect'],
+      memberSnapshots: [{
+        id: 'architect',
+        name: '架构师',
+        roleLabel: '架构设计',
+        provider: 'claude-code',
+        providerOpts: { thinking: true },
+        systemPrompt: '原始架构师 prompt',
+      }],
+      workflowPrompt: 'Pinned TeamVersion workflow',
+      routingPolicy: {},
+      teamMemory: [],
+      maxA2ADepth: 5,
+      createdAt: 1,
+      createdFrom: 'scene-seed',
+    });
+
+    const basePrompt = buildAgentBasePrompt(
+      'room-team-snapshot',
+      'architect',
+      '架构师',
+      '架构设计',
+      '编辑后的架构师 prompt',
+    );
+    const prompt = buildRoomScopedSystemPrompt('room-team-snapshot', basePrompt, {
+      userMessage: '请先评估方案',
+    });
+
+    expect(prompt).toContain('原始架构师 prompt');
+    expect(prompt).not.toContain('编辑后的架构师 prompt');
   });
 
   it('injects current A2A depth and effective max depth into runtime context', async () => {

@@ -1,0 +1,997 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>团队升级确认 · 对话框原型</title>
+  <!--
+    Huashu-Design Junior Pass
+    Assumptions:
+    1. 用户主要任务是确认是否把当前团队升级到下一版。
+    2. 这不是开发者页面，不应强调内部工程细节。
+    3. 右侧应该像“确认台”，所有最终动作集中在一处。
+    4. 中间只展示当前选中的一条建议，避免用户同时处理太多信息。
+    Reasoning:
+    - 当前 UI 的问题是入口、判断、动作分散，用户看不到主路径。
+    - 原型采用“三栏确认台”：升级背景 / 建议内容 / 确认操作。
+    - 保持 OpenCouncil 的暗色工作台气质，避免营销化卡片和装饰图标。
+    Placeholder:
+    - 真实依据消息只显示数量，不显示消息编号。
+    - 成员提示词默认折叠，作为细节层。
+  -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115;
+      --panel: #151820;
+      --panel-2: #1b1f2a;
+      --line: #2a3040;
+      --line-strong: #394154;
+      --ink: #eef1f6;
+      --muted: #9aa4b6;
+      --soft: #c7ceda;
+      --accent: #48b884;
+      --accent-weak: rgba(72, 184, 132, 0.14);
+      --danger: #e36b6b;
+      --warning: #d5a84f;
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      overflow: hidden;
+    }
+
+    button, textarea {
+      font: inherit;
+    }
+
+    button {
+      touch-action: manipulation;
+    }
+
+    .stage {
+      min-height: 100vh;
+      padding: 24px;
+      display: grid;
+      place-items: center;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.03), transparent 22%),
+        var(--bg);
+    }
+
+    .dialog {
+      width: min(1480px, calc(100vw - 48px));
+      height: min(880px, calc(100vh - 48px));
+      min-height: 640px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-rows: 112px 1fr;
+      overflow: hidden;
+      border-radius: 10px;
+    }
+
+    .topbar {
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 0 20px;
+      background: rgba(15, 17, 21, 0.72);
+    }
+
+    .title-block { min-width: 0; }
+
+    .eyebrow {
+      margin: 0 0 4px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.25;
+      font-weight: 700;
+      white-space: normal;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-wrap: pretty;
+    }
+
+    .subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      text-wrap: pretty;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--soft);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .process-strip {
+      list-style: none;
+      margin: 0 0 16px;
+      padding: 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .process-strip li {
+      min-height: 68px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.018);
+      padding: 10px;
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr);
+      gap: 9px;
+      align-items: start;
+    }
+
+    .step-no {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .process-strip strong {
+      display: block;
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .process-strip small {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .process-strip .active {
+      border-color: rgba(72, 184, 132, 0.48);
+      background: var(--accent-weak);
+    }
+
+    .process-strip .active .step-no {
+      background: var(--accent);
+      color: white;
+    }
+
+    .icon-button {
+      width: 36px;
+      height: 36px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .icon-button:hover {
+      background: var(--panel-2);
+      color: var(--ink);
+    }
+
+    .icon-button:focus-visible,
+    .button:focus-visible,
+    .change-item:focus-visible,
+    textarea:focus-visible,
+    summary:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(72, 184, 132, 0.38);
+    }
+
+    .layout {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr) 330px;
+    }
+
+    .side,
+    .detail,
+    .decision {
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .side {
+      border-right: 1px solid var(--line);
+      background: rgba(255,255,255,0.018);
+    }
+
+    .decision {
+      border-left: 1px solid var(--line);
+      background: rgba(255,255,255,0.018);
+      padding: 16px;
+    }
+
+    .side-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-label {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .summary {
+      margin: 0;
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.68;
+      text-wrap: pretty;
+    }
+
+    .feedback {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--soft);
+      font-size: 12px;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+
+    .upgrade-facts {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .fact-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .fact-row strong {
+      color: var(--ink);
+      font-weight: 750;
+      text-align: right;
+    }
+
+    .change-list {
+      padding: 8px;
+    }
+
+    .change-item {
+      width: 100%;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .change-item:hover {
+      background: var(--panel-2);
+    }
+
+    .change-item.active {
+      background: var(--accent-weak);
+      color: var(--accent);
+    }
+
+    .mark {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--muted);
+    }
+
+    .mark.accepted {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .change-title {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .change-kind {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .status-chip {
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 3px 7px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status-chip.accepted {
+      background: var(--accent-weak);
+      color: var(--accent);
+    }
+
+    .detail {
+      padding: 20px;
+    }
+
+    .hero-card,
+    .content-card,
+    .decision-card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+    }
+
+    .hero-card {
+      padding: 18px;
+    }
+
+    .kind-tag {
+      display: inline-flex;
+      border-radius: 6px;
+      background: var(--accent-weak);
+      color: var(--accent);
+      padding: 5px 8px;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .change-heading {
+      margin: 12px 0 0;
+      font-size: 22px;
+      line-height: 1.25;
+      text-wrap: pretty;
+    }
+
+    .impact {
+      margin: 10px 0 0;
+      color: var(--soft);
+      line-height: 1.65;
+      font-size: 13px;
+      text-wrap: pretty;
+    }
+
+    .content-grid {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .content-card {
+      padding: 16px;
+    }
+
+    .content-card.wide {
+      grid-column: 1 / -1;
+    }
+
+    .content-card h4 {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .body-text {
+      margin: 0;
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.72;
+      text-wrap: pretty;
+    }
+
+    .empty-state {
+      margin: 0;
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 14px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .member-card {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .member-head {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .member-name {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 750;
+    }
+
+    .member-role {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .field {
+      margin-top: 14px;
+    }
+
+    .field-label {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .field-value {
+      margin: 5px 0 0;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--ink);
+    }
+
+    details {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: var(--panel);
+    }
+
+    summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    pre {
+      margin: 10px 0 0;
+      max-height: 240px;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: var(--soft);
+      font-size: 12px;
+      line-height: 1.62;
+    }
+
+    .decision-card {
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+
+    .decision-card.confirm-card {
+      border-color: rgba(72, 184, 132, 0.46);
+      background: linear-gradient(180deg, rgba(72, 184, 132, 0.08), rgba(21, 24, 32, 0.98));
+    }
+
+    .decision-title {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .decision-main {
+      margin: 8px 0 0;
+      font-size: 15px;
+      font-weight: 750;
+      color: var(--ink);
+    }
+
+    .decision-help {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .decision-note {
+      margin: 12px 0 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(15, 17, 21, 0.56);
+      color: var(--soft);
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .button-stack {
+      margin-top: 14px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .button {
+      min-height: 40px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--soft);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 750;
+      transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+    }
+
+    .button:hover {
+      background: var(--panel-2);
+      color: var(--ink);
+    }
+
+    .button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .button.primary:hover {
+      background: #3ca575;
+    }
+
+    .button.danger {
+      background: var(--danger);
+      border-color: var(--danger);
+      color: white;
+    }
+
+    .button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    .feedback-form {
+      margin-top: 12px;
+      display: none;
+    }
+
+    .feedback-form.open {
+      display: block;
+    }
+
+    label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    textarea {
+      margin-top: 8px;
+      width: 100%;
+      min-height: 108px;
+      resize: none;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--ink);
+      padding: 10px;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    textarea::placeholder {
+      color: #6f798b;
+    }
+
+    .error {
+      margin: 12px 0 0;
+      border-radius: 8px;
+      background: rgba(227, 107, 107, 0.1);
+      color: var(--danger);
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .variant-switch {
+      position: fixed;
+      left: 24px;
+      bottom: 24px;
+      display: flex;
+      gap: 8px;
+      background: rgba(15, 17, 21, 0.88);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.28);
+    }
+
+    .variant-switch button {
+      border: 0;
+      border-radius: 7px;
+      padding: 8px 10px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .variant-switch button.active,
+    .variant-switch button:hover {
+      background: var(--panel-2);
+      color: var(--ink);
+    }
+
+    .dialog.compact .layout {
+      grid-template-columns: 300px minmax(0, 1fr) 300px;
+    }
+
+    .dialog.compact .summary,
+    .dialog.compact .impact,
+    .dialog.compact .body-text {
+      line-height: 1.55;
+    }
+
+    .dialog.focus .layout {
+      grid-template-columns: 300px minmax(0, 1fr);
+    }
+
+    .dialog.focus .decision {
+      position: absolute;
+      right: 48px;
+      bottom: 48px;
+      width: 360px;
+      max-height: 72vh;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.42);
+    }
+
+    @media (max-width: 1100px) {
+      body { overflow: auto; }
+      .stage {
+        min-height: 100dvh;
+        padding: 0;
+        display: block;
+      }
+      .dialog {
+        width: 100vw;
+        height: auto;
+        min-height: 100dvh;
+        grid-template-rows: auto auto;
+        overflow: visible;
+        border-radius: 0;
+        border-left: 0;
+        border-right: 0;
+      }
+      .topbar {
+        min-height: 0;
+        grid-template-columns: 1fr;
+        align-items: start;
+        gap: 12px;
+        padding: 18px 16px;
+      }
+      .top-actions {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .layout,
+      .dialog.compact .layout,
+      .dialog.focus .layout {
+        display: block;
+      }
+      .side,
+      .detail,
+      .decision {
+        border-left: 0;
+        border-right: 0;
+        overflow: visible;
+        max-height: none;
+      }
+      .side,
+      .detail {
+        border-bottom: 1px solid var(--line);
+      }
+      .decision {
+        padding: 16px;
+      }
+      .dialog.focus .decision {
+        position: static;
+        width: auto;
+        max-height: none;
+        border-radius: 0;
+        box-shadow: none;
+      }
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+      .variant-switch {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <section class="dialog" id="dialog" aria-label="团队升级确认原型">
+      <header class="topbar">
+        <div class="title-block">
+          <p class="eyebrow">团队升级确认</p>
+          <h1 class="title">确认升级后，新讨论将使用 v2</h1>
+          <p class="subtitle">小红书-信息流视频创作团队 v1 → v2 · 当前建议已采纳，点右侧确认升级后才会生效。</p>
+        </div>
+        <div class="top-actions">
+          <span class="pill" id="review-count">1 条建议已采纳</span>
+          <button class="icon-button" type="button" aria-label="关闭团队升级确认">✕</button>
+        </div>
+      </header>
+
+      <div class="layout">
+        <aside class="side">
+          <section class="side-section">
+            <p class="section-label">本次要做什么</p>
+            <p class="summary">
+              你正在确认是否把当前团队升级到 v2。确认后，后续新讨论会使用新版团队；当前已完成的讨论不受影响。
+            </p>
+            <div class="upgrade-facts" aria-label="升级概要">
+              <div class="fact-row"><span>当前团队</span><strong>v1</strong></div>
+              <div class="fact-row"><span>升级后</span><strong>v2</strong></div>
+              <div class="fact-row"><span>生效范围</span><strong>新讨论</strong></div>
+            </div>
+          </section>
+
+          <section class="side-section">
+            <p class="section-label">为什么建议升级</p>
+            <p class="summary">
+              你明确提出「增加一个视觉设计师」。当前团队里，视频导演会给视觉建议，视频工程师负责制作，但缺少专职角色统一配色、字体层级、图表样式和封面动效。
+            </p>
+            <p class="feedback">你的补充：增加一个视觉设计师</p>
+          </section>
+
+          <section class="change-list" aria-label="建议清单">
+            <p class="section-label" style="padding: 8px 2px 4px;">1 条升级建议</p>
+            <button class="change-item active" type="button">
+              <span class="mark accepted">✓</span>
+              <span>
+                <span class="change-title">新增视觉设计师角色</span>
+                <span class="change-kind">新增成员</span>
+              </span>
+              <span class="status-chip accepted">已采纳</span>
+            </button>
+          </section>
+        </aside>
+
+        <section class="detail">
+          <ol class="process-strip" aria-label="主流程">
+            <li class="active">
+              <span class="step-no">1</span>
+              <span><strong>看建议</strong><small>先确认团队要改哪里</small></span>
+            </li>
+            <li class="active">
+              <span class="step-no">2</span>
+              <span><strong>建议已采纳</strong><small>仍可改为不采纳</small></span>
+            </li>
+            <li>
+              <span class="step-no">3</span>
+              <span><strong>确认升级</strong><small>确认后，新讨论使用 v2</small></span>
+            </li>
+          </ol>
+
+          <article class="hero-card">
+            <span class="kind-tag">新增成员</span>
+            <h2 class="change-heading">新增视觉设计师角色</h2>
+            <p class="impact">
+              视觉方案先由专职成员定稿，再交给视频工程师制作。这样工程师不用临场决定配色和字体，最终视频更统一，也更接近小红书平台的表达方式。
+            </p>
+          </article>
+
+          <div class="content-grid">
+            <article class="content-card wide">
+              <h4>建议理由</h4>
+              <p class="body-text">
+                当前流程中，导演产出视觉建议后直接交给工程师制作，缺少专业视觉设计环节。新增视觉设计师后，可以在制作前先产出《视觉设计规范》，让视觉质量更稳定。
+              </p>
+            </article>
+
+            <article class="content-card">
+              <h4>当前状态</h4>
+              <p class="empty-state">当前团队还没有这个成员。</p>
+            </article>
+
+            <article class="content-card">
+              <h4>调整后</h4>
+              <div class="member-card">
+                <div class="member-head">
+                  <div>
+                    <p class="member-name">视觉设计师</p>
+                    <p class="member-role">视觉设计师</p>
+                  </div>
+                  <span class="status-chip">新增成员</span>
+                </div>
+                <div class="field">
+                  <p class="field-label">负责什么</p>
+                  <p class="field-value">为每期视频提供配色系统、字体层级、信息图样式和封面动画方案，输出《视觉设计规范》给视频工程师使用。</p>
+                </div>
+                <div class="field">
+                  <p class="field-label">什么时候用</p>
+                  <p class="field-value">选题和分镜脚本完成后，视频制作开始之前。</p>
+                </div>
+                <details>
+                  <summary>查看成员提示词</summary>
+                  <pre>你是一个专业的视觉设计师，擅长为短视频内容创作统一的视觉语言。你需要根据分镜脚本输出配色、字体、组件和封面动效方案。</pre>
+                </details>
+              </div>
+            </article>
+
+            <article class="content-card wide">
+              <h4>参考依据</h4>
+              <p class="body-text" style="color: var(--muted); font-size: 12px;">
+                来自本次讨论中的 5 条消息。原型里不展示消息编号，避免干扰判断。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <aside class="decision" aria-label="升级确认台">
+          <section class="decision-card">
+            <p class="decision-title">第 2 步：当前建议状态</p>
+            <p class="decision-main">已采纳这条建议</p>
+            <p class="decision-help">新增视觉设计师角色会进入本次升级。还没有升级，最终生效需要下一步确认。</p>
+            <div class="button-stack">
+              <button class="button" type="button">改为不采纳</button>
+            </div>
+          </section>
+
+          <section class="decision-card confirm-card">
+            <p class="decision-title">第 3 步：确认升级</p>
+            <p class="decision-main">已采纳 1 条，准备升级到 v2</p>
+            <p class="decision-help">点确认后，后续新讨论会使用新版团队；不影响已经结束的讨论。</p>
+            <p class="decision-note">如果你还想改建议，先用下面的“重新生成一版”。</p>
+            <div class="button-stack">
+              <button class="button primary" type="button">确认升级到 v2</button>
+            </div>
+          </section>
+
+          <section class="decision-card">
+            <p class="decision-title">不满意这版？</p>
+            <p class="decision-help">写清楚你希望怎么改，系统会重新生成一版建议。</p>
+            <button class="button" id="toggle-feedback" type="button">↻ 补充意见，重新生成一版</button>
+            <div class="feedback-form" id="feedback-form">
+              <label for="feedback">你希望怎么改</label>
+              <textarea id="feedback" name="feedback" autocomplete="off" placeholder="例如：视觉设计师还要负责封面图，重新生成一版…"></textarea>
+              <div class="button-row">
+                <button class="button" type="button" id="cancel-feedback">取消</button>
+                <button class="button primary" type="button">重新生成一版</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="decision-card">
+            <p class="decision-title">不想升级？</p>
+            <p class="decision-help">放弃后团队仍保持当前版本，不会升级。</p>
+            <button class="button" id="toggle-reject" type="button">放弃本次升级</button>
+            <div class="feedback-form" id="reject-confirm">
+              <p class="decision-help">确认放弃本次升级？团队会继续保持 v1。</p>
+              <div class="button-row">
+                <button class="button" type="button" id="cancel-reject">取消</button>
+                <button class="button danger" type="button">确认放弃</button>
+              </div>
+            </div>
+          </section>
+
+          <p class="error" aria-live="polite" hidden>示例错误：请先决定每一条建议是否采纳。</p>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <nav class="variant-switch" aria-label="布局变体">
+    <button class="active" type="button" data-variant="default">标准布局</button>
+    <button type="button" data-variant="compact">紧凑布局</button>
+    <button type="button" data-variant="focus">聚焦布局</button>
+  </nav>
+
+  <script>
+    const dialog = document.getElementById('dialog');
+    document.querySelectorAll('[data-variant]').forEach((button) => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[data-variant]').forEach((item) => item.classList.remove('active'));
+        button.classList.add('active');
+        dialog.classList.remove('compact', 'focus');
+        if (button.dataset.variant !== 'default') {
+          dialog.classList.add(button.dataset.variant);
+        }
+      });
+    });
+
+    const feedbackForm = document.getElementById('feedback-form');
+    document.getElementById('toggle-feedback').addEventListener('click', () => {
+      feedbackForm.classList.add('open');
+      document.getElementById('feedback').focus();
+    });
+    document.getElementById('cancel-feedback').addEventListener('click', () => {
+      feedbackForm.classList.remove('open');
+    });
+
+    const rejectConfirm = document.getElementById('reject-confirm');
+    document.getElementById('toggle-reject').addEventListener('click', () => {
+      rejectConfirm.classList.add('open');
+    });
+    document.getElementById('cancel-reject').addEventListener('click', () => {
+      rejectConfirm.classList.remove('open');
+    });
+  </script>
+</body>
+</html>

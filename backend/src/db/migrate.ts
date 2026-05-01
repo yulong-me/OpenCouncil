@@ -9,6 +9,67 @@ import { BUILTIN_SCENES } from '../prompts/builtinScenes.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_DIR = path.resolve(process.cwd(), 'config');
 
+function columnNotNull(table: string, column: string): boolean {
+  try {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string; notnull: number }>;
+    return columns.some(col => col.name === column && col.notnull === 1);
+  } catch {
+    return false;
+  }
+}
+
+function migrateTeamValidationCasesNullableSources(): void {
+  const table = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='team_validation_cases'")
+    .get() as { sql: string } | undefined;
+  if (!table) return;
+
+  const sourceColumns = ['proposal_id', 'change_id', 'source_room_id', 'base_version_id', 'created_version_id'];
+  if (!sourceColumns.some(column => columnNotNull('team_validation_cases', column))) return;
+
+  db.exec('DROP TABLE IF EXISTS team_validation_cases_nullable_migration');
+  db.exec(`
+    CREATE TABLE team_validation_cases_nullable_migration (
+      id                        TEXT PRIMARY KEY,
+      team_id                   TEXT NOT NULL,
+      proposal_id               TEXT,
+      change_id                 TEXT,
+      source_room_id            TEXT,
+      base_version_id           TEXT,
+      created_version_id        TEXT,
+      title                     TEXT NOT NULL,
+      failure_summary           TEXT NOT NULL DEFAULT '',
+      input_snapshot_json       TEXT NOT NULL DEFAULT 'null',
+      expected_behavior         TEXT NOT NULL DEFAULT '',
+      assertion_type            TEXT NOT NULL DEFAULT 'checklist'
+                                CHECK (assertion_type IN ('checklist','replay')),
+      status                    TEXT NOT NULL DEFAULT 'active'
+                                CHECK (status IN ('active','archived')),
+      prompt                    TEXT NOT NULL,
+      expected_outcome          TEXT NOT NULL,
+      evidence_message_ids_json TEXT NOT NULL DEFAULT '[]',
+      created_at                INTEGER NOT NULL,
+      FOREIGN KEY (team_id) REFERENCES teams(id),
+      FOREIGN KEY (base_version_id) REFERENCES team_versions(id),
+      FOREIGN KEY (created_version_id) REFERENCES team_versions(id)
+    )
+  `);
+  db.exec(`
+    INSERT INTO team_validation_cases_nullable_migration (
+      id, team_id, proposal_id, change_id, source_room_id, base_version_id, created_version_id,
+      title, failure_summary, input_snapshot_json, expected_behavior, assertion_type, status,
+      prompt, expected_outcome, evidence_message_ids_json, created_at
+    )
+    SELECT
+      id, team_id, proposal_id, change_id, source_room_id, base_version_id, created_version_id,
+      title, failure_summary, input_snapshot_json, expected_behavior, assertion_type, status,
+      prompt, expected_outcome, evidence_message_ids_json, created_at
+    FROM team_validation_cases
+  `);
+  db.exec('DROP TABLE team_validation_cases');
+  db.exec('ALTER TABLE team_validation_cases_nullable_migration RENAME TO team_validation_cases');
+  log('INFO', 'db:schema:migrate:team_validation_cases:nullable_sources');
+}
+
 /** Normalize legacy agent roles to F004 values */
 function normalizeRole(role: string): string {
   if (role === 'AGENT') return 'WORKER';
@@ -158,6 +219,144 @@ export function initSchema(): void {
     log('INFO', 'db:schema:migrate:app_meta');
   } catch {
     // Table already exists — safe to ignore
+  }
+
+  // F052: add team_id and team_version_id to rooms table
+  try {
+    db.exec("ALTER TABLE rooms ADD COLUMN team_id TEXT");
+    log('INFO', 'db:schema:migrate:rooms:team_id');
+  } catch {
+    // Column already exists — safe to ignore
+  }
+  try {
+    db.exec("ALTER TABLE rooms ADD COLUMN team_version_id TEXT");
+    log('INFO', 'db:schema:migrate:rooms:team_version_id');
+  } catch {
+    // Column already exists — safe to ignore
+  }
+  try {
+    db.exec("ALTER TABLE team_versions ADD COLUMN member_snapshots_json TEXT NOT NULL DEFAULT '[]'");
+    log('INFO', 'db:schema:migrate:team_versions:member_snapshots_json');
+  } catch {
+    // Column already exists or table does not exist yet — safe to ignore
+  }
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS evolution_proposals (
+        id                    TEXT PRIMARY KEY,
+        room_id               TEXT NOT NULL,
+        team_id               TEXT NOT NULL,
+        base_version_id       TEXT NOT NULL,
+        target_version_number INTEGER NOT NULL,
+        status                TEXT NOT NULL
+                              CHECK (status IN ('draft','pending','in-review','applied','rejected','expired')),
+        summary               TEXT NOT NULL,
+        feedback              TEXT,
+        created_at            INTEGER NOT NULL,
+        updated_at            INTEGER NOT NULL,
+        preflight_checked_at  INTEGER,
+        applied_version_id    TEXT,
+        FOREIGN KEY (room_id) REFERENCES rooms(id),
+        FOREIGN KEY (team_id) REFERENCES teams(id),
+        FOREIGN KEY (base_version_id) REFERENCES team_versions(id),
+        FOREIGN KEY (applied_version_id) REFERENCES team_versions(id)
+      );
+      CREATE TABLE IF NOT EXISTS evolution_proposal_changes (
+        id                        TEXT PRIMARY KEY,
+        proposal_id               TEXT NOT NULL,
+        ordinal                   INTEGER NOT NULL,
+        kind                      TEXT NOT NULL
+                                  CHECK (kind IN ('add-agent','edit-agent-prompt','edit-team-workflow','edit-routing-policy','add-team-memory','add-validation-case')),
+        title                     TEXT NOT NULL,
+        why                       TEXT NOT NULL,
+        evidence_message_ids_json TEXT NOT NULL DEFAULT '[]',
+        target_layer              TEXT NOT NULL,
+        before_json               TEXT NOT NULL DEFAULT 'null',
+        after_json                TEXT NOT NULL DEFAULT 'null',
+        impact                    TEXT NOT NULL,
+        decision                  TEXT
+                                  CHECK (decision IS NULL OR decision IN ('accepted','rejected')),
+        decided_at                INTEGER,
+        FOREIGN KEY (proposal_id) REFERENCES evolution_proposals(id) ON DELETE CASCADE,
+        UNIQUE(proposal_id, ordinal)
+      );
+      CREATE TABLE IF NOT EXISTS team_validation_cases (
+        id                        TEXT PRIMARY KEY,
+        team_id                   TEXT NOT NULL,
+        proposal_id               TEXT,
+        change_id                 TEXT,
+        source_room_id            TEXT,
+        base_version_id           TEXT,
+        created_version_id        TEXT,
+        title                     TEXT NOT NULL,
+        failure_summary           TEXT NOT NULL DEFAULT '',
+        input_snapshot_json       TEXT NOT NULL DEFAULT 'null',
+        expected_behavior         TEXT NOT NULL DEFAULT '',
+        assertion_type            TEXT NOT NULL DEFAULT 'checklist'
+                                  CHECK (assertion_type IN ('checklist','replay')),
+        status                    TEXT NOT NULL DEFAULT 'active'
+                                  CHECK (status IN ('active','archived')),
+        prompt                    TEXT NOT NULL,
+        expected_outcome          TEXT NOT NULL,
+        evidence_message_ids_json TEXT NOT NULL DEFAULT '[]',
+        created_at                INTEGER NOT NULL,
+        FOREIGN KEY (team_id) REFERENCES teams(id),
+        FOREIGN KEY (base_version_id) REFERENCES team_versions(id),
+        FOREIGN KEY (created_version_id) REFERENCES team_versions(id)
+      );
+      CREATE TABLE IF NOT EXISTS team_validation_preflight_results (
+        id                  TEXT PRIMARY KEY,
+        proposal_id         TEXT NOT NULL,
+        validation_case_id  TEXT NOT NULL,
+        target_version_id   TEXT NOT NULL,
+        result              TEXT NOT NULL
+                            CHECK (result IN ('pass','fail','needs-review')),
+        reason              TEXT NOT NULL,
+        checked_at          INTEGER NOT NULL,
+        FOREIGN KEY (proposal_id) REFERENCES evolution_proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (validation_case_id) REFERENCES team_validation_cases(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_evolution_proposals_room_id ON evolution_proposals(room_id);
+      CREATE INDEX IF NOT EXISTS idx_evolution_proposals_team_id ON evolution_proposals(team_id);
+      CREATE INDEX IF NOT EXISTS idx_evolution_proposal_changes_proposal_id ON evolution_proposal_changes(proposal_id);
+      CREATE INDEX IF NOT EXISTS idx_team_validation_cases_team_id ON team_validation_cases(team_id);
+      CREATE INDEX IF NOT EXISTS idx_team_validation_cases_proposal_id ON team_validation_cases(proposal_id);
+      CREATE INDEX IF NOT EXISTS idx_team_validation_preflight_proposal_id ON team_validation_preflight_results(proposal_id);
+    `);
+    try {
+      db.exec("ALTER TABLE evolution_proposals ADD COLUMN preflight_checked_at INTEGER");
+    } catch {
+      // Column already exists.
+    }
+    for (const statement of [
+      "ALTER TABLE team_validation_cases ADD COLUMN source_room_id TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE team_validation_cases ADD COLUMN failure_summary TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE team_validation_cases ADD COLUMN input_snapshot_json TEXT NOT NULL DEFAULT 'null'",
+      "ALTER TABLE team_validation_cases ADD COLUMN expected_behavior TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE team_validation_cases ADD COLUMN assertion_type TEXT NOT NULL DEFAULT 'checklist'",
+      "ALTER TABLE team_validation_cases ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+    ]) {
+      try {
+        db.exec(statement);
+      } catch {
+        // Column already exists.
+      }
+    }
+    try {
+      db.exec("UPDATE team_validation_cases SET source_room_id = (SELECT room_id FROM evolution_proposals WHERE evolution_proposals.id = team_validation_cases.proposal_id) WHERE source_room_id = ''");
+    } catch {
+      // Best-effort backfill for databases created during F053.
+    }
+    try {
+      migrateTeamValidationCasesNullableSources();
+    } catch (err) {
+      log('ERROR', 'db:schema:migrate:team_validation_cases:nullable_sources_failed', { err: String(err) });
+      throw err;
+    }
+    log('INFO', 'db:schema:migrate:team_evolution');
+  } catch {
+    // Tables already exist or F052 tables are not created yet — full schema exec below covers fresh DBs.
   }
 
   try {

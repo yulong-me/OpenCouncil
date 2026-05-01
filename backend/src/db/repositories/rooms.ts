@@ -1,5 +1,5 @@
 import { db } from '../db.js';
-import type { DiscussionRoom, Message } from '../../types.js';
+import type { DiscussionRoom, Message, TeamVersionMemberSnapshot } from '../../types.js';
 import { agentsRepo } from './agents.js';
 import { sessionsRepo } from './sessions.js';
 import { v4 as uuid } from 'uuid';
@@ -31,12 +31,17 @@ function parseJson<T>(value: unknown): T | undefined {
   }
 }
 
+function parseSnapshotMap(value: unknown): Map<string, TeamVersionMemberSnapshot> {
+  const snapshots = parseJson<TeamVersionMemberSnapshot[]>(value) ?? [];
+  return new Map(snapshots.map(snapshot => [snapshot.id, snapshot]));
+}
+
 /** Rooms CRUD */
 export const roomsRepo = {
   create(room: DiscussionRoom): DiscussionRoom {
     db.prepare(`
-      INSERT INTO rooms (id, topic, state, report, agent_ids, workspace, scene_id, created_at, updated_at, max_a2a_depth)
-      VALUES (@id, @topic, @state, @report, @agentIds, @workspace, @sceneId, @createdAt, @updatedAt, @maxA2ADepth)
+      INSERT INTO rooms (id, topic, state, report, agent_ids, workspace, scene_id, team_id, team_version_id, created_at, updated_at, max_a2a_depth)
+      VALUES (@id, @topic, @state, @report, @agentIds, @workspace, @sceneId, @teamId, @teamVersionId, @createdAt, @updatedAt, @maxA2ADepth)
     `).run({
       id: room.id,
       topic: room.topic,
@@ -45,6 +50,8 @@ export const roomsRepo = {
       agentIds: JSON.stringify(room.agents.map(a => a.configId)),
       workspace: room.workspace ?? null,
       sceneId: room.sceneId,
+      teamId: room.teamId ?? null,
+      teamVersionId: room.teamVersionId ?? null,
       createdAt: room.createdAt,
       updatedAt: room.updatedAt,
       maxA2ADepth: room.maxA2ADepth ?? null,
@@ -56,10 +63,43 @@ export const roomsRepo = {
     const row = db.prepare('SELECT * FROM rooms WHERE id = ?').get(id) as Record<string, unknown> | undefined;
     if (!row) return undefined;
     const agentIds: string[] = JSON.parse((row.agent_ids as string) ?? '[]');
+    // F052: resolve team display hints from team_versions
+    const teamVersionId = (row.team_version_id as string | null) ?? undefined;
+    let teamId: string | undefined = (row.team_id as string | null) ?? undefined;
+    let teamName: string | undefined;
+    let teamVersionNumber: number | undefined;
+    let memberSnapshotsById = new Map<string, TeamVersionMemberSnapshot>();
+    if (teamVersionId) {
+      try {
+        const tv = db.prepare('SELECT * FROM team_versions WHERE id = ?').get(teamVersionId) as Record<string, unknown> | undefined;
+        if (tv) {
+          teamId = tv.team_id as string;
+          teamName = tv.name as string;
+          teamVersionNumber = tv.version_number as number;
+          memberSnapshotsById = parseSnapshotMap(tv.member_snapshots_json);
+        }
+      } catch { /* team_versions table may not exist yet */ }
+    }
     const agents = agentIds
-      .map(configId => agentsRepo.get(configId))
-      .filter((a): a is NonNullable<typeof a> => a !== undefined)
-      .map(a => ({ id: uuid(), role: a.role, name: a.name, domainLabel: a.roleLabel, status: 'idle' as const, configId: a.id }));
+      .map(configId => {
+        const snapshot = memberSnapshotsById.get(configId);
+        if (snapshot) {
+          return {
+            id: uuid(),
+            role: 'WORKER' as const,
+            name: snapshot.name,
+            domainLabel: snapshot.roleLabel,
+            status: 'idle' as const,
+            configId: snapshot.id,
+          };
+        }
+        const agent = agentsRepo.get(configId);
+        return agent
+          ? { id: uuid(), role: agent.role, name: agent.name, domainLabel: agent.roleLabel, status: 'idle' as const, configId: agent.id }
+          : undefined;
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== undefined);
+
     return {
       id: row.id as string,
       topic: row.topic as string,
@@ -67,6 +107,10 @@ export const roomsRepo = {
       report: row.report as string | undefined,
       workspace: (row.workspace as string) ?? undefined,
       sceneId: (row.scene_id as string) ?? 'roundtable-forum',
+      teamId,
+      teamVersionId,
+      teamName,
+      teamVersionNumber,
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
       agents,
@@ -123,6 +167,10 @@ export const roomsRepo = {
     workspace?: string
     preview?: string
     agentCount: number
+    teamId?: string
+    teamVersionId?: string
+    teamName?: string
+    teamVersionNumber?: number
   }> {
     type SidebarRow = {
       id: string
@@ -133,6 +181,8 @@ export const roomsRepo = {
       workspace: string | null
       preview: string | null
       agent_ids: string
+      team_id: string | null
+      team_version_id: string | null
     }
     const rows = db.prepare(`
       SELECT
@@ -142,6 +192,8 @@ export const roomsRepo = {
         r.updated_at,
         r.state,
         r.workspace,
+        r.team_id,
+        r.team_version_id,
         (
           SELECT content FROM messages m
           WHERE m.room_id = r.id
@@ -167,6 +219,19 @@ export const roomsRepo = {
       const preview = r.preview
         ? r.preview.slice(0, 120)
         : undefined
+      // F052: resolve team display hints for sidebar
+      const tvId = r.team_version_id ?? undefined;
+      let teamName: string | undefined;
+      let teamVersionNumber: number | undefined;
+      if (tvId) {
+        try {
+          const tv = db.prepare('SELECT name, version_number FROM team_versions WHERE id = ?').get(tvId) as { name: string; version_number: number } | undefined;
+          if (tv) {
+            teamName = tv.name;
+            teamVersionNumber = tv.version_number;
+          }
+        } catch { /* team_versions may not exist yet */ }
+      }
       return {
         id: r.id,
         topic: r.topic,
@@ -176,6 +241,10 @@ export const roomsRepo = {
         workspace: r.workspace ?? undefined,
         preview,
         agentCount,
+        teamId: r.team_id ?? undefined,
+        teamVersionId: tvId,
+        teamName,
+        teamVersionNumber,
       }
     })
   },

@@ -23,7 +23,7 @@ import {
   scanForInlineA2AMentions,
   updateA2AContext,
 } from '../routing/A2ARouter.js';
-import { buildRoomScopedSystemPrompt } from '../scenePromptBuilder.js';
+import { buildAgentBasePrompt, buildRoomScopedSystemPrompt, resolvePinnedTeamMemberSnapshot } from '../scenePromptBuilder.js';
 import {
   emitStreamDelta,
   emitStreamEnd,
@@ -273,10 +273,12 @@ export async function streamingCallAgent(
   let workspaceChanges: WorkspaceChangeSummary | undefined;
 
   try {
-    const agentConfig = getAgent(configId);
-    providerName = agentConfig?.provider ?? 'claude-code';
-    const systemPrompt = agentConfig?.systemPrompt ?? ctx.systemPrompt;
     const room = store.get(roomId);
+    const agentConfig = getAgent(configId);
+    const memberSnapshot = resolvePinnedTeamMemberSnapshot(roomId, configId);
+    providerName = memberSnapshot?.provider ?? agentConfig?.provider ?? 'claude-code';
+    const providerOptsSource = memberSnapshot?.providerOpts ?? agentConfig?.providerOpts ?? {};
+    const systemPrompt = memberSnapshot?.systemPrompt ?? agentConfig?.systemPrompt ?? ctx.systemPrompt;
 
     activeRunController = new AbortController();
     registerActiveAgentRun({
@@ -310,7 +312,7 @@ export async function streamingCallAgent(
       ? buildTranscriptForAgentInvocation(room, agentName)
       : undefined;
 
-    const basePrompt = `【当前执行者】${agentName}\n【角色】${ctx.domainLabel}（${systemPrompt}）`;
+    const basePrompt = buildAgentBasePrompt(roomId, configId, agentName, ctx.domainLabel, systemPrompt);
     const prompt = buildRoomScopedSystemPrompt(roomId, basePrompt, {
       userMessage: ctx.userMessage,
       recentTranscript,
@@ -324,14 +326,14 @@ export async function streamingCallAgent(
 
     const existingSessionId = room?.sessionIds[sessionKey];
     returnedSessionId = existingSessionId ?? '';
-    const explicitModel = typeof agentConfig?.providerOpts?.model === 'string' && agentConfig.providerOpts.model.trim()
-      ? agentConfig.providerOpts.model.trim()
+    const explicitModel = typeof providerOptsSource.model === 'string' && providerOptsSource.model.trim()
+      ? providerOptsSource.model.trim()
       : undefined;
     const configuredModel = providerName === 'opencode'
       ? explicitModel
       : (explicitModel ?? getProviderConfig(providerName)?.defaultModel);
     const providerOpts: Record<string, unknown> = {
-      ...(agentConfig?.providerOpts ?? {}),
+      ...providerOptsSource,
       sessionId: existingSessionId,
       workspace,
       providerRuntimeDir: runtimeAssembly.providerRuntimeDir,

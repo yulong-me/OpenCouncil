@@ -9,9 +9,10 @@
  */
 
 import { store } from '../store.js';
-import { scenesRepo } from '../db/index.js';
+import { scenesRepo, teamsRepo } from '../db/index.js';
 import { getEffectiveMaxDepthForRoom } from './routing/A2ARouter.js';
 import { debug, warn } from '../lib/logger.js';
+import type { TeamVersionMemberSnapshot } from '../types.js';
 
 interface RuntimeContext {
   /** Current user input / task text */
@@ -46,7 +47,7 @@ interface RuntimeContext {
 
 /**
  * Build the room-scoped system prompt.
- * Returns null if the room or its scene is not found.
+ * Returns null if the room is not found.
  */
 export function buildRoomScopedSystemPrompt(
   roomId: string,
@@ -59,16 +60,18 @@ export function buildRoomScopedSystemPrompt(
     return null;
   }
 
+  const teamVersion = room.teamVersionId ? teamsRepo.getVersion(room.teamVersionId) : undefined;
   const scene = scenesRepo.get(room.sceneId);
-  if (!scene) {
+  const workflowPrompt = teamVersion?.workflowPrompt || scene?.prompt;
+  if (!workflowPrompt) {
     warn('scene:prompt:scene_missing', { roomId, sceneId: room.sceneId });
     throw new Error(`Scene not found: ${room.sceneId}`);
   }
 
   const parts: string[] = [];
 
-  // 1. Scene Prompt
-  parts.push(scene.prompt);
+  // 1. TeamVersion workflow prompt is pinned at room creation; old rooms fall back to Scene.
+  parts.push(workflowPrompt);
 
   // 2. Base prompt (Agent persona prompt or system action prompt)
   parts.push(basePrompt);
@@ -90,7 +93,10 @@ export function buildRoomScopedSystemPrompt(
   const prompt = parts.join('\n\n');
   debug('scene:prompt:built', {
     roomId,
-    sceneId: scene.id,
+    sceneId: scene?.id ?? room.sceneId,
+    teamId: room.teamId,
+    teamVersionId: room.teamVersionId,
+    promptSource: teamVersion ? 'team_version' : 'scene',
     basePromptLength: basePrompt.length,
     promptLength: prompt.length,
     participantCount: roomRuntime.participants?.length ?? 0,
@@ -99,6 +105,31 @@ export function buildRoomScopedSystemPrompt(
   });
 
   return prompt;
+}
+
+export function resolvePinnedTeamMemberSnapshot(
+  roomId: string,
+  agentConfigId: string,
+): TeamVersionMemberSnapshot | undefined {
+  const room = store.get(roomId);
+  if (!room?.teamVersionId) return undefined;
+
+  const teamVersion = teamsRepo.getVersion(room.teamVersionId);
+  return teamVersion?.memberSnapshots.find(snapshot => snapshot.id === agentConfigId);
+}
+
+export function buildAgentBasePrompt(
+  roomId: string,
+  agentConfigId: string,
+  agentName: string,
+  domainLabel: string,
+  fallbackSystemPrompt: string,
+): string {
+  const snapshot = resolvePinnedTeamMemberSnapshot(roomId, agentConfigId);
+  const effectiveName = snapshot?.name ?? agentName;
+  const effectiveRoleLabel = snapshot?.roleLabel ?? domainLabel;
+  const effectiveSystemPrompt = snapshot?.systemPrompt ?? fallbackSystemPrompt;
+  return `【当前执行者】${effectiveName}\n【角色】${effectiveRoleLabel}（${effectiveSystemPrompt}）`;
 }
 
 function buildRuntimeContextString(runtime: RuntimeContext): string {
