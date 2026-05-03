@@ -157,6 +157,9 @@ describe('F053: Team Architect proposal generation', () => {
     expect(agentClient.generateDraft).toHaveBeenCalledTimes(1);
     expect(agentClient.generateDraft.mock.calls[0]?.[0].schemaName).toBe('TeamEvolutionProposal');
     expect(agentClient.generateDraft.mock.calls[0]?.[0].prompt).toContain('只需要记住：交付前必须验证');
+    expect(agentClient.generateDraft.mock.calls[0]?.[0].runtime).toMatchObject({
+      timeoutSeconds: null,
+    });
     expect(proposal.feedback).toBe('只需要记住：交付前必须验证');
     expect(proposal.changes).toHaveLength(1);
     expect(proposal.changes[0]).toMatchObject({

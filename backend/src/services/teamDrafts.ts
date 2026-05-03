@@ -10,10 +10,20 @@ export interface TeamDraftAgentInput {
   schema: Record<string, unknown>;
   safetyConstraints: string[];
   prompt: string;
+  runtime?: TeamDraftAgentRuntimeOptions;
 }
 
 export interface TeamDraftAgentClient {
   generateDraft(input: TeamDraftAgentInput): Promise<unknown>;
+}
+
+export type TeamArchitectPermissionMode = 'acceptEdits' | 'bypassPermissions' | 'default' | 'dontAsk' | 'plan' | 'auto';
+
+export interface TeamDraftAgentRuntimeOptions {
+  /** null means no timeout. undefined means use provider timeout. */
+  timeoutSeconds?: number | null;
+  permissionMode?: TeamArchitectPermissionMode;
+  allowedTools?: string[];
 }
 
 interface GenerateTeamDraftOptions {
@@ -114,6 +124,83 @@ const TEAM_DRAFT_SCHEMA = {
     generationRationale: { type: 'string' },
   },
 };
+
+const READ_ONLY_TEAM_ARCHITECT_TOOLS = ['Read', 'Grep', 'Glob', 'LS'];
+const TEAM_ARCHITECT_PERMISSION_MODES = new Set<TeamArchitectPermissionMode>([
+  'acceptEdits',
+  'bypassPermissions',
+  'default',
+  'dontAsk',
+  'plan',
+  'auto',
+]);
+
+function parsePositiveTimeoutSeconds(value: string | undefined): number | null | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  if (raw === '0' || /^none$/i.test(raw) || /^unlimited$/i.test(raw) || /^false$/i.test(raw)) {
+    return null;
+  }
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
+}
+
+function parsePermissionMode(value: string | undefined): TeamArchitectPermissionMode | undefined {
+  const mode = value?.trim() as TeamArchitectPermissionMode | undefined;
+  return mode && TEAM_ARCHITECT_PERMISSION_MODES.has(mode) ? mode : undefined;
+}
+
+function parseAllowedTools(value: string | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  return trimmed.split(/[,\s]+/).map(item => item.trim()).filter(Boolean);
+}
+
+export function getTeamArchitectRuntimeFromEnv(): TeamDraftAgentRuntimeOptions {
+  return {
+    timeoutSeconds: parsePositiveTimeoutSeconds(process.env.TEAM_ARCHITECT_TIMEOUT_SECONDS),
+    permissionMode: parsePermissionMode(process.env.TEAM_ARCHITECT_PERMISSION_MODE),
+    allowedTools: parseAllowedTools(process.env.TEAM_ARCHITECT_ALLOWED_TOOLS),
+  };
+}
+
+function resolveRuntimeOptions(input: TeamDraftAgentInput): Required<Pick<TeamDraftAgentRuntimeOptions, 'permissionMode' | 'allowedTools'>> & Pick<TeamDraftAgentRuntimeOptions, 'timeoutSeconds'> {
+  const envRuntime = getTeamArchitectRuntimeFromEnv();
+  return {
+    timeoutSeconds: input.runtime && 'timeoutSeconds' in input.runtime
+      ? input.runtime.timeoutSeconds
+      : envRuntime.timeoutSeconds,
+    permissionMode: input.runtime?.permissionMode ?? envRuntime.permissionMode ?? 'plan',
+    allowedTools: input.runtime?.allowedTools ?? envRuntime.allowedTools ?? READ_ONLY_TEAM_ARCHITECT_TOOLS,
+  };
+}
+
+export function buildTeamArchitectCliArgs(input: TeamDraftAgentInput, model?: string): string[] {
+  const runtime = resolveRuntimeOptions(input);
+  const args = [
+    '--bare',
+    '-p',
+    input.prompt,
+    '--output-format=json',
+    '--json-schema',
+    JSON.stringify(input.schema),
+    '--no-session-persistence',
+    '--permission-mode',
+    runtime.permissionMode,
+    '--tools',
+    runtime.allowedTools.join(','),
+  ];
+  if (model?.trim()) args.push('--model', model.trim());
+  return args;
+}
+
+export function resolveTeamArchitectTimeoutMs(input: TeamDraftAgentInput, providerTimeoutSeconds: number | undefined): number | null {
+  const runtime = resolveRuntimeOptions(input);
+  if (runtime.timeoutSeconds === null) return null;
+  const timeoutSeconds = runtime.timeoutSeconds ?? providerTimeoutSeconds;
+  return timeoutSeconds && timeoutSeconds > 0 ? timeoutSeconds * 1000 : null;
+}
 
 function buildArchitectPrompt(goal: string): string {
   return [
@@ -237,18 +324,8 @@ export const defaultTeamDraftAgentClient: TeamDraftAgentClient = {
     if (providerConfig.apiKey) env.ANTHROPIC_API_KEY = providerConfig.apiKey;
     if (providerConfig.baseUrl) env.ANTHROPIC_BASE_URL = providerConfig.baseUrl;
     const model = providerConfig.defaultModel?.trim();
-    const args = [
-      '--bare',
-      '-p',
-      input.prompt,
-      '--output-format=json',
-      '--json-schema',
-      JSON.stringify(input.schema),
-      '--no-session-persistence',
-      '--dangerously-skip-permissions',
-    ];
-    if (model) args.push('--model', model);
-    const timeoutMs = Math.min(providerConfig.timeout || 60, 60) * 1000;
+    const args = buildTeamArchitectCliArgs(input, model);
+    const timeoutMs = resolveTeamArchitectTimeoutMs(input, providerConfig.timeout);
 
     return await new Promise<unknown>((resolve, reject) => {
       const proc = spawn(cliPath, args, {
@@ -258,24 +335,26 @@ export const defaultTeamDraftAgentClient: TeamDraftAgentClient = {
       });
       let stdout = '';
       let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        try {
-          proc.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-      }, timeoutMs);
+      const timer = timeoutMs === null
+        ? null
+        : setTimeout(() => {
+            timedOut = true;
+            try {
+              proc.kill('SIGKILL');
+            } catch {
+              // ignore
+            }
+          }, timeoutMs);
 
       proc.stdout?.on('data', chunk => {
         stdout += chunk.toString();
       });
       proc.on('error', () => {
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
         reject(new Error('Team Architect unavailable'));
       });
       proc.on('close', code => {
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
         if (timedOut) {
           reject(new Error('Team Architect timed out'));
           return;

@@ -818,6 +818,48 @@ describe('F056: Team Draft Agent', () => {
     });
   }
 
+  it('runs Team Architect without write-permission bypass by default', async () => {
+    const { buildTeamArchitectCliArgs } = await import('../src/services/teamDrafts.js');
+    const args = buildTeamArchitectCliArgs({
+      goal: '生成团队',
+      schemaName: 'TeamDraft',
+      schema: { type: 'object' },
+      safetyConstraints: [],
+      prompt: '只输出 JSON',
+    }, 'claude-sonnet-4-6');
+
+    expect(args).not.toContain('--dangerously-skip-permissions');
+    expect(args).toEqual(expect.arrayContaining([
+      '--permission-mode',
+      'plan',
+      '--tools',
+      'Read,Grep,Glob,LS',
+      '--model',
+      'claude-sonnet-4-6',
+    ]));
+  });
+
+  it('supports unlimited and configurable Team Architect timeout', async () => {
+    const { resolveTeamArchitectTimeoutMs } = await import('../src/services/teamDrafts.js');
+    const baseInput = {
+      goal: '生成团队',
+      schemaName: 'TeamDraft',
+      schema: { type: 'object' },
+      safetyConstraints: [],
+      prompt: '只输出 JSON',
+    };
+
+    expect(resolveTeamArchitectTimeoutMs({
+      ...baseInput,
+      runtime: { timeoutSeconds: null },
+    }, 60)).toBeNull();
+    expect(resolveTeamArchitectTimeoutMs({
+      ...baseInput,
+      runtime: { timeoutSeconds: 240 },
+    }, 60)).toBe(240_000);
+    expect(resolveTeamArchitectTimeoutMs(baseInput, 1800)).toBe(1_800_000);
+  });
+
   async function generateDraftWithInvalidAgentOutput(
     mutate: (draft: TeamDraft) => void,
   ): Promise<TeamDraft> {

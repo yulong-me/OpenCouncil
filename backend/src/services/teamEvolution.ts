@@ -7,7 +7,7 @@ import type {
 } from '../types.js';
 import { evolutionRepo, teamsRepo } from '../db/index.js';
 import type { CreateEvolutionChangeInput } from '../db/repositories/teamEvolution.js';
-import { defaultTeamDraftAgentClient, type TeamDraftAgentClient } from './teamDrafts.js';
+import { defaultTeamDraftAgentClient, getTeamArchitectRuntimeFromEnv, type TeamDraftAgentClient } from './teamDrafts.js';
 
 const CHANGE_KINDS: EvolutionChangeKind[] = [
   'add-agent',
@@ -305,12 +305,17 @@ export async function createEvolutionProposalFromRoom(
   let summary: string;
   let changes: CreateEvolutionChangeInput[];
   try {
+    const runtime = getTeamArchitectRuntimeFromEnv();
     const rawOutput = await agentClient.generateDraft({
       goal: `${baseVersion.name} v${baseVersion.versionNumber} evolution proposal`,
       schemaName: 'TeamEvolutionProposal',
       schema: EVOLUTION_PROPOSAL_SCHEMA,
       safetyConstraints: SAFETY_CONSTRAINTS,
       prompt: buildArchitectPrompt(room, baseVersion, feedbackText),
+      runtime: {
+        ...runtime,
+        timeoutSeconds: runtime.timeoutSeconds ?? null,
+      },
     });
     const output = parseAgentOutput(rawOutput);
     assertArchitectOutput(output);
