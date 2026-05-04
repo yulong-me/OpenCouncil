@@ -7,11 +7,12 @@
 import { Router } from 'express';
 import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { mkdir, open, readdir, realpath, stat } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, extname, resolve } from 'node:path';
+import { basename, extname, isAbsolute, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { debug, info, warn } from '../lib/logger.js';
+import { validateWorkspacePath } from '../services/workspace.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -40,6 +41,8 @@ interface FilePreviewResult {
 
 export const browseRouter = Router();
 const MAX_FILE_PREVIEW_BYTES = 128 * 1024;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const BLOCKED_UPLOAD_SEGMENTS = new Set(['.git', 'node_modules']);
 const MEDIA_TYPES: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.m4v': 'video/mp4',
@@ -63,6 +66,40 @@ async function validatePath(targetPath: string): Promise<string | null> {
     if (code === 'EACCES' || code === 'EPERM') return null; // 无权访问 → 403
     return null;
   }
+}
+
+function isWithinPath(rootPath: string, targetPath: string): boolean {
+  const rel = relative(rootPath, targetPath);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function hasBlockedWorkspaceSegment(rootPath: string, targetPath: string): boolean {
+  const rel = relative(rootPath, targetPath);
+  if (!rel) return false;
+  return rel
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .some(segment => BLOCKED_UPLOAD_SEGMENTS.has(segment));
+}
+
+function normalizeUploadFileName(filename: string): string | null {
+  const name = filename.trim();
+  if (!name || name === '.' || name === '..') return null;
+  if (name.includes('/') || name.includes('\\') || name.includes('\0')) return null;
+  if (basename(name) !== name) return null;
+  return name;
+}
+
+function decodeUploadContent(contentBase64: string): Buffer | null {
+  const normalized = contentBase64.trim();
+  if (!normalized) return Buffer.alloc(0);
+  if (normalized.length > Math.ceil(MAX_UPLOAD_BYTES / 3) * 4 + 4) return null;
+  if (normalized.length % 4 !== 0) return null;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) return null;
+
+  const buffer = Buffer.from(normalized, 'base64');
+  if (buffer.length > MAX_UPLOAD_BYTES) return null;
+  return buffer;
 }
 
 /**
@@ -322,6 +359,112 @@ browseRouter.post('/mkdir', async (req, res) => {
   } catch (err) {
     warn('browse:mkdir:failed', { parentPath: validatedParent, name, error: err });
     return res.status(400).json({ error: `无法创建目录: ${(err as Error).message}` });
+  }
+});
+
+/**
+ * POST /api/browse/upload — 上传文件到当前 workspace 内的指定目录
+ */
+browseRouter.post('/upload', async (req, res) => {
+  const {
+    workspacePath,
+    parentPath,
+    filename,
+    contentBase64,
+    overwrite = false,
+  } = req.body as {
+    workspacePath?: string;
+    parentPath?: string;
+    filename?: string;
+    contentBase64?: string;
+    overwrite?: boolean;
+  };
+
+  if (!workspacePath || !parentPath || !filename || typeof contentBase64 !== 'string') {
+    return res.status(400).json({ error: 'workspacePath、parentPath、filename 和 contentBase64 均为必填' });
+  }
+
+  try {
+    await validateWorkspacePath(workspacePath);
+  } catch (err) {
+    warn('browse:upload:invalid_workspace', { workspacePath, error: err });
+    return res.status(403).json({ error: 'workspace 不存在或无权访问' });
+  }
+
+  const workspaceReal = await validatePath(workspacePath);
+  const parentReal = await validatePath(parentPath);
+  if (!workspaceReal || !parentReal) {
+    warn('browse:upload:invalid_path', { workspacePath, parentPath, filename });
+    return res.status(404).json({ error: 'workspace 或上传目录不存在' });
+  }
+
+  if (!isWithinPath(workspaceReal, parentReal)) {
+    warn('browse:upload:outside_workspace', { workspacePath: workspaceReal, parentPath: parentReal, filename });
+    return res.status(403).json({ error: '上传目录必须位于当前 workspace 内' });
+  }
+
+  if (hasBlockedWorkspaceSegment(workspaceReal, parentReal)) {
+    warn('browse:upload:blocked_parent', { workspacePath: workspaceReal, parentPath: parentReal, filename });
+    return res.status(403).json({ error: '不能上传到受保护目录' });
+  }
+
+  const safeName = normalizeUploadFileName(filename);
+  if (!safeName) {
+    warn('browse:upload:invalid_name', { workspacePath: workspaceReal, parentPath: parentReal, filename });
+    return res.status(400).json({ error: '文件名无效' });
+  }
+
+  const buffer = decodeUploadContent(contentBase64);
+  if (!buffer) {
+    warn('browse:upload:invalid_content', { workspacePath: workspaceReal, parentPath: parentReal, filename: safeName });
+    return res.status(400).json({ error: `文件内容无效或超过 ${MAX_UPLOAD_BYTES} 字节` });
+  }
+
+  try {
+    const parentStat = await stat(parentReal);
+    if (!parentStat.isDirectory()) {
+      return res.status(400).json({ error: '上传目录必须是目录' });
+    }
+
+    const targetPath = resolve(parentReal, safeName);
+    if (!isWithinPath(workspaceReal, targetPath) || hasBlockedWorkspaceSegment(workspaceReal, targetPath)) {
+      warn('browse:upload:invalid_target', { workspacePath: workspaceReal, parentPath: parentReal, targetPath });
+      return res.status(403).json({ error: '上传目标必须位于当前 workspace 内' });
+    }
+
+    const existingLink = await lstat(targetPath).catch(() => null);
+    if (existingLink?.isSymbolicLink()) {
+      warn('browse:upload:symlink_target', { workspacePath: workspaceReal, parentPath: parentReal, targetPath });
+      return res.status(403).json({ error: '不能覆盖符号链接' });
+    }
+
+    const existing = existingLink ? await stat(targetPath) : null;
+    if (existing && !existing.isFile()) {
+      return res.status(400).json({ error: '同名路径不是普通文件' });
+    }
+
+    if (existing && !overwrite) {
+      return res.status(409).json({ error: '文件已存在' });
+    }
+
+    await writeFile(targetPath, buffer);
+    info('browse:upload', {
+      workspacePath: workspaceReal,
+      parentPath: parentReal,
+      targetPath,
+      size: buffer.length,
+      overwritten: Boolean(existing),
+    });
+
+    return res.json({
+      path: targetPath,
+      name: safeName,
+      size: buffer.length,
+      overwritten: Boolean(existing),
+    });
+  } catch (err) {
+    warn('browse:upload:failed', { workspacePath: workspaceReal, parentPath: parentReal, filename: safeName, error: err });
+    return res.status(400).json({ error: `无法上传文件: ${(err as Error).message}` });
   }
 });
 

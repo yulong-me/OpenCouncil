@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, File, Folder } from 'lucide-react'
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, File, Folder, Upload } from 'lucide-react'
 
-import { type BrowseResult, browseWorkspace } from '@/lib/workspace'
+import { type BrowseResult, browseWorkspace, uploadWorkspaceFile } from '@/lib/workspace'
 
 interface WorkspaceFilesPanelProps {
   workspacePath: string
@@ -29,10 +29,13 @@ function toBreadcrumbs(currentPath: string, workspacePath: string) {
 }
 
 export function WorkspaceFilesPanel({ workspacePath, onOpenFile }: WorkspaceFilesPanelProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [browseResult, setBrowseResult] = useState<BrowseResult | null>(null)
   const [currentPath, setCurrentPath] = useState(workspacePath)
   const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null)
 
   const loadPath = useCallback(async (path: string) => {
     setLoading(true)
@@ -58,16 +61,52 @@ export function WorkspaceFilesPanel({ workspacePath, onOpenFile }: WorkspaceFile
     [currentPath, workspacePath],
   )
 
+  const handleUpload = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+
+    setUploading(true)
+    setError(null)
+    setUploadMessage(null)
+    try {
+      await uploadWorkspaceFile(workspacePath, currentPath, file)
+      setUploadMessage(`已上传 ${file.name}`)
+      await loadPath(currentPath)
+    } catch (err) {
+      setError((err as Error).message || '无法上传文件')
+    } finally {
+      setUploading(false)
+    }
+  }, [currentPath, loadPath, workspacePath])
+
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5">
         <Folder className="h-3.5 w-3.5 text-ink-soft" />
         <span className="text-[11px] font-semibold text-ink-soft">工作区文件</span>
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="sr-only"
+          disabled={loading || uploading}
+          onChange={handleUpload}
+          aria-label="上传文件到当前目录"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={loading || uploading}
+          className="ml-auto rounded p-0.5 text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          title="上传文件到当前目录"
+        >
+          <Upload className="h-3.5 w-3.5" />
+        </button>
         {currentPath !== workspacePath && (
           <button
             type="button"
             onClick={() => browseResult?.parent && void loadPath(browseResult.parent)}
-            className="ml-auto rounded p-0.5 text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+            className="rounded p-0.5 text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
             title="返回上级"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
@@ -95,6 +134,7 @@ export function WorkspaceFilesPanel({ workspacePath, onOpenFile }: WorkspaceFile
       </div>
 
       {loading && <p className="py-2 text-[11px] text-ink-soft/60">加载中…</p>}
+      {!loading && !error && uploadMessage && <p className="py-1 text-[11px] text-ink-soft/70">{uploadMessage}</p>}
       {!loading && error && <p className="tone-danger-text py-2 text-[11px]">{error}</p>}
       {!loading && !error && browseResult?.entries.length === 0 && (
         <p className="py-2 text-[11px] text-ink-soft/60">空目录</p>

@@ -26,6 +26,13 @@ interface FilePreviewResult {
   content: string | null
 }
 
+export interface UploadWorkspaceFileResult {
+  path: string
+  name: string
+  size: number
+  overwritten: boolean
+}
+
 export interface GitChangedFile {
   path: string
   absolutePath: string
@@ -103,6 +110,34 @@ export function getWorkspaceMediaUrl(path: string) {
   const url = new URL(`${API_URL}/api/browse/media`)
   url.searchParams.set('path', path)
   return url.toString()
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 0x8000
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return btoa(binary)
+}
+
+export async function uploadWorkspaceFile(workspacePath: string, parentPath: string, file: File) {
+  const contentBase64 = arrayBufferToBase64(await file.arrayBuffer())
+  return requestJson<UploadWorkspaceFileResult>(`${API_URL}/api/browse/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      workspacePath,
+      parentPath,
+      filename: file.name,
+      contentBase64,
+      overwrite: true,
+    }),
+  }, {
+    event: 'workspace:file_upload',
+    meta: { workspacePath, parentPath, filename: file.name, size: file.size },
+  })
 }
 
 export function fetchGitStatus(workspacePath: string) {
