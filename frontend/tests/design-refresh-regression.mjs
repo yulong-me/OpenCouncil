@@ -40,7 +40,7 @@ assert.match(messageList, /getStreamingStatusLabel/)
 assert.match(roomHeader, /renaming && roomId && suggestionsOpen/)
 assert.doesNotMatch(roomHeader, /roomId && \(\s*<button\s+type="button"\s+onClick=\{\(\) => \{ void handleGenerateTitleSuggestions\(\) \}\}/)
 
-assert.match(actionArea, /导出任务报告 \(.md\)/)
+assert.doesNotMatch(actionArea, /导出任务报告|discussion-report|Download/)
 assert.match(agentPanel, /Team 成员/)
 assert.doesNotMatch(agentPanel, /📋/)
 

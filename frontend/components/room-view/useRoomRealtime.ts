@@ -21,7 +21,6 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
   const [state, setState] = useState<DiscussionState>('RUNNING')
   const [messages, setMessages] = useState<Message[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
-  const [report, setReport] = useState('')
   const [streamingAgentIds, setStreamingAgentIds] = useState<Set<string>>(new Set())
   const [messageErrorMap, setMessageErrorMap] = useState<Record<string, AgentRunErrorEvent>>({})
   const [orphanErrors, setOrphanErrors] = useState<AgentRunErrorEvent[]>([])
@@ -56,7 +55,6 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
     setMessages([])
     setAgents([])
     setState('RUNNING')
-    setReport('')
     setStreamingAgentIds(new Set())
     setMessageErrorMap({})
     setOrphanErrors([])
@@ -353,7 +351,6 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
         pollStateRef.current = { state: nextState, agents: nextAgents }
         setState(nextState)
         setAgents(nextAgents)
-        setReport(data.report || '')
         if (data.maxA2ADepth !== undefined) {
           setMaxA2ADepth(data.maxA2ADepth)
         }
@@ -452,7 +449,6 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
     state,
     messages,
     agents,
-    report,
     streamingAgentIds,
     messageErrorMap,
     orphanErrors,

@@ -1,5 +1,5 @@
 -- F004: Manager Router - Simplified state machine
--- State: RUNNING (active discussion) | DONE (report generated)
+-- State: RUNNING (active discussion) | DONE (task completed)
 
 -- Team — teams and team_versions for versioned team templates
 CREATE TABLE IF NOT EXISTS teams (

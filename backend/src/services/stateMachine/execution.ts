@@ -53,27 +53,6 @@ import {
   updateAgentStatus,
 } from './shared.js';
 
-export async function generateReportInline(
-  topic: string,
-  allContent: string,
-  worker: Agent,
-  roomId: string,
-): Promise<string> {
-  return streamingCallAgent(
-    {
-      domainLabel: worker.domainLabel,
-      systemPrompt: `专业${worker.domainLabel}，负责将讨论重组成结构化报告`,
-      userMessage: `请基于以下讨论内容输出一份简明报告。\n\n【议题】${topic}\n\n【讨论内容】\n${allContent}`,
-    },
-    roomId,
-    worker.id,
-    worker.configId,
-    worker.name,
-    'report',
-    'WORKER',
-  );
-}
-
 const TITLE_SUGGESTION_COUNT = 7;
 const TITLE_TRANSCRIPT_MAX_CHARS = 12000;
 const TITLE_MAX_LENGTH = 100;
@@ -324,7 +303,6 @@ export async function streamingCallAgent(
       a2aCallChain: room?.a2aCallChain,
       workspace,
       skillsSummary: buildEffectiveSkillSummary(skillState.effective),
-      outputMode: msgType === 'report' ? 'report' : 'discussion',
     }) ?? `${basePrompt}\n\n${ctx.userMessage}`;
 
     const existingSessionId = room?.sessionIds[sessionKey];

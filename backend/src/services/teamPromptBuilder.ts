@@ -42,8 +42,6 @@ interface RuntimeContext {
   workspace?: string;
   /** Human-readable effective skill summary; provider-native discovery remains primary path */
   skillsSummary?: string;
-  /** Discussion replies should stay terse; reports can opt out */
-  outputMode?: 'discussion' | 'report';
 }
 
 /**
@@ -167,13 +165,11 @@ function buildRuntimeContextString(runtime: RuntimeContext): string {
     lines.push('需要协作时，另起一行行首 @专家名；只是引用观点时用【专家名】。');
   }
 
-  if (runtime.outputMode !== 'report') {
-    lines.push('【回复区输出协议】');
-    lines.push('- 回复区只保留结论、反驳、决定或下一步；优先 1-4 句，通常控制在 120-180 字内');
-    lines.push('- 只给 1 个最核心理由，不要铺背景、不要展开成长论、不要在回复区复述完整推导');
-    lines.push('- 详细论证、推导、例子、旁征博引放到思考过程；回复区不要把思考内容再重复一遍');
-    lines.push('- 如果需要交棒，正文收完后直接写一行 @专家名，不要在交棒后继续补正文');
-  }
+  lines.push('【回复区输出协议】');
+  lines.push('- 回复区只保留结论、反驳、决定或下一步；优先 1-4 句，通常控制在 120-180 字内');
+  lines.push('- 只给 1 个最核心理由，不要铺背景、不要展开成长论、不要在回复区复述完整推导');
+  lines.push('- 详细论证、推导、例子、旁征博引放到思考过程；回复区不要把思考内容再重复一遍');
+  lines.push('- 如果需要交棒，正文收完后直接写一行 @专家名，不要在交棒后继续补正文');
 
   if (runtime.userMessage) {
     lines.push(`【用户输入/任务】${runtime.userMessage}`);

@@ -713,7 +713,7 @@ describe('F004: 直接路由', () => {
       }));
     });
 
-    it('顶层任务的 A2A 接力全部结束后，生成最终汇总并标记房间完成', async () => {
+    it('顶层任务的 A2A 接力全部结束后，只标记房间完成，不生成 report', async () => {
       const { routeToAgent } = await import('../src/services/stateMachine.js');
       const { store } = await import('../src/store.js');
       const { roomsRepo } = await import('../src/db/index.js');
@@ -764,20 +764,22 @@ describe('F004: 直接路由', () => {
 
       expect(providerCall).toBe(3);
       expect(roomState.state).toBe('DONE');
-      expect(roomState.report).toContain('Plan');
-      expect(roomState.report).toContain('Copy Package');
-      expect(roomState.report).toContain('Review Notes');
-      expect(roomState.report).toContain('Open Risks');
+      expect(roomState.report).toBeUndefined();
+      expect(roomState.messages).toHaveLength(4);
       expect(roomState.messages.at(-1)).toMatchObject({
-        agentName: '系统',
-        type: 'summary',
-        content: expect.stringContaining('本轮任务完成'),
+        agentName: 'Homepage Copy Reviewer',
+        type: 'statement',
       });
       expect(roomsRepo.update).toHaveBeenCalledWith(
         roomState.id,
         expect.objectContaining({
           state: 'DONE',
-          report: expect.stringContaining('Copy Package'),
+        }),
+      );
+      expect(roomsRepo.update).not.toHaveBeenCalledWith(
+        roomState.id,
+        expect.objectContaining({
+          report: expect.any(String),
         }),
       );
     });

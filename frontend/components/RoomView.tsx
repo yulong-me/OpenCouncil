@@ -94,7 +94,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     state,
     messages,
     agents,
-    report,
     streamingAgentIds,
     messageErrorMap,
     orphanErrors,
@@ -665,14 +664,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     }
   }, [activeEvolutionProposal, mergingEvolutionProposal])
 
-  const handleDownload = useCallback(() => {
-    if (!report) return
-    const anchor = document.createElement('a')
-    anchor.href = URL.createObjectURL(new Blob([report], { type: 'text/markdown' }))
-    anchor.download = 'discussion-report.md'
-    anchor.click()
-  }, [report])
-
   return (
     <>
       <CreateRoomModal
@@ -779,8 +770,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
               <RoomActionArea
                 roomId={activeRoomId}
                 state={state}
-                report={report}
-                onDownload={handleDownload}
                 busyAgents={busyAgents}
                 outgoingQueue={outgoingQueue}
                 recallableQueueItemId={recallableQueueItemId}

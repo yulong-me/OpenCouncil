@@ -12,7 +12,7 @@ import { debug, error, info, warn } from '../lib/logger.js';
 import { v4 as uuid } from 'uuid';
 import { store } from '../store.js';
 import type { DiscussionRoom, TeamVersionConfig } from '../types.js';
-import { routeToAgent, generateReportInline, generateTitleSuggestionsInline, stopAgentRun, isRoomBusy } from '../services/stateMachine.js';
+import { routeToAgent, generateTitleSuggestionsInline, stopAgentRun, isRoomBusy } from '../services/stateMachine.js';
 import { roomsRepo, sessionsRepo, messagesRepo, teamsRepo } from '../db/index.js';
 import { auditRepo } from '../db/index.js';
 import { evolutionRepo } from '../db/index.js';
@@ -682,7 +682,6 @@ roomsRouter.get('/:id/messages', (req, res) => {
         : computeEffectiveMessageMentions(message.content, room.teamId, room.agents),
     })),
     agents: room.agents,
-    report: room.report,
     teamId: room.teamId,
     teamVersionId: room.teamVersionId,
     teamName: room.teamName,
@@ -768,51 +767,6 @@ roomsRouter.post('/:id/agents/:agentId/stop', (req, res) => {
     agentId: req.params.agentId,
     agentName: target.name,
   });
-});
-
-// POST /api/rooms/:id/report — 生成报告（无状态，系统级服务）
-roomsRouter.post('/:id/report', async (req, res) => {
-  const room = store.get(req.params.id);
-  if (!room) {
-    warn('room:report:not_found', { roomId: req.params.id });
-    return res.status(404).json({ error: 'Room not found' });
-  }
-  if (isRoomBusy(req.params.id)) {
-    warn('room:report:busy', { roomId: req.params.id });
-    return res.status(409).json({ code: 'ROOM_BUSY', error: 'Room has an Agent currently executing' });
-  }
-
-  const allContent = room.messages
-    .map(m => `【${m.agentName}】${m.content}`)
-    .join('\n\n');
-
-  if (!allContent.trim()) {
-    warn('room:report:empty', { roomId: req.params.id });
-    return res.status(400).json({ error: 'No messages to generate report from' });
-  }
-
-  // 用第一个 WORKER 作为报告生成的执行者（无状态，系统级角色）
-  const worker = room.agents.find(a => a.role === 'WORKER');
-  if (!worker) {
-    warn('room:report:no_worker', { roomId: req.params.id });
-    return res.status(400).json({ error: 'No expert available to generate report' });
-  }
-
-  // 同步生成报告（简短操作）
-  const reportOutput = await generateReportInline(room.topic, allContent, worker, req.params.id);
-
-  store.update(req.params.id, { state: 'DONE', report: reportOutput });
-  roomsRepo.update(req.params.id, { state: 'DONE', report: reportOutput });
-
-  info('room:report', {
-    roomId: req.params.id,
-    workerId: worker.id,
-    workerName: worker.name,
-    messageCount: room.messages.length,
-    reportLength: reportOutput.length,
-  });
-
-  res.json({ summary: reportOutput, actionItems: [] });
 });
 
 // PATCH /api/rooms/:id/archive — 归档讨论室（软删除）

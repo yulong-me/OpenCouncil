@@ -451,38 +451,10 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
     expect(result.data).toHaveProperty('error', 'Agent is not currently running');
   });
 
-  _skipIfNoPort('returns 409 ROOM_BUSY when report is requested during an active run', async () => {
-    const mockRoom = {
-      id: 'room-running',
-      topic: 'Test',
-      state: 'RUNNING' as const,
-      agents: [{
-        id: 'worker-1',
-        role: 'WORKER' as const,
-        name: '测试员',
-        domainLabel: '测试',
-        configId: 'worker-1',
-        status: 'thinking' as const,
-      }],
-      messages: [{
-        id: 'msg-1',
-        agentRole: 'USER' as const,
-        agentName: '你',
-        content: '@测试员 hello',
-        timestamp: Date.now(),
-        type: 'user_action' as const,
-        toAgentId: 'worker-1',
-      }],
-      sessionIds: {},
-      a2aDepth: 0,
-      a2aCallChain: [],
-    };
-    vi.mocked(store.get).mockReturnValue(mockRoom);
-
+  _skipIfNoPort('does not expose a report generation endpoint', async () => {
     const result = await requestJson('POST', '/api/rooms/room-running/report');
 
-    expect(result.status).toBe(409);
-    expect(result.data).toHaveProperty('code', 'ROOM_BUSY');
+    expect(result.status).toBe(404);
   });
 
   _skipIfNoPort('preserves the user-provided topic when creating a room', async () => {
