@@ -63,6 +63,20 @@ export interface GitDiffResult {
   diff: string
 }
 
+class WorkspaceRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = 'WorkspaceRequestError'
+  }
+}
+
+export function isWorkspaceRequestError(error: unknown, status?: number) {
+  return error instanceof WorkspaceRequestError && (status === undefined || error.status === status)
+}
+
 async function requestJson<T>(
   input: string,
   init: RequestInit | undefined,
@@ -76,7 +90,7 @@ async function requestJson<T>(
       status: res.status,
       error: (data as { error?: string }).error || '请求失败',
     })
-    throw new Error((data as { error?: string }).error || '请求失败')
+    throw new WorkspaceRequestError((data as { error?: string }).error || '请求失败', res.status)
   }
   debug(logMeta.event, {
     ...logMeta.meta,
@@ -122,7 +136,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
-export async function uploadWorkspaceFile(workspacePath: string, parentPath: string, file: File) {
+export async function uploadWorkspaceFile(workspacePath: string, parentPath: string, file: File, options: { overwrite?: boolean } = {}) {
   const contentBase64 = arrayBufferToBase64(await file.arrayBuffer())
   return requestJson<UploadWorkspaceFileResult>(`${API_URL}/api/browse/upload`, {
     method: 'POST',
@@ -132,7 +146,7 @@ export async function uploadWorkspaceFile(workspacePath: string, parentPath: str
       parentPath,
       filename: file.name,
       contentBase64,
-      overwrite: true,
+      overwrite: options.overwrite === true,
     }),
   }, {
     event: 'workspace:file_upload',

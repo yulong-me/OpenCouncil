@@ -3,11 +3,16 @@
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, File, Folder, Upload } from 'lucide-react'
 
-import { type BrowseResult, browseWorkspace, uploadWorkspaceFile } from '@/lib/workspace'
+import { type BrowseResult, browseWorkspace, isWorkspaceRequestError, uploadWorkspaceFile } from '@/lib/workspace'
 
 interface WorkspaceFilesPanelProps {
   workspacePath: string
   onOpenFile: (absolutePath: string) => void
+}
+
+interface PendingOverwriteUpload {
+  file: File
+  parentPath: string
 }
 
 function toBreadcrumbs(currentPath: string, workspacePath: string) {
@@ -36,10 +41,12 @@ export function WorkspaceFilesPanel({ workspacePath, onOpenFile }: WorkspaceFile
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
+  const [pendingOverwrite, setPendingOverwrite] = useState<PendingOverwriteUpload | null>(null)
 
   const loadPath = useCallback(async (path: string) => {
     setLoading(true)
     setError(null)
+    setPendingOverwrite(null)
     try {
       const result = await browseWorkspace(path, true)
       setBrowseResult(result)
@@ -69,16 +76,45 @@ export function WorkspaceFilesPanel({ workspacePath, onOpenFile }: WorkspaceFile
     setUploading(true)
     setError(null)
     setUploadMessage(null)
+    setPendingOverwrite(null)
     try {
       await uploadWorkspaceFile(workspacePath, currentPath, file)
       setUploadMessage(`已上传 ${file.name}`)
       await loadPath(currentPath)
     } catch (err) {
+      if (isWorkspaceRequestError(err, 409)) {
+        setPendingOverwrite({ file, parentPath: currentPath })
+        return
+      }
       setError((err as Error).message || '无法上传文件')
     } finally {
       setUploading(false)
     }
   }, [currentPath, loadPath, workspacePath])
+
+  const confirmOverwrite = useCallback(async () => {
+    if (!pendingOverwrite) return
+
+    setUploading(true)
+    setError(null)
+    setUploadMessage(null)
+    try {
+      await uploadWorkspaceFile(workspacePath, pendingOverwrite.parentPath, pendingOverwrite.file, { overwrite: true })
+      setUploadMessage(`已覆盖 ${pendingOverwrite.file.name}`)
+      const targetPath = pendingOverwrite.parentPath
+      setPendingOverwrite(null)
+      await loadPath(targetPath)
+    } catch (err) {
+      setError((err as Error).message || '无法覆盖文件')
+    } finally {
+      setUploading(false)
+    }
+  }, [loadPath, pendingOverwrite, workspacePath])
+
+  const cancelOverwrite = useCallback(() => {
+    setPendingOverwrite(null)
+    setUploadMessage('已取消上传')
+  }, [])
 
   return (
     <div className="space-y-2">
@@ -136,6 +172,32 @@ export function WorkspaceFilesPanel({ workspacePath, onOpenFile }: WorkspaceFile
       {loading && <p className="py-2 text-[11px] text-ink-soft/60">加载中…</p>}
       {!loading && !error && uploadMessage && <p className="py-1 text-[11px] text-ink-soft/70">{uploadMessage}</p>}
       {!loading && error && <p className="tone-danger-text py-2 text-[11px]">{error}</p>}
+      {!loading && !error && pendingOverwrite && (
+        <div className="rounded-md border border-[rgba(199,138,55,0.35)] bg-[rgba(199,138,55,0.08)] px-2 py-2 text-[11px] text-ink">
+          <p className="font-medium">文件已存在，要覆盖吗？</p>
+          <p className="mt-0.5 truncate text-ink-soft/70" title={pendingOverwrite.file.name}>
+            {pendingOverwrite.file.name}
+          </p>
+          <div className="mt-2 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void confirmOverwrite()}
+              disabled={uploading}
+              className="rounded border border-[rgba(199,138,55,0.55)] px-2 py-1 font-medium text-ink transition-colors hover:bg-[rgba(199,138,55,0.15)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              覆盖
+            </button>
+            <button
+              type="button"
+              onClick={cancelOverwrite}
+              disabled={uploading}
+              className="rounded px-2 py-1 text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
       {!loading && !error && browseResult?.entries.length === 0 && (
         <p className="py-2 text-[11px] text-ink-soft/60">空目录</p>
       )}

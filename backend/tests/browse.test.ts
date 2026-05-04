@@ -265,6 +265,36 @@ describe('browse route security', () => {
     ]));
   });
 
+  it('rejects duplicate uploads unless overwrite is explicit', async () => {
+    const workspace = await makeOutsideTemp('browse-upload-duplicate');
+    const realWorkspace = await realpath(workspace);
+    const targetPath = path.join(realWorkspace, 'brief.txt');
+    await writeFile(targetPath, 'original', 'utf8');
+
+    const duplicate = await postJson('/api/browse/upload', {
+      workspacePath: realWorkspace,
+      parentPath: realWorkspace,
+      filename: 'brief.txt',
+      contentBase64: Buffer.from('replacement', 'utf8').toString('base64'),
+    });
+
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.data.error).toBe('文件已存在');
+    await expect(readFile(targetPath, 'utf8')).resolves.toBe('original');
+
+    const overwrite = await postJson('/api/browse/upload', {
+      workspacePath: realWorkspace,
+      parentPath: realWorkspace,
+      filename: 'brief.txt',
+      contentBase64: Buffer.from('replacement', 'utf8').toString('base64'),
+      overwrite: true,
+    });
+
+    expect(overwrite.status).toBe(200);
+    expect(overwrite.data).toMatchObject({ name: 'brief.txt', overwritten: true });
+    await expect(readFile(targetPath, 'utf8')).resolves.toBe('replacement');
+  });
+
   it('rejects uploads when the destination is outside the selected workspace', async () => {
     const workspace = await makeOutsideTemp('browse-upload-root');
     const outside = await makeOutsideTemp('browse-upload-outside');
