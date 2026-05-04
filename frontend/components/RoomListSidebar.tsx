@@ -496,7 +496,7 @@ function SidebarConversationSection({
 }) {
   const [commandOpen, setCommandOpen] = useState(false)
   const [commandQuery, setCommandQuery] = useState('')
-  const [archivedOpen, setArchivedOpen] = useState(false)
+  const [archivedOpen, setArchivedOpen] = useState(true)
 
   const { activeRooms, archivedRooms } = useMemo(() => {
     return {

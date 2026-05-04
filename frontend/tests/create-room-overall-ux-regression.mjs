@@ -42,6 +42,11 @@ assert.match(sidebar, /任务记录/)
 assert.match(sidebar, /新任务记录/)
 assert.match(sidebar, /协作中/)
 assert.match(sidebar, /已归档/)
+assert.match(
+  sidebar,
+  /const \[archivedOpen, setArchivedOpen\] = useState\(true\)/,
+  'Completed task records should remain visible by default instead of disappearing behind a collapsed archived section.',
+)
 assert.match(sidebar, /进行中/)
 assert.doesNotMatch(sidebar, /新讨论|讨论室|进行中的讨论|归档讨论/)
 assert.doesNotMatch(sidebar, /\{activeCount\} active · \{archivedCount\} archived/)
