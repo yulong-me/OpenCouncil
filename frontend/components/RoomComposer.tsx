@@ -13,7 +13,6 @@ import {
 import {
   Loader2,
   Send,
-  X,
 } from 'lucide-react'
 import {
   extractUserMentionsFromAgents,
@@ -23,6 +22,7 @@ import {
   type Agent,
 } from '../lib/agents'
 import { telemetry } from '../lib/logger'
+import { AgentAvatar } from './AgentAvatar'
 import MentionPicker from './MentionPicker'
 
 export interface RoomComposerHandle {
@@ -260,14 +260,6 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
     focus()
   }, [focus])
 
-  const clearRecipient = useCallback(() => {
-    if (!selectedRecipient) return
-    const pattern = new RegExp(`@${selectedRecipient.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`)
-    setDraft(userInput.replace(pattern, ''))
-    onRecipientSelected(null)
-    focus()
-  }, [focus, onRecipientSelected, selectedRecipient, setDraft, userInput])
-
   const submitDraft = useCallback(async () => {
     if (sending) return
     const content = userInput.trim()
@@ -330,38 +322,36 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
           onHighlight={setMentionHighlightIdx}
         />
       )}
-      <div className="app-islands-input border border-line bg-surface p-2 shadow-sm transition-colors focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/[0.15]">
+      <div className="app-islands-input border border-line bg-surface p-2 shadow-sm transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/[0.22]">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={openRecipientPicker}
-            className={`inline-flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-caption transition-colors ${
-              selectedRecipient && selectedRecipientColors
-                ? 'border-line bg-surface text-ink'
-                : 'border-dashed border-line bg-surface-muted text-ink-soft hover:border-accent/40 hover:text-accent'
-            }`}
-            style={selectedRecipientColors ? {
-              borderColor: `${selectedRecipientColors.bg}42`,
-              backgroundColor: `${selectedRecipientColors.bg}12`,
-              color: selectedRecipientColors.bg,
-            } : undefined}
-          >
-            <span className="shrink-0 font-medium text-ink-soft">To:</span>
-            <span className="min-w-0 truncate font-medium">
-              {selectedRecipient ? `@${selectedRecipient.name}` : '选择 Team 成员'}
-            </span>
-          </button>
-          {selectedRecipient ? (
+          {selectedRecipient && selectedRecipientColors ? (
+            <div
+              className="inline-flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-caption font-medium"
+              style={{
+                borderColor: `${selectedRecipientColors.bg}42`,
+                backgroundColor: `${selectedRecipientColors.bg}12`,
+                color: selectedRecipientColors.bg,
+              }}
+            >
+              <AgentAvatar
+                name={selectedRecipient.name}
+                color={selectedRecipientColors.bg}
+                textColor={selectedRecipientColors.text}
+                size={16}
+                className="rounded-full"
+              />
+              <span className="min-w-0 truncate">@{selectedRecipient.name}</span>
+            </div>
+          ) : (
             <button
               type="button"
-              onClick={clearRecipient}
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
-              aria-label="清除收件人"
-              title="清除收件人"
+              data-recipient-ghost="true"
+              onClick={openRecipientPicker}
+              className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-dashed border-line bg-surface-muted px-2.5 py-1.5 text-caption font-medium text-ink-soft transition-colors hover:border-accent/55 hover:text-accent"
             >
-              <X className="h-3.5 w-3.5" />
+              先 @ 选一位 Team 成员
             </button>
-          ) : null}
+          )}
         </div>
         <div className="relative">
         <textarea
@@ -381,7 +371,7 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
           className={`absolute bottom-1.5 right-1.5 inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
             canSend
               ? 'bg-accent text-white hover:bg-accent-deep'
-              : 'cursor-not-allowed bg-surface-muted text-ink-faint'
+              : 'cursor-not-allowed border border-line bg-surface-muted text-ink-soft'
           }`}
           onClick={() => void submitDraft()}
           disabled={!canSend}

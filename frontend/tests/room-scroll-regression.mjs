@@ -8,8 +8,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const roomView = readFileSync(resolve(root, 'components/RoomView.tsx'), 'utf8')
 assert.match(
   roomView,
-  /router\.push\(`\/room\/\$\{id\}`,\s*\{\s*scroll:\s*false\s*\}\)/,
-  'Room switching must opt out of Next.js window auto-scroll to avoid viewport jumps.',
+  /window\.history\.pushState\(null,\s*'',\s*nextPath\)/,
+  'Room switching must use manual history navigation to avoid Next.js window auto-scroll jumps.',
 )
 assert.doesNotMatch(
   roomView,
@@ -25,7 +25,7 @@ assert.match(
 const createRoomModal = readFileSync(resolve(root, 'components/CreateRoomModal.tsx'), 'utf8')
 assert.match(
   createRoomModal,
-  /router\.push\(`\/room\/\$\{room\.id\}`,\s*\{\s*scroll:\s*false\s*\}\)/,
+  /router\.push\(`\/room\/\$\{roomId\}`,\s*\{\s*scroll:\s*false\s*\}\)/,
   'Creating a room must also keep the viewport stable when navigating into the new room.',
 )
 

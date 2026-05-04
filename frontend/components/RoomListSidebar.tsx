@@ -85,7 +85,7 @@ function SidebarCommandTrigger({
     <button
       type="button"
       onClick={onOpen}
-      className="flex h-9 w-full items-center gap-2 rounded-lg border border-line bg-surface px-2.5 text-caption text-ink-soft shadow-sm transition-colors hover:border-accent/30 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/[0.35]"
+      className="flex h-9 w-full items-center gap-2 rounded-lg border border-line bg-surface px-2.5 text-caption text-ink-soft shadow-sm transition-colors hover:border-line-strong hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/[0.35]"
       aria-label="打开命令面板"
       title="打开命令面板"
     >
@@ -260,7 +260,7 @@ function CommandPalette({
                         onAfterSelect?.()
                       }}
                       className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/[0.35] ${
-                        isCurrent ? 'bg-accent/[0.08]' : 'hover:bg-surface-muted'
+                        isCurrent ? 'bg-accent/[0.10]' : 'hover:bg-surface-muted'
                       }`}
                     >
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-[11px] font-bold text-ink-soft">
@@ -309,7 +309,7 @@ function SidebarRoomsHeader({
       <button
         type="button"
         onClick={onNewRoom}
-        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:border-accent/30 hover:text-accent"
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:border-accent/55 hover:bg-accent/[0.06] hover:text-accent"
         aria-label="发起任务"
         title="发起任务"
       >
@@ -391,7 +391,7 @@ function RoomItem({
         }}
         className={`group relative w-full cursor-pointer select-none rounded-lg border py-2 pl-3 pr-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/[0.45] ${
           isActive
-            ? 'border-accent/25 bg-accent/[0.08] text-ink shadow-sm'
+            ? 'border-accent/45 bg-accent/[0.10] text-ink shadow-sm'
             : 'border-transparent text-ink-soft hover:border-line hover:bg-surface'
         }`}
       >

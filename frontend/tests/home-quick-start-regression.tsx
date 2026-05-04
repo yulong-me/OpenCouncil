@@ -10,11 +10,30 @@ const markup = renderToStaticMarkup(
   <EmptyRoomQuickStart
     onStartBlank={() => {}}
     onStartTemplate={() => {}}
+    onContinueRoom={() => {}}
+    recentRooms={[
+      {
+        id: 'room-recent',
+        topic: '登录系统设计',
+        createdAt: 1,
+        updatedAt: 2,
+        state: 'RUNNING',
+        activityState: 'open',
+        agentCount: 4,
+        teamId: 'software-development',
+        teamName: '软件开发 Team',
+        teamVersionNumber: 1,
+      },
+    ]}
   />,
 )
 
 assert.match(markup, /OpenCouncil/)
 assert.match(markup, /发起一个任务，交给 Team 协作/)
+assert.match(markup, /让 4-5 位专家 Agent 在同一间房里讨论、质疑、收敛/)
+assert.match(markup, /比单 Agent 多一层把关/)
+assert.match(markup, /继续上次的协作/)
+assert.match(markup, /登录系统设计/)
 assert.match(markup, /发起任务/)
 assert.equal(QUICK_START_TEMPLATES.length, 5)
 assert.deepEqual(QUICK_START_TEMPLATES.map(template => template.title), [
@@ -32,6 +51,9 @@ assert.deepEqual(QUICK_START_TEMPLATES.map(template => template.teamId), [
   'software-development',
 ])
 assert.ok(QUICK_START_TEMPLATES.every(template => template.agentIds.length >= 4))
+assert.match(markup, /4 位专家/)
+assert.match(markup, /5 位专家/)
+assert.match(markup, /状态待检查/)
 assert.deepEqual(QUICK_START_TEMPLATES.map(template => template.agentIds), [
   ['litigation-case-mapper', 'litigation-evidence-strategist', 'litigation-opposing-counsel', 'litigation-risk-controller'],
   ['competitor-market-mapper', 'competitor-positioning-strategist', 'competitor-product-skeptic', 'competitor-gtm-operator'],

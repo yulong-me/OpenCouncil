@@ -21,7 +21,7 @@ import { EvolutionReviewModal } from './room-view/EvolutionReviewModal'
 import { useRoomList } from './room-view/useRoomList'
 import { useRoomMessaging } from './room-view/useRoomMessaging'
 import { useRoomRealtime } from './room-view/useRoomRealtime'
-import type { EvolutionChangeDecision, EvolutionProposal } from './room-view/types'
+import type { EvolutionChangeDecision, EvolutionProposal, RoomListItem } from './room-view/types'
 
 const API = API_URL
 
@@ -34,6 +34,26 @@ type EvolutionProposalStreamEvent =
   | { type: 'delta'; text: string; timestamp?: number }
   | { type: 'proposal'; proposal: EvolutionProposal }
   | { type: 'error'; error: string; code?: string }
+
+interface RoomPreflightResult {
+  ok: boolean
+  blockers?: Array<{ message: string }>
+  warnings?: Array<{ message: string }>
+}
+
+interface CreatedRoomResponse {
+  id: string
+  topic?: string
+  state?: 'RUNNING' | 'DONE'
+  agents?: Agent[]
+  workspace?: string
+  teamId?: string
+  teamVersionId?: string
+  teamName?: string
+  teamVersionNumber?: number
+  createdAt?: number
+  updatedAt?: number
+}
 
 const AGENT_PANEL_DEFAULT_WIDTH = 240
 const AGENT_PANEL_MIN_WIDTH = 220
@@ -85,6 +105,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [evolutionFeedbackOpen, setEvolutionFeedbackOpen] = useState(false)
   const [evolutionFeedbackDraft, setEvolutionFeedbackDraft] = useState('')
   const [evolutionOutput, setEvolutionOutput] = useState('')
+  const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null)
+  const [quickStartError, setQuickStartError] = useState<string | null>(null)
 
   const { theme, resolvedTheme, setTheme } = useTheme()
   const currentTheme = resolvedTheme ?? theme
@@ -383,9 +405,76 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     setCreateInitialWorkerIds(undefined)
   }, [])
 
+  const addCreatedRoomToList = useCallback((room: CreatedRoomResponse, fallback: Pick<QuickStartTemplate, 'teamId' | 'agentIds'>) => {
+    const now = Date.now()
+    const nextRoom: RoomListItem = {
+      id: room.id,
+      topic: room.topic?.trim() || '新任务记录',
+      createdAt: room.createdAt ?? now,
+      updatedAt: room.updatedAt ?? now,
+      state: room.state ?? 'RUNNING',
+      activityState: room.state === 'DONE' ? 'done' : 'open',
+      workspace: room.workspace,
+      agentCount: room.agents?.length ?? fallback.agentIds.length,
+      teamId: room.teamId ?? fallback.teamId,
+      teamVersionId: room.teamVersionId,
+      teamName: room.teamName,
+      teamVersionNumber: room.teamVersionNumber,
+    }
+    setRooms(previous => [nextRoom, ...previous.filter(item => item.id !== nextRoom.id)])
+  }, [setRooms])
+
+  const createRoomFromTemplate = useCallback(async (template: QuickStartTemplate) => {
+    if (creatingTemplateId) return
+    setCreatingTemplateId(template.id)
+    setQuickStartError(null)
+    info('ui:room_create:template_direct_start', { templateId: template.id, teamId: template.teamId })
+    try {
+      const preflightResponse = await fetch(`${API}/api/rooms/preflight`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workerIds: template.agentIds,
+          teamId: template.teamId,
+        }),
+      })
+      const preflight = await preflightResponse.json().catch(() => null) as RoomPreflightResult | null
+      if (!preflightResponse.ok) {
+        throw new Error('创建前检查失败，请重试')
+      }
+      if (preflight && !preflight.ok) {
+        const blockerMessage = preflight.blockers?.map(blocker => blocker.message).join('；')
+        throw new Error(blockerMessage || '执行工具未准备好')
+      }
+
+      const response = await fetch(`${API}/api/rooms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: template.topic.trim() || '新任务记录',
+          workerIds: template.agentIds,
+          teamId: template.teamId,
+        }),
+      })
+      const room = await response.json().catch(() => ({})) as CreatedRoomResponse & { error?: string }
+      if (!response.ok || !room.id) {
+        throw new Error(room.error ?? '创建任务记录失败')
+      }
+      addCreatedRoomToList(room, template)
+      navigateToRoom(room.id)
+      info('ui:room_create:template_direct_success', { templateId: template.id, roomId: room.id })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '创建任务记录失败'
+      setQuickStartError(message)
+      warn('ui:room_create:template_direct_failed', { templateId: template.id, error })
+    } finally {
+      setCreatingTemplateId(null)
+    }
+  }, [addCreatedRoomToList, creatingTemplateId, navigateToRoom])
+
   const handleStartTemplate = useCallback((template: QuickStartTemplate) => {
-    openCreateRoom(template)
-  }, [openCreateRoom])
+    void createRoomFromTemplate(template)
+  }, [createRoomFromTemplate])
 
   const openAgentDrawer = useCallback(() => {
     debug('ui:agent_panel:open_mobile', { roomId: activeRoomId })
@@ -418,6 +507,13 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     info('ui:room:title_suggestions:success', { roomId: activeRoomId, titleCount: titles.length })
     return titles
   }, [activeRoomId])
+
+  const openEvolutionFeedback = useCallback(async () => {
+    setEvolutionError(null)
+    setEvolutionOutput('')
+    setEvolutionFeedbackDraft('')
+    setEvolutionFeedbackOpen(true)
+  }, [])
 
   const handleRenameRoom = useCallback(async (nextTopic: string) => {
     if (!activeRoomId) return
@@ -732,12 +828,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
             onRenameRoom={handleRenameRoom}
             pendingEvolutionCount={pendingEvolutionProposals.length}
             creatingEvolutionProposal={creatingEvolutionProposal}
-            onCreateEvolutionProposal={async () => {
-              setEvolutionError(null)
-              setEvolutionOutput('')
-              setEvolutionFeedbackDraft('')
-              setEvolutionFeedbackOpen(true)
-            }}
+            onCreateEvolutionProposal={openEvolutionFeedback}
             onReviewEvolution={() => {
               const proposal = pendingEvolutionProposals[0]
               if (proposal) setSelectedEvolutionId(proposal.id)
@@ -778,6 +869,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                 sendError={sendError}
                 agents={agents}
                 lastActiveWorkerId={lastActiveWorkerId}
+                messageCount={messages.length}
+                participantCount={agents.length}
                 composerRef={composerRef}
                 onCancelQueuedItem={cancelQueuedItem}
                 onRecallQueuedItem={recallQueuedItem}
@@ -785,12 +878,28 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                 onSendError={showSendError}
                 onDraftChange={setComposerDraft}
                 onRecipientSelected={handleRecipientSelected}
+                onCreateEvolutionProposal={openEvolutionFeedback}
+                onStartNewRoom={() => {
+                  if (teamId) {
+                    openCreateRoom({
+                      topic: '',
+                      teamId,
+                      agentIds: currentAgentConfigIds.filter(Boolean),
+                    })
+                    return
+                  }
+                  openCreateRoom()
+                }}
               />
             </>
           ) : (
             <EmptyRoomQuickStart
               onStartBlank={() => openCreateRoom()}
               onStartTemplate={handleStartTemplate}
+              onContinueRoom={openRoom}
+              recentRooms={rooms}
+              creatingTemplateId={creatingTemplateId}
+              error={quickStartError}
             />
           )}
         </div>

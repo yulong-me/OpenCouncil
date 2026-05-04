@@ -399,7 +399,12 @@ const MessageBubble = memo(function MessageBubble({
             <span className="text-[11px] text-ink-soft">
               {formattedTime}
             </span>
-            {isStreaming && <span className="text-[11px] text-accent animate-pulse font-medium">● 回答中</span>}
+            {isStreaming && (
+              <span className="flex items-center gap-1 text-[11px] font-medium text-accent">
+                <span className="tone-focus-dot inline-block h-1.5 w-1.5 rounded-full animate-focus-pulse" aria-hidden />
+                回答中
+              </span>
+            )}
             <span className="text-[12px] font-bold px-2 py-0.5 rounded-md bg-accent/[0.12] text-accent">你</span>
             {toRecipient && toColors && (
               <span className="text-[11px] px-1.5 py-0.5 rounded-full flex items-center gap-1" style={{ backgroundColor: `${toColors.bg}15`, color: toColors.bg }}>
