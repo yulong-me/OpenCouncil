@@ -20,6 +20,8 @@ function normalizeRoomListItem(room: any): RoomListItem {
     workspace: room.workspace,
     preview: room.preview,
     agentCount: room.agentCount,
+    teamId: room.teamId,
+    teamVersionId: room.teamVersionId,
     teamName: room.teamName,
     teamVersionNumber: room.teamVersionNumber,
   }
