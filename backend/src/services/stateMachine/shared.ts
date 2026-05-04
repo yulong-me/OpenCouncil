@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { roomsRepo, messagesRepo, auditRepo } from '../../db/index.js';
 import { debug } from '../../lib/logger.js';
 import { store } from '../../store.js';
-import type { Message } from '../../types.js';
+import type { DiscussionRoom, Message } from '../../types.js';
 import { emitAgentStatus, emitUserMessage } from '../socketEmitter.js';
 
 export function telemetry(event: string, meta: Record<string, unknown>) {
@@ -103,4 +103,25 @@ export function updateAgentStatus(
     agents: room.agents.map(a => (a.id === agentId ? { ...a, status } : a)),
   });
   emitAgentStatus(roomId, agentId, status);
+}
+
+export function completeRoomRun(roomId: string): DiscussionRoom | undefined {
+  const room = store.get(roomId);
+  if (!room || room.state === 'DONE') return room;
+
+  const busyAgent = room.agents.some(agent => agent.status === 'thinking' || agent.status === 'waiting');
+  if (busyAgent) return room;
+
+  const completed = store.update(roomId, {
+    state: 'DONE',
+    agents: room.agents.map(agent => ({ ...agent, status: 'done' as const })),
+  });
+  roomsRepo.update(roomId, {
+    state: 'DONE',
+    agents: completed?.agents ?? room.agents,
+  });
+  for (const agent of completed?.agents ?? []) {
+    emitAgentStatus(roomId, agent.id, agent.status);
+  }
+  return completed;
 }

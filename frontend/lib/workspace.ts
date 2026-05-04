@@ -26,6 +26,21 @@ interface FilePreviewResult {
   content: string | null
 }
 
+export interface UploadWorkspaceFileResult {
+  path: string
+  name: string
+  size: number
+  overwritten: boolean
+}
+
+export type WorkspaceOpenTarget = 'finder' | 'vscode'
+
+export interface OpenWorkspacePathResult {
+  ok: boolean
+  path: string
+  target: WorkspaceOpenTarget
+}
+
 export interface GitChangedFile {
   path: string
   absolutePath: string
@@ -56,6 +71,20 @@ export interface GitDiffResult {
   diff: string
 }
 
+class WorkspaceRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = 'WorkspaceRequestError'
+  }
+}
+
+export function isWorkspaceRequestError(error: unknown, status?: number) {
+  return error instanceof WorkspaceRequestError && (status === undefined || error.status === status)
+}
+
 async function requestJson<T>(
   input: string,
   init: RequestInit | undefined,
@@ -69,7 +98,7 @@ async function requestJson<T>(
       status: res.status,
       error: (data as { error?: string }).error || '请求失败',
     })
-    throw new Error((data as { error?: string }).error || '请求失败')
+    throw new WorkspaceRequestError((data as { error?: string }).error || '请求失败', res.status)
   }
   debug(logMeta.event, {
     ...logMeta.meta,
@@ -96,6 +125,51 @@ export function previewWorkspaceFile(path: string) {
   return requestJson<FilePreviewResult>(url.toString(), undefined, {
     event: 'workspace:file_preview',
     meta: { path },
+  })
+}
+
+export function getWorkspaceMediaUrl(path: string) {
+  const url = new URL(`${API_URL}/api/browse/media`)
+  url.searchParams.set('path', path)
+  return url.toString()
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 0x8000
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return btoa(binary)
+}
+
+export async function uploadWorkspaceFile(workspacePath: string, parentPath: string, file: File, options: { overwrite?: boolean } = {}) {
+  const contentBase64 = arrayBufferToBase64(await file.arrayBuffer())
+  return requestJson<UploadWorkspaceFileResult>(`${API_URL}/api/browse/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      workspacePath,
+      parentPath,
+      filename: file.name,
+      contentBase64,
+      overwrite: options.overwrite === true,
+    }),
+  }, {
+    event: 'workspace:file_upload',
+    meta: { workspacePath, parentPath, filename: file.name, size: file.size },
+  })
+}
+
+export function openWorkspacePath(workspacePath: string, path: string, target: WorkspaceOpenTarget) {
+  return requestJson<OpenWorkspacePathResult>(`${API_URL}/api/browse/open`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspacePath, path, target }),
+  }, {
+    event: 'workspace:path_open',
+    meta: { workspacePath, path, target },
   })
 }
 

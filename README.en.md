@@ -10,7 +10,7 @@
 
 > Custom agent councils for real work.
 
-OpenCouncil turns "one AI answering alone" into a configurable council of agents. You can create different Scenes for feature review, architecture decisions, market research, code implementation, or any workflow that benefits from multiple roles working in the same room.
+OpenCouncil turns "one AI answering alone" into a configurable council of agents. You can create different Teams for feature review, architecture decisions, market research, code implementation, or any workflow that benefits from multiple roles working in the same room.
 
 Each message can be routed to a specific Agent. Agents can also use `@mention` to challenge, verify, or hand work to each other. The discussion stays in local context and can be connected to the workspace, reports, and implementation work.
 
@@ -24,12 +24,12 @@ https://github.com/user-attachments/assets/8ad8797a-482b-48b6-a13d-a17b2d858481
 
 ## Core Capabilities
 
-- **Custom Scenes and Agents**: configure task-specific Scenes, expert roles, Providers, models, and workspace paths.
+- **Custom Teams and Agents**: configure task-specific Teams, expert roles, Providers, models, and workspace paths.
 - **Multi-agent rooms**: invite one or more expert Agents into the same room.
 - **Explicit routing**: send each message to a specific target expert instead of relying on one hidden prompt.
 - **A2A collaboration**: Agents can call each other with `@mention` during a discussion.
 - **Workflow-shaped context**: move from a question to critique, plan, report, or implementation.
-- **Local persistence**: rooms, messages, Providers, Scenes, and Agent configuration are stored in local SQLite.
+- **Local persistence**: rooms, messages, Providers, Teams, and Agent configuration are stored in local SQLite.
 
 ## When to Use It
 
@@ -47,11 +47,11 @@ Production mode uses a single public entry point on `7000`. Development mode kee
 </p>
 
 - `Gateway :7000`: production entry point; routes `/api/*` and `/socket.io/*` to the backend and everything else to the frontend.
-- `Frontend :7002`: Next.js UI for room lists, council rooms, and Agent / Provider / Scene settings.
+- `Frontend :7002`: Next.js UI for room lists, council rooms, and Team / Provider / Skill settings.
 - `Backend :7001`: Express API + Socket.IO for rooms, messages, reports, configuration, workspace browsing, and streaming events.
-- `Council Engine`: builds Scene prompts, runs A2A `@mention` routing, and manages Agent run state.
+- `Council Engine`: builds Team prompts, runs A2A `@mention` routing, and manages Agent run state.
 - `Local AI CLI Providers`: invokes Claude Code, OpenCode, Codex, or other local CLI providers through `child_process`.
-- `Local Data`: stores rooms, messages, Providers, Scenes, and Agent configuration in SQLite; workspace files stay local.
+- `Local Data`: stores rooms, messages, Providers, Teams, and Agent configuration in SQLite; workspace files stay local.
 
 ## Requirements
 
@@ -248,13 +248,13 @@ Configure Agents in Settings:
 - Enabled state
 - Tags
 
-### Scene
+### Team
 
-Configure Scenes in Settings:
+Configure Teams in Settings:
 
-- Scene name and description
-- Prompt template
-- Built-in and custom Scenes
+- Team name and description
+- Team workflow prompt
+- Built-in and custom Teams
 
 ## Built-in Perspective Experts
 

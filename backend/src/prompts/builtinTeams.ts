@@ -1,10 +1,11 @@
-interface BuiltinSceneDefinition {
+export interface BuiltinTeamDefinition {
   id: string;
   name: string;
   description: string;
-  prompt: string;
+  workflowPrompt: string;
   builtin: 1;
   maxA2ADepth: number;
+  memberTag: string;
 }
 
 const A2A_INTERACTION_RULES = `【A2A 交互规则（必须遵守）】
@@ -33,7 +34,7 @@ const A2A_INTERACTION_RULES = `【A2A 交互规则（必须遵守）】
 const ROUNDTABLE_HANDOFF_RULES = `【圆桌交棒格式（必须遵守）】
 
 - 正文里引用上一位时，用【名字】或直接说“你刚才的判断”；不要在正文开头用 @名字
-- 圆桌场景里，@ 只用于交棒，不用于普通称呼、引用或寒暄
+- 圆桌团队里，@ 只用于交棒，不用于普通称呼、引用或寒暄
 - 如果要把球交给下一位，最后一行必须单独成行，只写 @ 一位参与专家的显示名或括号内简称
   - ✅ 正确：最后一句说完就停。\n@查理·芒格
   - ✅ 正确：最后一句说完就停。\n@芒格
@@ -46,12 +47,13 @@ const ROUNDTABLE_HANDOFF_RULES = `【圆桌交棒格式（必须遵守）】
 - 不需要继续传递时，不要写 @
 - 每轮控制在 2-4 段，优先短兵相接，不要写成长社论`;
 
-export const BUILTIN_SCENES: BuiltinSceneDefinition[] = [
+export const BUILTIN_TEAMS: BuiltinTeamDefinition[] = [
   {
     id: 'roundtable-forum',
     name: '圆桌论坛',
     description: '多专家平等讨论，各抒己见，最终收敛共识',
-    prompt: `【场景模式：圆桌论坛】
+    memberTag: '圆桌论坛',
+    workflowPrompt: `【团队模式：圆桌论坛】
 
 你是一场多方参与圆桌讨论的成员。系统会告知你：本轮有哪些人参加、各自发言了什么、谁还没有发言。
 
@@ -119,7 +121,8 @@ ${ROUNDTABLE_HANDOFF_RULES}`,
     id: 'software-development',
     name: '软件开发',
     description: '以双架构收敛、代码实现、质量门禁为核心目标',
-    prompt: `【场景模式：软件开发团队】
+    memberTag: '软件开发',
+    workflowPrompt: `【团队模式：软件开发】
 
 你是一个专业技术团队的成员。系统会告知你：本轮有哪些人参加、当前接收人是谁、用户原始目标是什么、最近上下文是什么。
 
@@ -159,7 +162,7 @@ ${ROUNDTABLE_HANDOFF_RULES}`,
 
 7. **协作出口检查**
    - 回答末尾判断是否需要同伴介入
-   - 每次最多 @ 1 位专家；软件开发场景默认只允许单线交接，不要一条消息并发分派多个下游
+   - 每次最多 @ 1 位专家；软件开发团队默认只允许单线交接，不要一条消息并发分派多个下游
    - 需要协作时，另起一行行首 @专家名，并给出对方要回答的具体问题
    - 只是引用历史观点时用【专家名】，不要用 @
 
@@ -184,7 +187,8 @@ ${A2A_INTERACTION_RULES}`,
     id: 'litigation-strategy',
     name: '诉讼策略',
     description: '围绕事实、证据、主张、对方打法和风险敞口做攻防推演',
-    prompt: `【场景模式：诉讼策略会议室】
+    memberTag: '诉讼策略',
+    workflowPrompt: `【团队模式：诉讼策略】
 
 你是诉讼策略会议的一名专家。你的任务是帮助用户把争议拆成事实、证据、法律问题、攻击路径、防守路径和下一步材料清单。
 
@@ -226,7 +230,8 @@ ${A2A_INTERACTION_RULES}`,
     id: 'competitor-analysis',
     name: '竞品分析',
     description: '比较定位、用户、产品、渠道、价格、增长和护城河',
-    prompt: `【场景模式：竞品分析战情室】
+    memberTag: '竞品分析',
+    workflowPrompt: `【团队模式：竞品分析】
 
 你是竞品分析会议的一名专家。目标不是罗列信息，而是帮助用户判断：谁在抢同一类用户、靠什么赢、我们该如何差异化。
 
@@ -243,7 +248,7 @@ ${A2A_INTERACTION_RULES}`,
    - 如果范围太散，先收敛到 3-5 个真正影响决策的对象
 
 2. **按购买决策拆解**
-   - 对比定位、核心场景、关键功能、上手成本、价格、可信度、生态和分发渠道
+   - 对比定位、核心任务、关键功能、上手成本、价格、可信度、生态和分发渠道
    - 找到用户为什么会换、为什么不换、谁会阻止采购
    - 识别竞品的强点、弱点和不可正面硬打的区域
 
@@ -264,7 +269,8 @@ ${A2A_INTERACTION_RULES}`,
     id: 'paper-revision',
     name: '论文返修',
     description: '拆解审稿意见，设计修改、实验、rebuttal 和风险回应',
-    prompt: `【场景模式：论文返修会议室】
+    memberTag: '论文返修',
+    workflowPrompt: `【团队模式：论文返修】
 
 你是论文返修会议的一名专家。目标是把审稿意见转成可执行修改计划，并产出清晰、克制、有证据的 rebuttal。
 

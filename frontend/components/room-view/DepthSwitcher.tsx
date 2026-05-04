@@ -12,7 +12,7 @@ export function DepthSwitcher({ value, onChange, currentDepth, maxDepth }: {
   const [open, setOpen] = useState(false)
   const maxDepthLabel = maxDepth === 0 ? '∞' : `${maxDepth}层`
   const options: { label: string; value: number | null; title: string }[] = [
-    { label: `跟随场景 (${maxDepthLabel})`, value: null, title: `使用当前场景默认协作深度：${maxDepthLabel}` },
+    { label: `跟随 Team (${maxDepthLabel})`, value: null, title: `使用当前 Team 默认协作深度：${maxDepthLabel}` },
     { label: '浅 (3层)', value: 3, title: '协作深度 3 层' },
     { label: '中 (5层)', value: 5, title: '协作深度 5 层' },
     { label: '深 (10层)', value: 10, title: '协作深度 10 层' },

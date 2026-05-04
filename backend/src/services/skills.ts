@@ -19,6 +19,7 @@ import {
   type SkillRecord,
 } from '../db/repositories/skills.js';
 import type { ProviderName } from '../db/repositories/agents.js';
+import type { TeamMemberSkillRef } from '../types.js';
 
 const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DEFAULT_PROVIDER_COMPAT: SkillProviderCompat[] = ['claude-code', 'opencode', 'codex'];
@@ -61,7 +62,7 @@ export interface EffectiveSkill {
   name: string;
   description: string;
   mode: SkillMode;
-  source: 'room' | 'workspace' | 'global' | 'agent';
+  source: 'room' | 'workspace' | 'global' | 'agent' | 'team-agent';
   sourceLabel: string;
   sourcePath: string;
   bundlePath: string;
@@ -158,6 +159,7 @@ function resolveSourceLabel(source: EffectiveSkill['source']): string {
   if (source === 'room') return 'Room';
   if (source === 'workspace') return 'Workspace';
   if (source === 'global') return 'Global';
+  if (source === 'team-agent') return 'Team';
   return 'Agent';
 }
 
@@ -171,10 +173,21 @@ function toManagedSkillDetail(skill: SkillRecord, content: string): ManagedSkill
 
 export async function listManagedSkills(): Promise<ManagedSkillDetail[]> {
   const skills = skillsRepo.listManaged();
-  const details = await Promise.all(skills.map(async skill => {
-    const content = await readManagedSkillFile(skill.name).catch(() => '');
+  const details = (await Promise.all(skills.map(async skill => {
+    const content = await readManagedSkillFile(skill.name).catch(async err => {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        const usage = skillsRepo.countBindingUsage(skill.id);
+        if (usage.agentCount === 0 && usage.roomCount === 0) {
+          skillsRepo.delete(skill.id);
+          warn('skill:managed:prune_stale', { name: skill.name, sourcePath: skill.sourcePath });
+        }
+        return undefined;
+      }
+      throw err;
+    });
+    if (typeof content !== 'string') return undefined;
     return toManagedSkillDetail(skill, content);
-  }));
+  }))).filter((detail): detail is ManagedSkillDetail => Boolean(detail));
   debug('skill:managed:list', { count: details.length });
   return details;
 }
@@ -183,7 +196,18 @@ export async function getManagedSkill(name: string): Promise<ManagedSkillDetail 
   const normalizedName = validateSkillName(name);
   const skill = skillsRepo.getManagedByName(normalizedName);
   if (!skill) return undefined;
-  const content = await readManagedSkillFile(normalizedName).catch(() => '');
+  const content = await readManagedSkillFile(normalizedName).catch(async err => {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      const usage = skillsRepo.countBindingUsage(skill.id);
+      if (usage.agentCount === 0 && usage.roomCount === 0) {
+        skillsRepo.delete(skill.id);
+        warn('skill:managed:prune_stale', { name: normalizedName, sourcePath: skill.sourcePath });
+      }
+      return undefined;
+    }
+    throw err;
+  });
+  if (typeof content !== 'string') return undefined;
   const detail = toManagedSkillDetail(skill, content);
   debug('skill:managed:get', { name: normalizedName, enabled: detail.enabled });
   return detail;
@@ -556,6 +580,81 @@ function bindingToEffectiveSkill(binding: SkillBindingRecord, source: 'room' | '
   };
 }
 
+function managedSkillToEffectiveSkill(skill: SkillRecord, source: 'team-agent'): EffectiveSkill {
+  return {
+    name: skill.name,
+    description: skill.description,
+    mode: 'required',
+    source,
+    sourceLabel: resolveSourceLabel(source),
+    sourcePath: skill.sourcePath,
+    bundlePath: path.dirname(skill.sourcePath),
+    providerCompat: skill.providerCompat,
+    enabled: skill.enabled,
+    checksum: skill.checksum,
+  };
+}
+
+function discoveredToTeamEffectiveSkill(skill: DiscoveredSkill): EffectiveSkill {
+  return {
+    name: skill.name,
+    description: skill.description,
+    mode: 'required',
+    source: 'team-agent',
+    sourceLabel: resolveSourceLabel('team-agent'),
+    sourcePath: skill.sourcePath,
+    bundlePath: skill.bundlePath,
+    providerCompat: skill.providerCompat,
+    enabled: true,
+    checksum: skill.checksum,
+  };
+}
+
+function resolveManagedSkillsByIds(skillIds: string[]): SkillRecord[] {
+  const records: SkillRecord[] = [];
+  const seen = new Set<string>();
+  for (const skillId of skillIds) {
+    if (seen.has(skillId)) continue;
+    seen.add(skillId);
+    const skill = skillsRepo.getById(skillId);
+    if (skill?.sourceType === 'managed') {
+      records.push(skill);
+    }
+  }
+  return records;
+}
+
+function resolveManagedSkillsByRefs(refs: TeamMemberSkillRef[]): SkillRecord[] {
+  const records: SkillRecord[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs) {
+    if (ref.source !== 'managed') continue;
+    const skill = ref.id ? skillsRepo.getById(ref.id) : skillsRepo.getManagedByName(ref.name);
+    if (!skill || skill.sourceType !== 'managed' || seen.has(skill.id)) continue;
+    seen.add(skill.id);
+    records.push(skill);
+  }
+  return records;
+}
+
+function resolveDiscoveredSkillsByRefs(
+  refs: TeamMemberSkillRef[],
+  discovered: { globalSkills: DiscoveredSkill[]; workspaceSkills: DiscoveredSkill[] },
+): DiscoveredSkill[] {
+  const records: DiscoveredSkill[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs) {
+    if (ref.source !== 'global' && ref.source !== 'workspace') continue;
+    const candidates = ref.source === 'global' ? discovered.globalSkills : discovered.workspaceSkills;
+    const match = candidates.find(skill => skill.sourcePath === ref.sourcePath)
+      ?? candidates.find(skill => skill.name === ref.name);
+    if (!match || seen.has(match.sourcePath)) continue;
+    seen.add(match.sourcePath);
+    records.push(match);
+  }
+  return records;
+}
+
 function discoveredToEffectiveSkill(skill: DiscoveredSkill): EffectiveSkill {
   return {
     name: skill.name,
@@ -576,6 +675,9 @@ export async function resolveEffectiveSkills(input: {
   agentConfigId: string;
   workspacePath?: string;
   providerName: ProviderName;
+  teamSkillIds?: string[];
+  teamSkillRefs?: TeamMemberSkillRef[];
+  includeDiscoveredSkills?: boolean;
 }): Promise<{
   workspacePath: string;
   roomBindings: SkillBindingRecord[];
@@ -600,16 +702,36 @@ export async function resolveEffectiveSkills(input: {
     merged.set(skill.name, skill);
   }
 
-  for (const discovered of discoveredResult.globalSkills) {
-    const skill = discoveredToEffectiveSkill(discovered);
+  for (const managed of resolveManagedSkillsByIds(input.teamSkillIds ?? [])) {
+    const skill = managedSkillToEffectiveSkill(managed, 'team-agent');
+    if (!skill.enabled || !skill.providerCompat.includes(input.providerName)) continue;
+    merged.set(skill.name, skill);
+  }
+
+  for (const managed of resolveManagedSkillsByRefs(input.teamSkillRefs ?? [])) {
+    const skill = managedSkillToEffectiveSkill(managed, 'team-agent');
+    if (!skill.enabled || !skill.providerCompat.includes(input.providerName)) continue;
+    merged.set(skill.name, skill);
+  }
+
+  for (const discovered of resolveDiscoveredSkillsByRefs(input.teamSkillRefs ?? [], discoveredResult)) {
+    const skill = discoveredToTeamEffectiveSkill(discovered);
     if (!skill.providerCompat.includes(input.providerName)) continue;
     merged.set(skill.name, skill);
   }
 
-  for (const discovered of discoveredResult.workspaceSkills) {
-    const skill = discoveredToEffectiveSkill(discovered);
-    if (!skill.providerCompat.includes(input.providerName)) continue;
-    merged.set(skill.name, skill);
+  if (input.includeDiscoveredSkills !== false) {
+    for (const discovered of discoveredResult.globalSkills) {
+      const skill = discoveredToEffectiveSkill(discovered);
+      if (!skill.providerCompat.includes(input.providerName)) continue;
+      merged.set(skill.name, skill);
+    }
+
+    for (const discovered of discoveredResult.workspaceSkills) {
+      const skill = discoveredToEffectiveSkill(discovered);
+      if (!skill.providerCompat.includes(input.providerName)) continue;
+      merged.set(skill.name, skill);
+    }
   }
 
   for (const binding of roomBindings) {
@@ -625,6 +747,9 @@ export async function resolveEffectiveSkills(input: {
     providerName: input.providerName,
     roomBindingCount: roomBindings.length,
     agentBindingCount: agentBindings.length,
+    teamSkillCount: input.teamSkillIds?.length ?? 0,
+    teamSkillRefCount: input.teamSkillRefs?.length ?? 0,
+    includeDiscoveredSkills: input.includeDiscoveredSkills !== false,
     globalCount: discoveredResult.globalSkills.length,
     workspaceCount: discoveredResult.workspaceSkills.length,
     effectiveCount: effective.length,
@@ -651,6 +776,51 @@ function providerSkillDir(providerName: ProviderName, providerRuntimeDir: string
   return path.join(providerRuntimeDir, '.opencode', 'skills');
 }
 
+async function ensureWorkspaceProviderSkillDirLink(input: {
+  providerName: ProviderName;
+  workspacePath: string;
+  providerSkillDir: string;
+  effectiveSkills: EffectiveSkill[];
+}): Promise<void> {
+  const workspaceSkillDir = providerSkillDir(input.providerName, input.workspacePath);
+  await fs.mkdir(path.dirname(workspaceSkillDir), { recursive: true });
+
+  const existing = await fs.lstat(workspaceSkillDir).catch(() => null);
+  if (existing) {
+    if (existing.isSymbolicLink()) {
+      await fs.unlink(workspaceSkillDir);
+    } else if (existing.isDirectory()) {
+      const entries = await fs.readdir(workspaceSkillDir);
+      if (entries.length === 0) {
+        await fs.rm(workspaceSkillDir, { recursive: true, force: true });
+      } else {
+        for (const skill of input.effectiveSkills) {
+          const dest = path.join(workspaceSkillDir, skill.name);
+          const destExisting = await fs.lstat(dest).catch(() => null);
+          if (destExisting?.isSymbolicLink()) await fs.unlink(dest);
+          if (!destExisting || destExisting.isSymbolicLink()) {
+            await fs.symlink(skill.bundlePath, dest, 'dir');
+          }
+        }
+        warn('skill:runtime:workspace_skills_dir_not_symlink', {
+          providerName: input.providerName,
+          workspaceSkillDir,
+          reason: 'non_empty_directory_preserved',
+        });
+        return;
+      }
+    } else {
+      warn('skill:runtime:workspace_skills_path_conflict', {
+        providerName: input.providerName,
+        workspaceSkillDir,
+      });
+      return;
+    }
+  }
+
+  await fs.symlink(input.providerSkillDir, workspaceSkillDir, 'dir');
+}
+
 export async function assembleProviderRuntime(input: {
   roomId: string;
   providerName: ProviderName;
@@ -668,15 +838,23 @@ export async function assembleProviderRuntime(input: {
   );
 
   await fs.rm(providerRuntimeDir, { recursive: true, force: true });
-  await fs.mkdir(providerSkillDir(input.providerName, providerRuntimeDir), { recursive: true });
+  const runtimeSkillDir = providerSkillDir(input.providerName, providerRuntimeDir);
+  await fs.mkdir(runtimeSkillDir, { recursive: true });
 
   const providerWorkspacePath = path.join(providerRuntimeDir, 'workspace');
   await fs.symlink(input.effectiveWorkspace, providerWorkspacePath, 'dir');
 
   for (const skill of input.effectiveSkills) {
-    const dest = path.join(providerSkillDir(input.providerName, providerRuntimeDir), skill.name);
+    const dest = path.join(runtimeSkillDir, skill.name);
     await fs.symlink(skill.bundlePath, dest, 'dir');
   }
+
+  await ensureWorkspaceProviderSkillDirLink({
+    providerName: input.providerName,
+    workspacePath: input.effectiveWorkspace,
+    providerSkillDir: runtimeSkillDir,
+    effectiveSkills: input.effectiveSkills,
+  });
 
   debug('skill:runtime:assembled', {
     roomId: input.roomId,

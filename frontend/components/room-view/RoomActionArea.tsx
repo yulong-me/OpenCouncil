@@ -1,7 +1,6 @@
 'use client'
 
 import type { RefObject } from 'react'
-import { Download } from 'lucide-react'
 
 import type { Agent, DiscussionState, OutgoingQueueItem } from '@/lib/agents'
 import { OutgoingMessageQueue } from '../OutgoingMessageQueue'
@@ -10,8 +9,6 @@ import { RoomComposer, type RoomComposerHandle } from '../RoomComposer'
 interface RoomActionAreaProps {
   roomId?: string
   state: DiscussionState
-  report: string
-  onDownload: () => void
   busyAgents: Agent[]
   outgoingQueue: OutgoingQueueItem[]
   recallableQueueItemId: string | null
@@ -32,8 +29,6 @@ interface RoomActionAreaProps {
 export function RoomActionArea({
   roomId,
   state,
-  report,
-  onDownload,
   busyAgents,
   outgoingQueue,
   recallableQueueItemId,
@@ -50,17 +45,11 @@ export function RoomActionArea({
   onDraftChange,
   onRecipientSelected,
 }: RoomActionAreaProps) {
+  if (state === 'DONE') return null
+
   return (
     <div className="bg-nav-bg border-t border-line px-4 md:px-8 py-4 flex flex-col gap-3">
-      {state === 'DONE' ? (
-        <button
-          type="button"
-          className="w-full bg-ink text-bg font-semibold py-3.5 rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-sm"
-          onClick={onDownload}
-        >
-          <Download className="w-4 h-4" /> 导出报告 (.md)
-        </button>
-      ) : roomId ? (
+      {roomId ? (
         <>
           <OutgoingMessageQueue
             items={outgoingQueue}

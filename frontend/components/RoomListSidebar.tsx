@@ -19,6 +19,27 @@ interface SidebarRoom {
   workspace?: string
   preview?: string
   agentCount: number
+  teamName?: string
+  teamVersionNumber?: number
+}
+
+function getTaskTitle(room: SidebarRoom): string {
+  const topic = room.topic?.trim()
+  if (!topic || /^未命名讨论/.test(topic)) return '新任务记录'
+  return topic
+}
+
+function getTaskTeamLabel(room: SidebarRoom): string {
+  if (room.teamName) {
+    return room.teamVersionNumber ? `${room.teamName} · v${room.teamVersionNumber}` : room.teamName
+  }
+  return `${room.agentCount} 位成员`
+}
+
+function getTaskStatusLabel(room: SidebarRoom): string {
+  if (room.activityState === 'busy') return '协作中'
+  if (room.state === 'DONE' || room.activityState === 'done') return '已完成'
+  return '未开始'
 }
 
 interface RoomListSidebarProps {
@@ -69,7 +90,7 @@ function SidebarCommandTrigger({
       title="打开命令面板"
     >
       <Search className="h-3.5 w-3.5 shrink-0" />
-      <span className="min-w-0 flex-1 text-left">搜索讨论、消息或操作</span>
+      <span className="min-w-0 flex-1 text-left">搜索任务记录、消息或操作</span>
       <span className="shrink-0 rounded border border-line bg-surface-muted px-1.5 py-0.5 font-mono text-[10px] text-ink-faint">
         ⌘K
       </span>
@@ -126,7 +147,7 @@ function CommandPalette({
   const roomResults = useMemo(() => {
     const matchesQuery = (room: SidebarRoom) => {
       if (!normalizedQuery) return true
-      return `${room.topic} ${room.preview ?? ''} ${room.workspace ?? ''}`.toLowerCase().includes(normalizedQuery)
+      return `${getTaskTitle(room)} ${getTaskTeamLabel(room)} ${room.preview ?? ''} ${room.workspace ?? ''}`.toLowerCase().includes(normalizedQuery)
     }
     return rooms.filter(matchesQuery).slice(0, 8)
   }, [normalizedQuery, rooms])
@@ -135,9 +156,9 @@ function CommandPalette({
     const actions = [
       {
         id: 'new-room',
-        label: '新讨论',
-        hint: '创建一个新的 Council room',
-        keywords: 'new room create discussion',
+        label: '发起任务',
+        hint: '选择 Team，进入协作现场',
+        keywords: 'new task team start',
         icon: Plus,
         onSelect: () => {
           onNewRoom()
@@ -148,7 +169,7 @@ function CommandPalette({
       {
         id: 'settings',
         label: '打开设置',
-        hint: 'Providers、模型和本机工作区',
+        hint: '执行工具和本机工作区',
         keywords: 'settings providers workspace',
         icon: Settings,
         onSelect: () => {
@@ -186,7 +207,7 @@ function CommandPalette({
             ref={inputRef}
             value={query}
             onChange={event => onQueryChange(event.target.value)}
-            placeholder="搜索讨论室、最近消息或操作"
+            placeholder="搜索任务记录、最近消息或操作"
             className="h-8 min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-ink outline-none placeholder:text-ink-faint"
             aria-label="搜索命令"
           />
@@ -224,7 +245,7 @@ function CommandPalette({
           )}
 
           <div>
-            <p className="px-2 py-1 text-label uppercase text-ink-faint">讨论室 / 最近消息</p>
+            <p className="px-2 py-1 text-label uppercase text-ink-faint">任务记录 / 最近消息</p>
             {roomResults.length > 0 ? (
               <div className="space-y-1">
                 {roomResults.map(room => {
@@ -246,9 +267,9 @@ function CommandPalette({
                         {room.agentCount}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-secondary font-medium text-ink">{room.topic}</span>
+                        <span className="block truncate text-secondary font-medium text-ink">{getTaskTitle(room)}</span>
                         <span className="block truncate text-[11px] text-ink-faint">
-                          {room.preview || '暂无最近消息'}
+                          {getTaskTeamLabel(room)} · {getTaskStatusLabel(room)}
                         </span>
                       </span>
                       <span className="shrink-0 text-[10px] text-ink-faint">{formatRelativeTime(room.updatedAt)}</span>
@@ -258,7 +279,7 @@ function CommandPalette({
               </div>
             ) : (
               <p className="rounded-lg bg-surface-muted px-3 py-6 text-center text-caption text-ink-faint">
-                没有匹配的讨论室或最近消息
+                没有匹配的任务记录或最近消息
               </p>
             )}
           </div>
@@ -280,17 +301,17 @@ function SidebarRoomsHeader({
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <p className="text-label uppercase text-ink-soft">讨论室</p>
+        <p className="text-label uppercase text-ink-soft">任务记录</p>
         <p className="mt-0.5 text-[11px] text-ink-faint">
-          {activeCount} active · {archivedCount} archived
+          {activeCount} 进行中 · {archivedCount} 已归档
         </p>
       </div>
       <button
         type="button"
         onClick={onNewRoom}
         className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:border-accent/30 hover:text-accent"
-        aria-label="新讨论"
-        title="新讨论"
+        aria-label="发起任务"
+        title="发起任务"
       >
         <Plus className="h-4 w-4" />
       </button>
@@ -333,7 +354,7 @@ function RoomItem({
       {showDeleteConfirm && (
         <div className="tone-danger-panel absolute inset-0 z-10 flex items-center justify-center rounded-lg border bg-surface p-2 shadow-xl">
           <div className="text-center">
-            <p className="tone-danger-text mb-2 max-w-[13rem] truncate text-caption">删除「{room.topic}」？</p>
+            <p className="tone-danger-text mb-2 max-w-[13rem] truncate text-caption">删除「{getTaskTitle(room)}」？</p>
             <div className="flex justify-center gap-2">
               <button
                 type="button"
@@ -377,10 +398,10 @@ function RoomItem({
         {isActive && <span className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-r-full bg-accent" aria-hidden />}
         <div className="flex min-h-5 items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-secondary font-medium">
-            {room.topic}
+            {getTaskTitle(room)}
           </span>
           {isBusy ? (
-            <span className="tone-focus-dot h-1.5 w-1.5 shrink-0 rounded-full animate-focus-pulse" title="进行中" />
+            <span className="tone-focus-dot h-1.5 w-1.5 shrink-0 rounded-full animate-focus-pulse" title="协作中" />
           ) : null}
           <span className="shrink-0 text-[10px] text-ink-faint">
             {formatRelativeTime(room.updatedAt)}
@@ -393,16 +414,16 @@ function RoomItem({
             }}
             onKeyDown={(event) => { event.stopPropagation() }}
             className="tone-danger-icon rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
-            aria-label={`删除讨论：${room.topic}`}
+            aria-label={`删除任务记录：${getTaskTitle(room)}`}
             title="删除"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
 
-        <div className={`${isActive ? 'flex' : 'hidden group-hover:flex group-focus-within:flex'} mt-1.5 items-center gap-2`}>
+        <div className={`${isActive ? 'flex' : 'hidden'} mt-1.5 items-center gap-2`}>
           <p className="min-w-0 flex-1 truncate text-[11px] leading-4 text-ink-faint">
-            {room.preview || '暂无最近消息'}
+            {getTaskTeamLabel(room)} · {getTaskStatusLabel(room)}
           </p>
           <div className="flex -space-x-1">
             {Array.from({ length: Math.min(room.agentCount, 3) }).map((_, index) => (
@@ -475,7 +496,7 @@ function SidebarConversationSection({
 }) {
   const [commandOpen, setCommandOpen] = useState(false)
   const [commandQuery, setCommandQuery] = useState('')
-  const [archivedOpen, setArchivedOpen] = useState(false)
+  const [archivedOpen, setArchivedOpen] = useState(true)
 
   const { activeRooms, archivedRooms } = useMemo(() => {
     return {
@@ -506,7 +527,7 @@ function SidebarConversationSection({
       <RoomListSection
         rooms={activeRooms}
         currentRoomId={currentRoomId}
-        emptyText="暂无进行中的讨论"
+        emptyText="暂无任务记录"
         onSelectRoom={onSelectRoom}
         onDeleteRoom={onDeleteRoom}
         onAfterSelect={onAfterSelect}
@@ -529,7 +550,7 @@ function SidebarConversationSection({
             <RoomListSection
               rooms={archivedRooms}
               currentRoomId={currentRoomId}
-              emptyText="暂无归档讨论"
+              emptyText="暂无归档任务记录"
               onSelectRoom={onSelectRoom}
               onDeleteRoom={onDeleteRoom}
               onAfterSelect={onAfterSelect}

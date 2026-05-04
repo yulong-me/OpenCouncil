@@ -28,7 +28,7 @@ created: 2026-04-16
 | P0-2 | "2 小时前"显示的是 `createdAt`，不是 `updatedAt` | 前端 `SidebarRoom` 接口丢弃了 `updatedAt` 字段 | 恢复 `updatedAt` 并用于时间显示 |
 | P0-3 | 删除确认是内联替换整张卡片，列表位置跳动 | 确认态直接替换整条 `RoomItem` DOM | 改为叠加态（overlay/drawer），不改变其他卡片位置 |
 | P0-4 | 键盘 Space 逻辑不稳定，语义嵌套混乱 | `div[role=button]` 内嵌 `button[type=button]` | 重构交互语义，键盘操作用 `button` 主元素，删除用独立按钮 |
-| P0-5 | 删除按钮只靠 hover 可见，触屏场景不可发现 | `opacity-0 group-hover:opacity-100` 隐式依赖鼠标悬停 | 触屏：移入 mobile overflow menu；桌面：hover 显示 + 始终可键盘访问 |
+| P0-5 | 删除按钮只靠 hover 可见，触屏环境不可发现 | `opacity-0 group-hover:opacity-100` 隐式依赖鼠标悬停 | 触屏：移入 mobile overflow menu；桌面：hover 显示 + 始终可键盘访问 |
 | P1-1 | 无工作目录信息 | `SidebarRoom` 接口无 `workspace` 字段 | 恢复 `workspace`；桌面：hover tooltip；移动端/键盘：点击展开完整路径 |
 | P1-2 | 无最近消息预览 | 列表未展示任何消息内容，且列表不刷新 | API 预计算 preview 字段；列表轮询 30s 刷新 |
 
@@ -88,7 +88,7 @@ interface SidebarRoom {
 | 用户进入某 Room | 该 Room 的消息通过 RoomView_new 的 polling 更新 |
 | 用户发消息后 | RoomView_new polling 会拉取新 state，触发父组件刷新 |
 
-> 注：`updatedAt` 在后端每次消息写入时更新（已有），`preview` 随消息写入同步计算。轮询确保跨 Tab/跨端场景下列表也保持最新。
+> 注：`updatedAt` 在后端每次消息写入时更新（已有），`preview` 随消息写入同步计算。轮询确保跨 Tab/跨端情况下列表也保持最新。
 
 ## Acceptance Criteria
 
@@ -97,7 +97,7 @@ interface SidebarRoom {
 - [x] AC-3: 卡片摘要展示参与专家列表（数字圆圈 + "N 位专家"），不再展示"正在和 X 对话"
 - [x] AC-4: 删除确认改为 overlay 叠加态（`position: absolute inset-0 z-10`），不内联替换卡片，不造成列表位置跳动
 - [x] AC-5: 键盘操作：`Delete`/`Backspace` 触发删除确认；`Enter`/`Space` 触发进入；外层用 `<div role="button" tabindex={0}>`（非 `<button>` 嵌套），保证可访问性
-- [x] AC-6: 触屏场景：删除按钮始终可见（移除了 `opacity-0 group-hover:opacity-100`），移动端无障碍
+- [x] AC-6: 触屏环境：删除按钮始终可见（移除了 `opacity-0 group-hover:opacity-100`），移动端无障碍
 - [x] AC-7: 工作目录：点击展开完整路径（`showWorkspace` toggle），展开时用 `whitespace-normal break-all max-w-[200px]` 替代 `truncate max-w-[120px]`，确保完整显示
 - [x] AC-8: 列表展示 `preview` 字段（前 80 字有效消息），由后端 `listSidebar()` 预计算（过滤 `agent_role != 'MANAGER'`），前端轮询 30s 刷新
 

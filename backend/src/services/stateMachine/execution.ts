@@ -23,7 +23,7 @@ import {
   scanForInlineA2AMentions,
   updateA2AContext,
 } from '../routing/A2ARouter.js';
-import { buildRoomScopedSystemPrompt } from '../scenePromptBuilder.js';
+import { buildAgentBasePrompt, buildRoomScopedSystemPrompt, resolvePinnedTeamMemberSnapshot } from '../teamPromptBuilder.js';
 import {
   emitStreamDelta,
   emitStreamEnd,
@@ -52,27 +52,6 @@ import {
   telemetry,
   updateAgentStatus,
 } from './shared.js';
-
-export async function generateReportInline(
-  topic: string,
-  allContent: string,
-  worker: Agent,
-  roomId: string,
-): Promise<string> {
-  return streamingCallAgent(
-    {
-      domainLabel: worker.domainLabel,
-      systemPrompt: `专业${worker.domainLabel}，负责将讨论重组成结构化报告`,
-      userMessage: `请基于以下讨论内容输出一份简明报告。\n\n【议题】${topic}\n\n【讨论内容】\n${allContent}`,
-    },
-    roomId,
-    worker.id,
-    worker.configId,
-    worker.name,
-    'report',
-    'WORKER',
-  );
-}
 
 const TITLE_SUGGESTION_COUNT = 7;
 const TITLE_TRANSCRIPT_MAX_CHARS = 12000;
@@ -273,10 +252,12 @@ export async function streamingCallAgent(
   let workspaceChanges: WorkspaceChangeSummary | undefined;
 
   try {
-    const agentConfig = getAgent(configId);
-    providerName = agentConfig?.provider ?? 'claude-code';
-    const systemPrompt = agentConfig?.systemPrompt ?? ctx.systemPrompt;
     const room = store.get(roomId);
+    const agentConfig = getAgent(configId);
+    const memberSnapshot = resolvePinnedTeamMemberSnapshot(roomId, configId);
+    providerName = memberSnapshot?.provider ?? agentConfig?.provider ?? 'claude-code';
+    const providerOptsSource = memberSnapshot?.providerOpts ?? agentConfig?.providerOpts ?? {};
+    const systemPrompt = memberSnapshot?.systemPrompt ?? agentConfig?.systemPrompt ?? ctx.systemPrompt;
 
     activeRunController = new AbortController();
     registerActiveAgentRun({
@@ -293,6 +274,9 @@ export async function streamingCallAgent(
       agentConfigId: configId,
       workspacePath: workspace,
       providerName,
+      teamSkillIds: memberSnapshot?.skillIds ?? [],
+      teamSkillRefs: memberSnapshot?.skillRefs ?? [],
+      includeDiscoveredSkills: memberSnapshot ? false : undefined,
     });
     const runtimeAssembly = await assembleProviderRuntime({
       roomId,
@@ -300,7 +284,7 @@ export async function streamingCallAgent(
       effectiveWorkspace: workspace,
       effectiveSkills: skillState.effective,
     });
-    const shouldTrackImplementerWorkspaceChanges = room?.sceneId === 'software-development'
+    const shouldTrackImplementerWorkspaceChanges = room?.teamId === 'software-development'
       && configId === SOFTWARE_DEVELOPMENT_CORE_AGENT_IDS.implementer;
     if (shouldTrackImplementerWorkspaceChanges) {
       implementerWorkspaceSnapshotBefore = await captureWorkspaceSnapshot(workspace);
@@ -310,7 +294,7 @@ export async function streamingCallAgent(
       ? buildTranscriptForAgentInvocation(room, agentName)
       : undefined;
 
-    const basePrompt = `【当前执行者】${agentName}\n【角色】${ctx.domainLabel}（${systemPrompt}）`;
+    const basePrompt = buildAgentBasePrompt(roomId, configId, agentName, ctx.domainLabel, systemPrompt);
     const prompt = buildRoomScopedSystemPrompt(roomId, basePrompt, {
       userMessage: ctx.userMessage,
       recentTranscript,
@@ -319,19 +303,18 @@ export async function streamingCallAgent(
       a2aCallChain: room?.a2aCallChain,
       workspace,
       skillsSummary: buildEffectiveSkillSummary(skillState.effective),
-      outputMode: msgType === 'report' ? 'report' : 'discussion',
     }) ?? `${basePrompt}\n\n${ctx.userMessage}`;
 
     const existingSessionId = room?.sessionIds[sessionKey];
     returnedSessionId = existingSessionId ?? '';
-    const explicitModel = typeof agentConfig?.providerOpts?.model === 'string' && agentConfig.providerOpts.model.trim()
-      ? agentConfig.providerOpts.model.trim()
+    const explicitModel = typeof providerOptsSource.model === 'string' && providerOptsSource.model.trim()
+      ? providerOptsSource.model.trim()
       : undefined;
     const configuredModel = providerName === 'opencode'
       ? explicitModel
       : (explicitModel ?? getProviderConfig(providerName)?.defaultModel);
     const providerOpts: Record<string, unknown> = {
-      ...(agentConfig?.providerOpts ?? {}),
+      ...providerOptsSource,
       sessionId: existingSessionId,
       workspace,
       providerRuntimeDir: runtimeAssembly.providerRuntimeDir,
@@ -559,7 +542,7 @@ export async function a2aOrchestrate(
   let mentions: string[] = [];
   let mentionSource = 'line_start';
 
-  if (room.sceneId === 'roundtable-forum') {
+  if (room.teamId === 'roundtable-forum') {
     const handoff = detectRoundtableHandoff(outputText, mentionTargets);
     if (handoff) {
       mentions = [handoff.mention];
@@ -585,7 +568,7 @@ export async function a2aOrchestrate(
           roomId,
           fromAgentName,
           mentions: inlineMentions,
-          sceneId: room.sceneId,
+          teamId: room.teamId,
         });
         addSystemMessage(
           roomId,
@@ -608,7 +591,7 @@ export async function a2aOrchestrate(
     }
   }
 
-  if (room.sceneId === 'software-development' && mentions.length > 1) {
+  if (room.teamId === 'software-development' && mentions.length > 1) {
     warn('a2a:software_development:multi_mention', {
       roomId,
       fromAgentName,
@@ -616,14 +599,14 @@ export async function a2aOrchestrate(
     });
     addSystemMessage(
       roomId,
-      `[系统提示] 软件开发场景每轮只允许 @ 1 位专家。${fromAgentName} 本轮仅保留第一个交接对象：@${mentions[0] ?? ''}。`,
+      `[系统提示] 软件开发团队每轮只允许 @ 1 位专家。${fromAgentName} 本轮仅保留第一个交接对象：@${mentions[0] ?? ''}。`,
     );
     mentions = mentions.slice(0, 1);
   }
 
-  debug('a2a:scan', { roomId, fromAgentName, mentions, mentionSource, sceneId: room.sceneId });
+  debug('a2a:scan', { roomId, fromAgentName, mentions, mentionSource, teamId: room.teamId });
   const fromAgent = room.agents.find(agent => agent.id === fromAgentId);
-  if (room.sceneId === 'software-development') {
+  if (room.teamId === 'software-development') {
     const implementerGate = evaluateImplementerCompletionGate({
       room,
       fromAgent,
@@ -652,7 +635,7 @@ export async function a2aOrchestrate(
     return;
   }
 
-  if (room.sceneId === 'software-development') {
+  if (room.teamId === 'software-development') {
     const targetAgent = resolveMentionTarget(room.agents, mentions[0] ?? '');
     if (!targetAgent) {
       telemetry('a2a:agent_not_found', { roomId, mention: mentions[0] });
@@ -687,7 +670,7 @@ export async function a2aOrchestrate(
       continue;
     }
 
-    if (room.sceneId !== 'software-development' && createsImmediatePingPong(newChain, targetAgent.name)) {
+    if (room.teamId !== 'software-development' && createsImmediatePingPong(newChain, targetAgent.name)) {
       telemetry('a2a:skip_cycle', { roomId, target: targetAgent.name, chain: newChain });
       skippedCycleTargets.push(targetAgent.name);
       continue;

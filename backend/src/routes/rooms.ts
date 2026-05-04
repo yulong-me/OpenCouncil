@@ -7,15 +7,17 @@
  * - 移除 /start 和 /advance（无状态机阶段）
  */
 
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { debug, error, info, warn } from '../lib/logger.js';
 import { v4 as uuid } from 'uuid';
 import { store } from '../store.js';
-import type { DiscussionRoom } from '../types.js';
-import { routeToAgent, generateReportInline, generateTitleSuggestionsInline, stopAgentRun, isRoomBusy } from '../services/stateMachine.js';
-import { roomsRepo, sessionsRepo, messagesRepo, scenesRepo } from '../db/index.js';
+import type { DiscussionRoom, TeamVersionConfig } from '../types.js';
+import { routeToAgent, generateTitleSuggestionsInline, stopAgentRun, isRoomBusy } from '../services/stateMachine.js';
+import { roomsRepo, sessionsRepo, messagesRepo, teamsRepo } from '../db/index.js';
 import { auditRepo } from '../db/index.js';
+import { evolutionRepo } from '../db/index.js';
 import { archiveWorkspace, validateWorkspacePath } from '../services/workspace.js';
+import { createEvolutionProposalFromRoom } from '../services/teamEvolution.js';
 import { getAgent } from '../config/agentConfig.js';
 import { getProvider as getProviderConfig } from '../config/providerConfig.js';
 import { computeEffectiveMessageMentions, resolveEffectiveMaxDepth } from '../services/routing/A2ARouter.js';
@@ -30,6 +32,8 @@ import {
 } from '../services/skills.js';
 
 export const roomsRouter = Router();
+
+const REPLACEABLE_EVOLUTION_PROPOSAL_STATUSES = new Set(['draft', 'pending', 'in-review']);
 
 const SOFTWARE_DEVELOPMENT_CORE_REQUIREMENTS = [
   { id: SOFTWARE_DEVELOPMENT_CORE_AGENT_IDS.leadArchitect, label: '主架构师' },
@@ -62,13 +66,15 @@ function upsertProviderIssue(
   existing.agentNames.push(...issue.agentNames);
 }
 
-function buildRoomPreflight(workerIds: string[]) {
+function buildRoomPreflight(workerIds: string[], teamVersion?: TeamVersionConfig) {
   const blockers = new Map<string, ProviderPreflightIssue>();
   const warnings = new Map<string, ProviderPreflightIssue>();
+  const memberSnapshotsById = new Map((teamVersion?.memberSnapshots ?? []).map(snapshot => [snapshot.id, snapshot]));
 
   for (const workerId of workerIds) {
+    const snapshot = memberSnapshotsById.get(workerId);
     const agent = getAgent(workerId);
-    if (!agent) {
+    if (!agent && !snapshot) {
       upsertProviderIssue(blockers, `agent:${workerId}`, {
         type: 'agent_not_found',
         agentIds: [workerId],
@@ -78,15 +84,17 @@ function buildRoomPreflight(workerIds: string[]) {
       continue;
     }
 
-    const provider = getProviderConfig(agent.provider);
+    const providerName = snapshot?.provider ?? agent!.provider;
+    const agentName = snapshot?.name ?? agent!.name;
+    const provider = getProviderConfig(providerName);
     if (!provider) {
-      upsertProviderIssue(blockers, `provider:${agent.provider}`, {
+      upsertProviderIssue(blockers, `provider:${providerName}`, {
         type: 'provider_not_found',
-        provider: agent.provider,
-        label: agent.provider,
-        agentIds: [agent.id],
-        agentNames: [agent.name],
-        message: `Provider 不存在：${agent.provider}`,
+        provider: providerName,
+        label: providerName,
+        agentIds: [workerId],
+        agentNames: [agentName],
+        message: `Provider 不存在：${providerName}`,
       });
       continue;
     }
@@ -96,8 +104,8 @@ function buildRoomPreflight(workerIds: string[]) {
       provider: provider.name,
       label: provider.label,
       cliPath: provider.cliPath,
-      agentIds: [agent.id],
-      agentNames: [agent.name],
+      agentIds: [workerId],
+      agentNames: [agentName],
     };
 
     if (readiness.status === 'cli_missing') {
@@ -149,7 +157,14 @@ roomsRouter.get('/sidebar', (_req, res) => {
 // POST /api/rooms/preflight — check selected agents before room creation
 roomsRouter.post('/preflight', (req, res) => {
   const workerIds = Array.isArray(req.body?.workerIds) ? req.body.workerIds as string[] : [];
-  const result = buildRoomPreflight(workerIds);
+  const teamVersionId = typeof req.body?.teamVersionId === 'string' ? req.body.teamVersionId : undefined;
+  const teamId = typeof req.body?.teamId === 'string' ? req.body.teamId : undefined;
+  const teamVersion = teamVersionId
+    ? teamsRepo.getVersion(teamVersionId)
+    : teamId
+      ? teamsRepo.getActiveVersion(teamId)
+      : undefined;
+  const result = buildRoomPreflight(workerIds, teamVersion);
   debug('room:preflight', {
     workerCount: workerIds.length,
     blockerCount: result.blockers.length,
@@ -160,23 +175,31 @@ roomsRouter.post('/preflight', (req, res) => {
 
 // POST /api/rooms — 创建讨论室（运行期仅创建 WORKER）
 roomsRouter.post('/', async (req, res) => {
-  const { topic, workerIds: rawWorkerIds, workspacePath, sceneId, roomSkills: rawRoomSkills } = req.body as {
+  const { topic, workerIds: rawWorkerIds, workspacePath, teamId, teamVersionId, roomSkills: rawRoomSkills } = req.body as {
     topic?: string;
     workerIds?: string[];
     workspacePath?: string; // F006: custom workspace directory
-    sceneId?: string; // F016: scene ID, defaults to roundtable-forum
+    teamId?: string; // active TeamVersion source
+    teamVersionId?: string; // pinned TeamVersion source
     roomSkills?: Array<{ skillId?: string; skillName?: string; mode?: 'auto' | 'required'; enabled?: boolean }>;
   };
 
-  const workerIds: string[] = rawWorkerIds ?? [];
   const roomSkills = rawRoomSkills ?? [];
   const roomTopic = topic?.trim() || '自由讨论';
-
-  // F016: Validate sceneId — always check effectiveSceneId exists
-  const effectiveSceneId = sceneId ?? 'roundtable-forum';
-  if (!scenesRepo.get(effectiveSceneId)) {
-    warn('room:create:invalid_scene', { sceneId: effectiveSceneId });
-    return res.status(400).json({ error: `Scene not found: ${effectiveSceneId}` });
+  let teamVersion: TeamVersionConfig | undefined;
+  if (teamVersionId) {
+    teamVersion = teamsRepo.getVersion(teamVersionId);
+    if (!teamVersion) {
+      warn('room:create:invalid_team_version', { teamVersionId });
+      return res.status(400).json({ error: `TeamVersion not found: ${teamVersionId}` });
+    }
+  } else {
+    const requestedTeamId = teamId ?? 'roundtable-forum';
+    teamVersion = teamsRepo.getActiveVersion(requestedTeamId);
+    if (!teamVersion) {
+      warn('room:create:invalid_team', { teamId: requestedTeamId });
+      return res.status(400).json({ error: `Team not found or has no active version: ${requestedTeamId}` });
+    }
   }
 
   // F006: Validate custom workspace path if provided
@@ -189,18 +212,21 @@ roomsRouter.post('/', async (req, res) => {
     }
   }
 
-  if (!workerIds || workerIds.length < 1) {
+  const workerIds: string[] = rawWorkerIds ?? teamVersion?.memberIds ?? [];
+  if (workerIds.length < 1) {
     warn('room:create:invalid_workers', { reason: 'empty_worker_list' });
     return res.status(400).json({ error: '至少选择 1 位专家' });
   }
 
   // Resolve workers (with role + enabled validation)
-  const invalid = workerIds.filter(id => !getAgent(id));
+  const memberSnapshotsById = new Map((teamVersion?.memberSnapshots ?? []).map(snapshot => [snapshot.id, snapshot]));
+  const invalid = workerIds.filter(id => !getAgent(id) && !memberSnapshotsById.has(id));
   if (invalid.length > 0) {
     warn('room:create:invalid_workers', { reason: 'agent_not_found', invalid });
     return res.status(400).json({ error: `Agent not found: ${invalid.join(', ')}` });
   }
   const disabled = workerIds.filter(id => {
+    if (memberSnapshotsById.has(id) && !getAgent(id)) return false;
     const cfg = getAgent(id)!;
     return !cfg.enabled || cfg.role !== 'WORKER';
   });
@@ -209,37 +235,38 @@ roomsRouter.post('/', async (req, res) => {
     return res.status(400).json({ error: `Invalid workers (must be enabled WORKER): ${disabled.join(', ')}` });
   }
 
-  if (effectiveSceneId === 'roundtable-forum' && workerIds.length < 3) {
+  if (teamVersion.teamId === 'roundtable-forum' && workerIds.length < 3) {
     warn('room:create:invalid_workers', {
       reason: 'insufficient_workers_for_roundtable',
       workerCount: workerIds.length,
-      sceneId: effectiveSceneId,
+      teamId: teamVersion.teamId,
     });
     return res.status(400).json({ error: '圆桌论坛至少选择 3 位专家' });
   }
 
-  if (effectiveSceneId === 'software-development') {
+  if (teamVersion.teamId === 'software-development') {
     const missingCore = SOFTWARE_DEVELOPMENT_CORE_REQUIREMENTS.filter(requirement => !workerIds.includes(requirement.id));
     if (missingCore.length > 0) {
       warn('room:create:invalid_workers', {
         reason: 'missing_software_development_core_agents',
         missing: missingCore.map(requirement => requirement.id),
-        sceneId: effectiveSceneId,
+        teamId: teamVersion.teamId,
       });
       return res.status(400).json({
-        error: `软件开发场景必须包含 4 位核心专家：主架构师、挑战架构师、实现工程师、Reviewer。当前缺少：${missingCore.map(requirement => requirement.label).join('、')}`,
+        error: `软件开发团队必须包含 4 位核心专家：主架构师、挑战架构师、实现工程师、Reviewer。当前缺少：${missingCore.map(requirement => requirement.label).join('、')}`,
       });
     }
   }
 
   const workerEntries = workerIds.map(id => {
-    const cfg = getAgent(id)!;
+    const snapshot = memberSnapshotsById.get(id);
+    const cfg = getAgent(id);
     return {
       id: uuid(),
       role: 'WORKER' as const,
-      name: cfg.name,
-      domainLabel: cfg.roleLabel,
-      configId: cfg.id,
+      name: snapshot?.name ?? cfg!.name,
+      domainLabel: snapshot?.roleLabel ?? cfg!.roleLabel,
+      configId: snapshot?.id ?? cfg!.id,
       status: 'idle' as const,
     };
   });
@@ -251,14 +278,17 @@ roomsRouter.post('/', async (req, res) => {
     agents: workerEntries, // F012: no MANAGER in room
     messages: [],
     workspace: workspacePath,
-    sceneId: effectiveSceneId, // F016: validated above
+    teamId: teamVersion.teamId,
+    teamVersionId: teamVersion.id,
+    teamName: teamVersion.name,
+    teamVersionNumber: teamVersion.versionNumber,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     sessionIds: {},
     sessionTelemetryByAgent: {},
     a2aDepth: 0,
     a2aCallChain: [],
-    maxA2ADepth: null, // F017: null = inherit from scene
+    maxA2ADepth: null,
   };
   store.create(room);
   roomsRepo.create(room);
@@ -274,7 +304,8 @@ roomsRouter.post('/', async (req, res) => {
   }
   info('room:create', {
     roomId: room.id,
-    sceneId: room.sceneId,
+    teamId: room.teamId,
+    teamVersionId: room.teamVersionId,
     workerCount: workerEntries.length,
     roomSkillCount: roomSkills.length,
     hasWorkspace: Boolean(room.workspace),
@@ -283,7 +314,8 @@ roomsRouter.post('/', async (req, res) => {
     roomId: room.id,
     workerCount: workerEntries.length,
     workers: workerEntries.map(w => w.name),
-    sceneId: room.sceneId,
+    teamId: room.teamId,
+    teamVersionId: room.teamVersionId,
   });
   res.json(room);
 });
@@ -293,6 +325,178 @@ roomsRouter.get('/:id', (req, res) => {
   const room = store.get(req.params.id);
   if (!room) return res.status(404).json({ error: 'Room not found' });
   res.json(room);
+});
+
+roomsRouter.get('/:id/evolution-proposals', (req, res) => {
+  const room = store.get(req.params.id);
+  if (!room) {
+    warn('room:evolution:list:not_found', { roomId: req.params.id });
+    return res.status(404).json({ error: 'Room not found' });
+  }
+  res.json(evolutionRepo.listByRoom(req.params.id));
+});
+
+function writeEvolutionStreamEvent(res: Response, event: Record<string, unknown>) {
+  res.write(`${JSON.stringify(event)}\n`);
+}
+
+function createEvolutionProposalStreamResponse(res: Response): Response {
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  return res;
+}
+
+roomsRouter.post('/:id/evolution-proposals/stream', async (req, res) => {
+  const streamRes = createEvolutionProposalStreamResponse(res);
+  const room = store.get(req.params.id);
+  if (!room) {
+    writeEvolutionStreamEvent(streamRes, { type: 'error', error: 'Room not found' });
+    streamRes.end();
+    return;
+  }
+  if (isRoomBusy(req.params.id)) {
+    writeEvolutionStreamEvent(streamRes, { type: 'error', code: 'ROOM_BUSY', error: 'Room has an Agent currently executing' });
+    streamRes.end();
+    return;
+  }
+
+  const onDelta = (text: string) => {
+    writeEvolutionStreamEvent(streamRes, { type: 'delta', text, timestamp: Date.now() });
+  };
+
+  try {
+    const replacesProposalId = typeof req.body?.replacesProposalId === 'string' ? req.body.replacesProposalId.trim() : '';
+    let proposalToReplace = '';
+    if (replacesProposalId) {
+      const existingProposal = evolutionRepo.get(replacesProposalId);
+      if (!existingProposal) {
+        writeEvolutionStreamEvent(streamRes, {
+          type: 'error',
+          code: 'EVOLUTION_PROPOSAL_NOT_FOUND',
+          error: `Evolution proposal not found: ${replacesProposalId}`,
+        });
+        return;
+      }
+      if (existingProposal.roomId !== room.id) {
+        writeEvolutionStreamEvent(streamRes, { type: 'error', error: 'Replacement proposal does not belong to this room' });
+        return;
+      }
+      if (!REPLACEABLE_EVOLUTION_PROPOSAL_STATUSES.has(existingProposal.status)) {
+        writeEvolutionStreamEvent(streamRes, {
+          type: 'error',
+          code: 'EVOLUTION_PROPOSAL_STATE_CONFLICT',
+          error: `Cannot replace ${existingProposal.status} proposal`,
+        });
+        return;
+      }
+      proposalToReplace = existingProposal.id;
+    }
+
+    const feedback = typeof req.body?.feedback === 'string' ? req.body.feedback : undefined;
+    const proposal = await createEvolutionProposalFromRoom(room, feedback, {
+      ...(proposalToReplace ? { replacesProposalId: proposalToReplace } : {}),
+      onDelta,
+    });
+    info('room:evolution:create', {
+      roomId: room.id,
+      teamId: proposal.teamId,
+      proposalId: proposal.id,
+      changeCount: proposal.changes.length,
+    });
+    auditRepo.log('team:evolution:create', proposal.summary, undefined, {
+      roomId: room.id,
+      teamId: proposal.teamId,
+      proposalId: proposal.id,
+      baseVersionId: proposal.baseVersionId,
+      targetVersionNumber: proposal.targetVersionNumber,
+    });
+    writeEvolutionStreamEvent(streamRes, { type: 'proposal', proposal });
+  } catch (err) {
+    const errorWithCode = err as Error & { code?: string };
+    warn('room:evolution:create:invalid', { roomId: req.params.id, error: err });
+    writeEvolutionStreamEvent(streamRes, {
+      type: 'error',
+      ...(errorWithCode.code ? { code: errorWithCode.code } : {}),
+      error: errorWithCode.message || '生成改进建议失败',
+    });
+  } finally {
+    streamRes.end();
+  }
+});
+
+roomsRouter.post('/:id/evolution-proposals', async (req, res) => {
+  const room = store.get(req.params.id);
+  if (!room) {
+    warn('room:evolution:create:not_found', { roomId: req.params.id });
+    return res.status(404).json({ error: 'Room not found' });
+  }
+  if (isRoomBusy(req.params.id)) {
+    warn('room:evolution:create:busy', { roomId: req.params.id });
+    return res.status(409).json({ code: 'ROOM_BUSY', error: 'Room has an Agent currently executing' });
+  }
+
+  try {
+    const replacesProposalId = typeof req.body?.replacesProposalId === 'string' ? req.body.replacesProposalId.trim() : '';
+    let proposalToReplace = '';
+    if (replacesProposalId) {
+      const existingProposal = evolutionRepo.get(replacesProposalId);
+      if (!existingProposal) {
+        return res.status(404).json({
+          code: 'EVOLUTION_PROPOSAL_NOT_FOUND',
+          error: `Evolution proposal not found: ${replacesProposalId}`,
+        });
+      }
+      if (existingProposal.roomId !== room.id) {
+        return res.status(400).json({ error: 'Replacement proposal does not belong to this room' });
+      }
+      if (!REPLACEABLE_EVOLUTION_PROPOSAL_STATUSES.has(existingProposal.status)) {
+        return res.status(409).json({
+          code: 'EVOLUTION_PROPOSAL_STATE_CONFLICT',
+          error: `Cannot replace ${existingProposal.status} proposal`,
+        });
+      }
+      proposalToReplace = existingProposal.id;
+    }
+
+    const feedback = typeof req.body?.feedback === 'string' ? req.body.feedback : undefined;
+    const proposal = proposalToReplace
+      ? await createEvolutionProposalFromRoom(room, feedback, { replacesProposalId: proposalToReplace })
+      : await createEvolutionProposalFromRoom(room, feedback);
+    info('room:evolution:create', {
+      roomId: room.id,
+      teamId: proposal.teamId,
+      proposalId: proposal.id,
+      changeCount: proposal.changes.length,
+    });
+    auditRepo.log('team:evolution:create', proposal.summary, undefined, {
+      roomId: room.id,
+      teamId: proposal.teamId,
+      proposalId: proposal.id,
+      baseVersionId: proposal.baseVersionId,
+      targetVersionNumber: proposal.targetVersionNumber,
+    });
+    return res.json(proposal);
+  } catch (err) {
+    const errorWithCode = err as Error & { code?: string };
+    warn('room:evolution:create:invalid', { roomId: req.params.id, error: err });
+    if (errorWithCode.code === 'EVOLUTION_PROPOSAL_AGENT_FAILED') {
+      return res.status(503).json({
+        code: errorWithCode.code,
+        error: errorWithCode.message || '生成 Team 改进提案失败，请补充改进意见后重试',
+      });
+    }
+    if (errorWithCode.code === 'EVOLUTION_PROPOSAL_NOT_FOUND') {
+      return res.status(404).json({ code: errorWithCode.code, error: errorWithCode.message });
+    }
+    if (errorWithCode.code === 'EVOLUTION_PROPOSAL_STATE_CONFLICT') {
+      return res.status(409).json({ code: errorWithCode.code, error: errorWithCode.message });
+    }
+    return res.status(400).json({ error: errorWithCode.message || 'Failed to create evolution proposal' });
+  }
 });
 
 roomsRouter.get('/:id/skills', async (req, res) => {
@@ -305,18 +509,27 @@ roomsRouter.get('/:id/skills', async (req, res) => {
   const workspacePath = await getRoomWorkspace(req.params.id);
   const roomBindings = listRoomSkillBindings(req.params.id);
   const discoveredResult = await discoverWorkspaceSkills(workspacePath);
+  const teamMemberSnapshotsById = new Map(
+    (room.teamVersionId ? teamsRepo.getVersion(room.teamVersionId)?.memberSnapshots ?? [] : [])
+      .map(snapshot => [snapshot.id, snapshot]),
+  );
   const agentSkillStates = await Promise.all(room.agents.map(async agent => {
+    const snapshot = teamMemberSnapshotsById.get(agent.configId);
+    const provider = snapshot?.provider ?? getAgent(agent.configId)?.provider ?? 'claude-code';
     const effective = await resolveEffectiveSkills({
       roomId: req.params.id,
       agentConfigId: agent.configId,
       workspacePath,
-      providerName: getAgent(agent.configId)?.provider ?? 'claude-code',
+      providerName: provider,
+      teamSkillIds: snapshot?.skillIds ?? [],
+      teamSkillRefs: snapshot?.skillRefs ?? [],
+      includeDiscoveredSkills: snapshot ? false : undefined,
     });
     return {
       agentId: agent.id,
       configId: agent.configId,
       agentName: agent.name,
-      provider: getAgent(agent.configId)?.provider ?? 'claude-code',
+      provider,
       agentBindings: effective.agentBindings,
       effectiveSkills: effective.effective,
     };
@@ -375,7 +588,7 @@ roomsRouter.patch('/:id', (req, res) => {
 
   const { maxA2ADepth, topic } = req.body as { maxA2ADepth?: number | null; topic?: string };
 
-  // 有效值：3, 5, 10, 0(无限), null(继承scene)
+  // 有效值：3, 5, 10, 0(无限), null(继承 TeamVersion)
   const validValues = new Set([3, 5, 10, 0, null]);
   if (maxA2ADepth !== undefined && !validValues.has(maxA2ADepth)) {
     warn('room:update:invalid_depth', { roomId: id, maxA2ADepth });
@@ -409,12 +622,12 @@ roomsRouter.patch('/:id', (req, res) => {
     topicChanged: trimmedTopic !== undefined,
     topic: trimmedTopic ?? room.topic,
     maxA2ADepth: updated.maxA2ADepth,
-    effectiveMaxDepth: resolveEffectiveMaxDepth(updated.maxA2ADepth, updated.sceneId),
+    effectiveMaxDepth: resolveEffectiveMaxDepth(updated.maxA2ADepth, updated.teamVersionId),
   });
 
   res.json({
     ...updated,
-    effectiveMaxDepth: resolveEffectiveMaxDepth(updated.maxA2ADepth, updated.sceneId),
+    effectiveMaxDepth: resolveEffectiveMaxDepth(updated.maxA2ADepth, updated.teamVersionId),
   });
 });
 
@@ -466,14 +679,16 @@ roomsRouter.get('/:id/messages', (req, res) => {
       ...message,
       effectiveMentions: message.agentRole === 'USER'
         ? []
-        : computeEffectiveMessageMentions(message.content, room.sceneId, room.agents),
+        : computeEffectiveMessageMentions(message.content, room.teamId, room.agents),
     })),
     agents: room.agents,
-    report: room.report,
-    sceneId: room.sceneId,
-    maxA2ADepth: room.maxA2ADepth, // F017: room override (null = inherit scene)
+    teamId: room.teamId,
+    teamVersionId: room.teamVersionId,
+    teamName: room.teamName,
+    teamVersionNumber: room.teamVersionNumber,
+    maxA2ADepth: room.maxA2ADepth,
     a2aDepth: room.a2aDepth ?? 0, // F017: current A2A depth
-    effectiveMaxDepth: resolveEffectiveMaxDepth(room.maxA2ADepth, room.sceneId), // F017: computed max depth
+    effectiveMaxDepth: resolveEffectiveMaxDepth(room.maxA2ADepth, room.teamVersionId),
     workspace: room.workspace, // F006: workspace path for file browser
     sessionTelemetryByAgent,
   });
@@ -552,51 +767,6 @@ roomsRouter.post('/:id/agents/:agentId/stop', (req, res) => {
     agentId: req.params.agentId,
     agentName: target.name,
   });
-});
-
-// POST /api/rooms/:id/report — 生成报告（无状态，系统级服务）
-roomsRouter.post('/:id/report', async (req, res) => {
-  const room = store.get(req.params.id);
-  if (!room) {
-    warn('room:report:not_found', { roomId: req.params.id });
-    return res.status(404).json({ error: 'Room not found' });
-  }
-  if (isRoomBusy(req.params.id)) {
-    warn('room:report:busy', { roomId: req.params.id });
-    return res.status(409).json({ code: 'ROOM_BUSY', error: 'Room has an Agent currently executing' });
-  }
-
-  const allContent = room.messages
-    .map(m => `【${m.agentName}】${m.content}`)
-    .join('\n\n');
-
-  if (!allContent.trim()) {
-    warn('room:report:empty', { roomId: req.params.id });
-    return res.status(400).json({ error: 'No messages to generate report from' });
-  }
-
-  // 用第一个 WORKER 作为报告生成的执行者（无状态，系统级角色）
-  const worker = room.agents.find(a => a.role === 'WORKER');
-  if (!worker) {
-    warn('room:report:no_worker', { roomId: req.params.id });
-    return res.status(400).json({ error: 'No expert available to generate report' });
-  }
-
-  // 同步生成报告（简短操作）
-  const reportOutput = await generateReportInline(room.topic, allContent, worker, req.params.id);
-
-  store.update(req.params.id, { state: 'DONE', report: reportOutput });
-  roomsRepo.update(req.params.id, { state: 'DONE', report: reportOutput });
-
-  info('room:report', {
-    roomId: req.params.id,
-    workerId: worker.id,
-    workerName: worker.name,
-    messageCount: room.messages.length,
-    reportLength: reportOutput.length,
-  });
-
-  res.json({ summary: reportOutput, actionItems: [] });
 });
 
 // PATCH /api/rooms/:id/archive — 归档讨论室（软删除）

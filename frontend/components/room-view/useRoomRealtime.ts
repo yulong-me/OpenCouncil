@@ -21,7 +21,6 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
   const [state, setState] = useState<DiscussionState>('RUNNING')
   const [messages, setMessages] = useState<Message[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
-  const [report, setReport] = useState('')
   const [streamingAgentIds, setStreamingAgentIds] = useState<Set<string>>(new Set())
   const [messageErrorMap, setMessageErrorMap] = useState<Record<string, AgentRunErrorEvent>>({})
   const [orphanErrors, setOrphanErrors] = useState<AgentRunErrorEvent[]>([])
@@ -29,6 +28,10 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
   const [currentA2ADepth, setCurrentA2ADepth] = useState(0)
   const [effectiveMaxDepth, setEffectiveMaxDepth] = useState(5)
   const [workspace, setWorkspace] = useState<string | undefined>(undefined)
+  const [teamId, setTeamId] = useState<string | undefined>(undefined)
+  const [teamVersionId, setTeamVersionId] = useState<string | undefined>(undefined)
+  const [teamName, setTeamName] = useState<string | undefined>(undefined)
+  const [teamVersionNumber, setTeamVersionNumber] = useState<number | undefined>(undefined)
   const [effectiveSkills, setEffectiveSkills] = useState<Array<{ name: string; mode: 'auto' | 'required'; sourceLabel: string }>>([])
   const [globalSkillCount, setGlobalSkillCount] = useState(0)
   const [workspaceDiscoveredCount, setWorkspaceDiscoveredCount] = useState(0)
@@ -52,7 +55,6 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
     setMessages([])
     setAgents([])
     setState('RUNNING')
-    setReport('')
     setStreamingAgentIds(new Set())
     setMessageErrorMap({})
     setOrphanErrors([])
@@ -60,6 +62,10 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
     setCurrentA2ADepth(0)
     setEffectiveMaxDepth(5)
     setWorkspace(undefined)
+    setTeamId(undefined)
+    setTeamVersionId(undefined)
+    setTeamName(undefined)
+    setTeamVersionNumber(undefined)
     setEffectiveSkills([])
     setGlobalSkillCount(0)
     setWorkspaceDiscoveredCount(0)
@@ -345,7 +351,6 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
         pollStateRef.current = { state: nextState, agents: nextAgents }
         setState(nextState)
         setAgents(nextAgents)
-        setReport(data.report || '')
         if (data.maxA2ADepth !== undefined) {
           setMaxA2ADepth(data.maxA2ADepth)
         }
@@ -358,6 +363,10 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
         if (data.workspace !== undefined) {
           setWorkspace(data.workspace)
         }
+        setTeamId(data.teamId)
+        setTeamVersionId(data.teamVersionId)
+        setTeamName(data.teamName)
+        setTeamVersionNumber(data.teamVersionNumber)
         if (data.sessionTelemetryByAgent !== undefined) {
           setSessionTelemetryByAgent(previous =>
             mergeSessionTelemetryMaps(previous, data.sessionTelemetryByAgent as Record<string, SessionTelemetry>),
@@ -440,7 +449,6 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
     state,
     messages,
     agents,
-    report,
     streamingAgentIds,
     messageErrorMap,
     orphanErrors,
@@ -451,6 +459,10 @@ export function useRoomRealtime({ roomId, queuedDispatchPendingRef }: UseRoomRea
     effectiveMaxDepth,
     setEffectiveMaxDepth,
     workspace,
+    teamId,
+    teamVersionId,
+    teamName,
+    teamVersionNumber,
     effectiveSkills,
     globalSkillCount,
     workspaceDiscoveredCount,

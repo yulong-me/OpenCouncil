@@ -26,7 +26,7 @@ F001 早期只支持 `claude -p` 作为 Agent 调用源，所有 Agent 绑定同
 - 新增 `streamCodexProvider()`，通过 `codex exec --json` 接入 OpenAI Codex CLI
 - 统一 Provider 抽象接口（`getProvider()` factory），新增 provider 无需修改调用方
 - Agent 配置持久化到 `agents` 表，Provider 配置持久化到 `providers` 表；首次启动只 seed 一次
-- 系统级配置页面支持 `/settings/agents`、`/settings/providers`、`/settings/scenes`
+- 系统级配置页面支持 `/settings/teams`、`/settings/providers`、`/settings/skills`
 - `provider.defaultModel` 与 `agent.providerOpts.model` 都会透传到真实 CLI 命令
 
 ## Agent 配置页面
@@ -159,7 +159,7 @@ const gen = provider(prompt, agentId, {
 
 ## Changelog
 
-- 2026-04-20: 完成 Agent 级模型配置闭环。`provider.defaultModel` 与 `agent.providerOpts.model` 会透传到 `claude` / `opencode` CLI；Agent 设置页新增模型输入框；新增 `/settings/[tab]` 路由以支持 `/settings/agents`、`/settings/providers`、`/settings/scenes`。
+- 2026-04-20: 完成 Agent 级模型配置闭环。`provider.defaultModel` 与 `agent.providerOpts.model` 会透传到 `claude` / `opencode` CLI；Agent 设置页新增模型输入框；新增 `/settings/[tab]` 路由以支持 `/settings/teams`、`/settings/providers`、`/settings/skills`。
 - 2026-04-25: 扩展 provider 抽象以支持 OpenAI Codex CLI（`codex exec --json`），包含 provider factory、Provider/Agent 设置类型、fresh DB provider seed、Codex JSONL 解析和 `.codex/skills` 注入。
 
 ## Verification

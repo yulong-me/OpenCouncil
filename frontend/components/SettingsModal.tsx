@@ -4,60 +4,42 @@ import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 
 import { API_URL } from '@/lib/api'
-import { mergeAgentModel } from '@/lib/agentModels'
+import type { TeamListItem } from '@/lib/agents'
 import { type SettingsTab } from '@/lib/settingsTabs'
-import { debug, info, warn } from '@/lib/logger'
+import { debug, warn } from '@/lib/logger'
 
-import { AgentSettingsTab } from './settings-modal/AgentSettingsTab'
 import { ProviderSettingsTab } from './settings-modal/ProviderSettingsTab'
-import { SceneSettingsTab } from './settings-modal/SceneSettingsTab'
 import { SettingsTabSwitcher } from './settings-modal/SettingsTabSwitcher'
 import { SkillSettingsTab } from './settings-modal/SkillSettingsTab'
+import { TeamSettingsTab } from './settings-modal/TeamSettingsTab'
 import type {
-  AgentConfig,
-  AgentSkillBindingInput,
-  ProviderConfig,
   ProviderName,
+  ProviderConfig,
   ProviderReadiness,
   ReadOnlySkill,
-  SceneConfig,
-  SkillBinding,
   SkillConfig,
 } from './settings-modal/types'
 
 const API = API_URL
 
-interface AgentCreateDraft {
-  id: string
-  name: string
-  roleLabel: string
-  provider: ProviderName
-  model: string
-  systemPrompt: string
-  tags: string[]
-}
-
 export default function SettingsModal({
   isOpen,
   onClose,
-  initialTab = 'agent',
+  initialTab = 'team',
 }: {
   isOpen: boolean
   onClose: () => void
   initialTab?: SettingsTab
 }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab)
-  const [agents, setAgents] = useState<AgentConfig[]>([])
   const [providers, setProviders] = useState<Record<string, ProviderConfig>>({})
   const [providerReadiness, setProviderReadiness] = useState<Record<string, ProviderReadiness>>({})
-  const [scenes, setScenes] = useState<SceneConfig[]>([])
+  const [teamArchitectProvider, setTeamArchitectProvider] = useState<ProviderName>('claude-code')
+  const [teams, setTeams] = useState<TeamListItem[]>([])
   const [skills, setSkills] = useState<SkillConfig[]>([])
   const [globalSkills, setGlobalSkills] = useState<ReadOnlySkill[]>([])
-  const [agentSkillBindings, setAgentSkillBindings] = useState<Record<string, SkillBinding[]>>({})
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [pendingDelete, setPendingDelete] = useState<AgentConfig | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -81,39 +63,28 @@ export default function SettingsModal({
     debug('ui:settings:load_start', { tab: initialTab })
 
     Promise.all([
-      fetch(`${API}/api/agents`).then(response => response.json()),
       fetch(`${API}/api/providers`).then(response => response.json()),
       fetch(`${API}/api/providers/readiness`).then(response => response.json()).catch(() => ({})),
-      fetch(`${API}/api/scenes`).then(response => response.json()),
+      fetch(`${API}/api/system-settings/team-architect`).then(response => response.json()).catch(() => ({ provider: 'claude-code' })),
+      fetch(`${API}/api/teams`).then(response => response.json()).catch(() => []),
       fetch(`${API}/api/skills`).then(response => response.json()),
       fetch(`${API}/api/skills/global`).then(response => response.json()).catch(() => []),
-    ]).then(async ([ag, pr, readiness, sc, sk, gl]) => {
+    ]).then(([pr, readiness, teamArchitect, tm, sk, gl]) => {
       if (cancelled) return
-      setAgents(ag)
       setProviders(pr)
       setProviderReadiness(readiness)
-      setScenes(sc)
+      if (teamArchitect?.provider === 'claude-code' || teamArchitect?.provider === 'opencode' || teamArchitect?.provider === 'codex') {
+        setTeamArchitectProvider(teamArchitect.provider)
+      }
+      setTeams(Array.isArray(tm) ? tm : [])
       setSkills(sk)
       setGlobalSkills(gl)
-      const bindingEntries = await Promise.all(
-        (ag as AgentConfig[]).map(async agent => {
-          try {
-            const response = await fetch(`${API}/api/agents/${agent.id}/skills`)
-            return [agent.id, response.ok ? await response.json() as SkillBinding[] : []] as const
-          } catch {
-            return [agent.id, []] as const
-          }
-        }),
-      )
-      if (cancelled) return
-      setAgentSkillBindings(Object.fromEntries(bindingEntries))
       if (!selectedProvider && Object.keys(pr).length > 0) {
         setSelectedProvider(Object.keys(pr)[0])
       }
       debug('ui:settings:load_success', {
-        agentCount: ag.length,
         providerCount: Object.keys(pr).length,
-        sceneCount: sc.length,
+        teamCount: Array.isArray(tm) ? tm.length : 0,
         skillCount: sk.length,
         globalSkillCount: gl.length,
       })
@@ -140,93 +111,6 @@ export default function SettingsModal({
     }
   }
 
-  function handleAgentSave(updated: AgentConfig, bindings: AgentSkillBindingInput[]): Promise<void> {
-    setSaving(true)
-    info('ui:settings:agent_save', { agentId: updated.id, bindingCount: bindings.length })
-    return fetch(`${API}/api/agents/${updated.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
-    }).then(async response => {
-      const agent = await response.json() as AgentConfig & { error?: string }
-      if (!response.ok) throw new Error(agent.error ?? '保存失败')
-      const bindingsResponse = await fetch(`${API}/api/agents/${updated.id}/skills`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bindings }),
-      })
-      const nextBindings = await bindingsResponse.json().catch(() => []) as SkillBinding[] & { error?: string }
-      if (!bindingsResponse.ok) {
-        throw new Error((nextBindings as { error?: string }).error ?? 'Skill 保存失败')
-      }
-      setAgents(previous => previous.map(item => item.id === agent.id ? agent : item))
-      setAgentSkillBindings(previous => ({ ...previous, [updated.id]: Array.isArray(nextBindings) ? nextBindings : [] }))
-      info('ui:settings:agent_save_success', { agentId: updated.id, bindingCount: bindings.length })
-      setSaving(false)
-    }).catch(error => {
-      warn('ui:settings:agent_save_failed', { agentId: updated.id, error })
-      setSaving(false)
-      throw error
-    })
-  }
-
-  async function handleAgentCreate(draft: AgentCreateDraft): Promise<void> {
-    setSaving(true)
-    info('ui:settings:agent_create', { agentId: draft.id, provider: draft.provider })
-    try {
-      const response = await fetch(`${API}/api/agents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: draft.id,
-          name: draft.name,
-          roleLabel: draft.roleLabel,
-          provider: draft.provider,
-          role: 'WORKER',
-          providerOpts: mergeAgentModel({ thinking: true }, draft.model),
-          systemPrompt: draft.systemPrompt,
-          tags: draft.tags,
-          enabled: true,
-        }),
-      })
-      if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err.error || `HTTP ${response.status}`)
-      }
-      const created = await response.json() as AgentConfig
-      info('ui:settings:agent_create_success', { agentId: created.id, provider: created.provider })
-      setAgents(previous => [...previous, created])
-      setAgentSkillBindings(previous => ({ ...previous, [created.id]: [] }))
-    } catch (error) {
-      warn('ui:settings:agent_create_failed', { agentId: draft.id, error })
-      throw error
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function handleAgentDelete(agentId: string) {
-    info('ui:settings:agent_delete', { agentId })
-    fetch(`${API}/api/agents/${agentId}`, { method: 'DELETE' })
-      .then(response => {
-        if (!response.ok) {
-          warn('ui:settings:agent_delete_failed', { agentId, status: response.status })
-          return
-        }
-        setAgents(previous => previous.filter(agent => agent.id !== agentId))
-        setAgentSkillBindings(previous => {
-          const next = { ...previous }
-          delete next[agentId]
-          return next
-        })
-        info('ui:settings:agent_delete_success', { agentId })
-      })
-      .catch(error => {
-        warn('ui:settings:agent_delete_failed', { agentId, error })
-      })
-    setPendingDelete(null)
-  }
-
   if (!isOpen) return null
 
   return (
@@ -251,35 +135,23 @@ export default function SettingsModal({
               <div className="flex justify-center items-center h-40">
                 <span className="text-ink-soft text-[13px] animate-pulse">加载中…</span>
               </div>
-            ) : tab === 'agent' ? (
-              <AgentSettingsTab
-                agents={agents}
-                providers={providers}
-                skills={skills}
-                agentSkillBindings={agentSkillBindings}
-                saving={saving}
-                pendingDelete={pendingDelete}
-                onCreateAgent={handleAgentCreate}
-                onSaveAgent={handleAgentSave}
-                onDeleteRequest={setPendingDelete}
-                onDeleteConfirm={handleAgentDelete}
-                onDeleteCancel={() => setPendingDelete(null)}
-              />
             ) : tab === 'provider' ? (
               <ProviderSettingsTab
                 providers={providers}
                 readiness={providerReadiness}
                 selectedProvider={selectedProvider}
+                teamArchitectProvider={teamArchitectProvider}
                 onSelectProvider={setSelectedProvider}
                 onUpdateProvider={provider => setProviders(previous => ({ ...previous, [provider.name]: provider }))}
+                onTeamArchitectProviderChange={setTeamArchitectProvider}
                 onRefreshReadiness={refreshProviderReadiness}
               />
-            ) : tab === 'scene' ? (
-              <SceneSettingsTab
-                scenes={scenes}
-                onCreated={scene => setScenes(previous => [...previous, scene])}
-                onUpdate={updated => setScenes(previous => previous.map(scene => scene.id === updated.id ? updated : scene))}
-                onDelete={sceneId => setScenes(previous => previous.filter(scene => scene.id !== sceneId))}
+            ) : tab === 'team' ? (
+              <TeamSettingsTab
+                teams={teams}
+                skills={skills}
+                globalSkills={globalSkills}
+                onUpdated={updated => setTeams(previous => previous.map(team => team.id === updated.id ? updated : team))}
               />
             ) : (
               <SkillSettingsTab

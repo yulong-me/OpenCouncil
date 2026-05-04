@@ -267,7 +267,7 @@ export function useRoomMessaging({
           outgoingQueueRef.current = next
           return next
         })
-        showSendError('队列消息发送失败：目标专家已不可用')
+        showSendError('队列消息发送失败：Team 成员已不可用')
         return
       }
 

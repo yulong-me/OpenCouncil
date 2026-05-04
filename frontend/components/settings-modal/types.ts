@@ -12,17 +12,6 @@ export interface AgentConfig {
   tags: string[]
 }
 
-export interface SceneConfig {
-  id: string
-  name: string
-  description?: string
-  prompt: string
-  builtin: boolean
-  canDelete: boolean
-  canEditName: boolean
-  canEditPrompt: boolean
-}
-
 export interface ProviderConfig {
   name: string
   label: string
@@ -83,6 +72,9 @@ export interface ReadOnlySkill {
   description: string
   sourceType: 'global' | 'workspace'
   sourcePath: string
+  bundlePath?: string
+  providerCompat?: ProviderName[]
+  checksum?: string
 }
 
 export const PROVIDER_LABELS: Record<ProviderName, string> = {

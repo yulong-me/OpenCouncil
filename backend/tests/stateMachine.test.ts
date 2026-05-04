@@ -23,7 +23,9 @@ vi.mock('../src/db/index.js', () => ({
   messagesRepo: { insert: vi.fn(), updateContent: vi.fn() },
   sessionsRepo: { upsert: vi.fn() },
   auditRepo: { log: vi.fn() },
-  scenesRepo: { get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  teamsRepo: { list: vi.fn(), get: vi.fn(), getActiveVersion: vi.fn(), getVersion: vi.fn(), ensureBuiltinTeams: vi.fn() },
+  agentsRepo: { list: vi.fn(), get: vi.fn(), upsert: vi.fn(), delete: vi.fn() },
+  evolutionRepo: { create: vi.fn(), get: vi.fn(), listByRoom: vi.fn(), latestTargetVersionNumber: vi.fn(), setChangeDecision: vi.fn(), merge: vi.fn() },
 }));
 
 vi.mock('../src/config/agentConfig.js', () => ({
@@ -86,14 +88,35 @@ vi.mock('../src/services/skills.js', () => ({
 describe('F004: 直接路由', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    // Default mock for scenesRepo — prevents scenePromptBuilder from throwing on old rooms without sceneId
-    const { scenesRepo } = await import('../src/db/index.js');
-    vi.mocked(scenesRepo.get).mockReturnValue({
-      id: 'roundtable-forum',
+    const { teamsRepo } = await import('../src/db/index.js');
+    const defaultVersion = {
+      id: 'roundtable-forum-v1',
+      teamId: 'roundtable-forum',
+      versionNumber: 1,
       name: '圆桌论坛',
-      prompt: '圆桌',
-      builtin: true,
-    });
+      memberIds: [],
+      memberSnapshots: [],
+      workflowPrompt: '圆桌',
+      routingPolicy: {},
+      teamMemory: [],
+      maxA2ADepth: 5,
+      createdAt: 1,
+      createdFrom: 'builtin-seed' as const,
+    };
+    vi.mocked(teamsRepo.getActiveVersion).mockImplementation((teamId: string) => (
+      teamId === 'roundtable-forum' ? defaultVersion : undefined
+    ));
+    vi.mocked(teamsRepo.getVersion).mockImplementation((versionId: string) => (
+      versionId === 'roundtable-forum-v1' ? defaultVersion : undefined
+    ));
+    vi.mocked(teamsRepo.get).mockImplementation((teamId: string) => ({
+      id: teamId,
+      name: teamId,
+      builtin: false,
+      activeVersionId: `${teamId}-v1`,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
   });
 
   describe('状态类型', () => {
@@ -625,6 +648,142 @@ describe('F004: 直接路由', () => {
       });
     });
 
+    it('调用 TeamVersion 成员时会把成员配置的 Skill 传给 runtime 解析', async () => {
+      const { routeToAgent } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { teamsRepo } = await import('../src/db/index.js');
+      const { resolveEffectiveSkills } = await import('../src/services/skills.js');
+
+      vi.mocked(store.get).mockReturnValue({
+        id: 'room-team-skill',
+        topic: '测试话题',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'worker-1', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'member-reviewer', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 0,
+        a2aCallChain: [],
+        workspace: '/tmp/team-skill-workspace',
+        teamId: 'team-1',
+        teamVersionId: 'team-1-v1',
+      });
+      vi.mocked(teamsRepo.getVersion).mockReturnValue({
+        id: 'team-1-v1',
+        teamId: 'team-1',
+        versionNumber: 1,
+        name: '软件交付 Team',
+        memberIds: ['member-reviewer'],
+        memberSnapshots: [{
+          id: 'member-reviewer',
+          name: 'Reviewer',
+          roleLabel: '代码审查',
+          provider: 'opencode',
+          providerOpts: {},
+          systemPrompt: '检查回归风险',
+          skillIds: ['review-skill'],
+          skillRefs: [{
+            source: 'global',
+            name: 'shared-global',
+            sourcePath: '/tmp/shared-global/SKILL.md',
+          }],
+        }],
+        workflowPrompt: '按 Team 流程协作',
+        routingPolicy: {},
+        teamMemory: [],
+        maxA2ADepth: 5,
+        createdAt: 1,
+        createdFrom: 'manual',
+      });
+
+      await routeToAgent('room-team-skill', '@Reviewer 看看这个改动', 'worker-1');
+
+      expect(resolveEffectiveSkills).toHaveBeenCalledWith(expect.objectContaining({
+        roomId: 'room-team-skill',
+        agentConfigId: 'member-reviewer',
+        providerName: 'opencode',
+        teamSkillIds: ['review-skill'],
+        teamSkillRefs: [{
+          source: 'global',
+          name: 'shared-global',
+          sourcePath: '/tmp/shared-global/SKILL.md',
+        }],
+        includeDiscoveredSkills: false,
+      }));
+    });
+
+    it('顶层任务的 A2A 接力全部结束后，只标记房间完成，不生成 report', async () => {
+      const { routeToAgent } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { roomsRepo } = await import('../src/db/index.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      let roomState = {
+        id: 'room-visible-handoff-complete',
+        topic: 'OpenCouncil homepage copy',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'planner-1', role: 'WORKER' as const, name: 'Homepage Copy Planner', domainLabel: 'Copy plan', configId: 'planner-config', status: 'idle' as const },
+          { id: 'writer-1', role: 'WORKER' as const, name: 'Landing Page Copywriter', domainLabel: 'Copy writing', configId: 'writer-config', status: 'idle' as const },
+          { id: 'reviewer-1', role: 'WORKER' as const, name: 'Homepage Copy Reviewer', domainLabel: 'Copy review', configId: 'reviewer-config', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 0,
+        a2aCallChain: [],
+        maxA2ADepth: 5,
+        teamId: 'custom-copy-team',
+        teamVersionId: 'custom-copy-team-v1',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      vi.mocked(store.get).mockImplementation(() => roomState);
+      vi.mocked(store.update).mockImplementation((_id, partial) => {
+        roomState = { ...roomState, ...partial, updatedAt: Date.now() };
+        return roomState;
+      });
+
+      const outputs = [
+        'Plan: keep the page compact.\n\n@Landing Page Copywriter please draft the copy package.',
+        'Copy Package: headline, subheadline, CTA.\n\n@Homepage Copy Reviewer please review risks.',
+        'Review Notes: ready with minor edits. Open Risks: avoid unsupported guarantees.',
+      ];
+      let providerCall = 0;
+      vi.mocked(getProvider).mockReturnValue(async function* () {
+        const text = outputs[providerCall++] ?? 'Done';
+        yield { type: 'delta', agentId: 'agent', text };
+        yield { type: 'end', agentId: 'agent', duration_ms: 100, total_cost_usd: 0, input_tokens: 10, output_tokens: 10 };
+      });
+
+      await routeToAgent(
+        roomState.id,
+        '@Homepage Copy Planner run visible workflow',
+        'planner-1',
+      );
+
+      expect(providerCall).toBe(3);
+      expect(roomState.state).toBe('DONE');
+      expect(roomState.report).toBeUndefined();
+      expect(roomState.messages).toHaveLength(4);
+      expect(roomState.messages.at(-1)).toMatchObject({
+        agentName: 'Homepage Copy Reviewer',
+        type: 'statement',
+      });
+      expect(roomsRepo.update).toHaveBeenCalledWith(
+        roomState.id,
+        expect.objectContaining({
+          state: 'DONE',
+        }),
+      );
+      expect(roomsRepo.update).not.toHaveBeenCalledWith(
+        roomState.id,
+        expect.objectContaining({
+          report: expect.any(String),
+        }),
+      );
+    });
+
     it('新邀请专家第一次被调用时会拿到完整 room 历史', async () => {
       const { routeToAgent } = await import('../src/services/stateMachine.js');
       const { store } = await import('../src/store.js');
@@ -777,7 +936,7 @@ describe('F004: 直接路由', () => {
         .toBeNull();
     });
 
-    it('软件开发场景的 effective mentions 只保留第一个交接对象', async () => {
+    it('软件开发团队的 effective mentions 只保留第一个交接对象', async () => {
       const { computeEffectiveMessageMentions } = await import('../src/services/routing/A2ARouter.js');
 
       const mentions = computeEffectiveMessageMentions(
@@ -809,10 +968,10 @@ describe('F004: 直接路由', () => {
   });
 
   describe('F017: A2A 协作深度', () => {
-    it('room override / scene default / 无限模式都返回正确的有效深度', async () => {
+    it('room override / TeamVersion default / 无限模式都返回正确的有效深度', async () => {
       const { getEffectiveMaxDepthForRoom } = await import('../src/services/routing/A2ARouter.js');
       const { store } = await import('../src/store.js');
-      const { scenesRepo } = await import('../src/db/index.js');
+      const { teamsRepo } = await import('../src/db/index.js');
 
       vi.mocked(store.get)
         .mockReturnValueOnce({
@@ -824,7 +983,7 @@ describe('F004: 直接路由', () => {
           sessionIds: {},
           a2aDepth: 0,
           a2aCallChain: [],
-          sceneId: 'software-development',
+          teamId: 'software-development',
           maxA2ADepth: 3,
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -838,7 +997,7 @@ describe('F004: 直接路由', () => {
           sessionIds: {},
           a2aDepth: 0,
           a2aCallChain: [],
-          sceneId: 'software-development',
+          teamId: 'software-development',
           maxA2ADepth: null,
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -852,18 +1011,25 @@ describe('F004: 直接路由', () => {
           sessionIds: {},
           a2aDepth: 99,
           a2aCallChain: [],
-          sceneId: 'software-development',
+          teamId: 'software-development',
           maxA2ADepth: 0,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         });
 
-      vi.mocked(scenesRepo.get).mockReturnValue({
-        id: 'software-development',
+      vi.mocked(teamsRepo.getActiveVersion).mockReturnValue({
+        id: 'software-development-v1',
+        teamId: 'software-development',
+        versionNumber: 1,
         name: '软件开发',
-        prompt: '软件开发场景',
-        builtin: true,
+        memberIds: [],
+        memberSnapshots: [],
+        workflowPrompt: '软件开发团队',
+        routingPolicy: {},
+        teamMemory: [],
         maxA2ADepth: 10,
+        createdAt: 1,
+        createdFrom: 'builtin-seed',
       });
 
       expect(getEffectiveMaxDepthForRoom('room-override')).toBe(3);
@@ -889,7 +1055,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 3,
         a2aCallChain: ['实现工程师', '架构师', 'Reviewer'],
-        sceneId: 'software-development',
+        teamId: 'software-development',
         maxA2ADepth: 3,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -929,7 +1095,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 4,
         a2aCallChain: ['架构师', '实现工程师', '架构师', 'Reviewer'],
-        sceneId: 'software-development',
+        teamId: 'software-development',
         maxA2ADepth: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -961,7 +1127,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 2,
         a2aCallChain: ['实现工程师', 'Reviewer'],
-        sceneId: 'custom-collab',
+        teamId: 'custom-collab',
         maxA2ADepth: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -983,7 +1149,7 @@ describe('F004: 直接路由', () => {
       expect(getProvider).not.toHaveBeenCalled();
     });
 
-    it('软件开发场景遇到多目标 @ 时，只保留第一个交接对象', async () => {
+    it('软件开发团队遇到多目标 @ 时，只保留第一个交接对象', async () => {
       const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
       const { store } = await import('../src/store.js');
       const { messagesRepo } = await import('../src/db/index.js');
@@ -1003,7 +1169,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 0,
         a2aCallChain: [],
-        sceneId: 'software-development',
+        teamId: 'software-development',
         maxA2ADepth: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1025,7 +1191,7 @@ describe('F004: 直接路由', () => {
       expect(getProvider).toHaveBeenCalledTimes(1);
     });
 
-    it('软件开发场景遇到唯一句内 @ 时，自动按单目标交接并追加纠偏提示', async () => {
+    it('软件开发团队遇到唯一句内 @ 时，自动按单目标交接并追加纠偏提示', async () => {
       const { a2aOrchestrate } = await import('../src/services/stateMachine.js');
       const { store } = await import('../src/store.js');
       const { messagesRepo } = await import('../src/db/index.js');
@@ -1045,7 +1211,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 0,
         a2aCallChain: [],
-        sceneId: 'software-development',
+        teamId: 'software-development',
         maxA2ADepth: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1086,7 +1252,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 2,
         a2aCallChain: ['主架构师', '挑战架构师'],
-        sceneId: 'software-development',
+        teamId: 'software-development',
         maxA2ADepth: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1120,7 +1286,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 1,
         a2aCallChain: ['主架构师'],
-        sceneId: 'software-development',
+        teamId: 'software-development',
         maxA2ADepth: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1162,7 +1328,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 3,
         a2aCallChain: ['主架构师', '挑战架构师', '主架构师'],
-        sceneId: 'software-development',
+        teamId: 'software-development',
         maxA2ADepth: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1204,7 +1370,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 0,
         a2aCallChain: [],
-        sceneId: 'software-development',
+        teamId: 'software-development',
         maxA2ADepth: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1266,7 +1432,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 0,
         a2aCallChain: [],
-        sceneId: 'software-development',
+        teamId: 'software-development',
         maxA2ADepth: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1311,7 +1477,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 0,
         a2aCallChain: [],
-        sceneId: 'roundtable-forum',
+        teamId: 'roundtable-forum',
         maxA2ADepth: 5,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1343,7 +1509,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 1,
         a2aCallChain: ['乔布斯'],
-        sceneId: 'roundtable-forum',
+        teamId: 'roundtable-forum',
         maxA2ADepth: 5,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1376,7 +1542,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 1,
         a2aCallChain: ['乔布斯'],
-        sceneId: 'roundtable-forum',
+        teamId: 'roundtable-forum',
         maxA2ADepth: 5,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1417,7 +1583,7 @@ describe('F004: 直接路由', () => {
         sessionIds: {},
         a2aDepth: 1,
         a2aCallChain: ['乔布斯'],
-        sceneId: 'roundtable-forum',
+        teamId: 'roundtable-forum',
         maxA2ADepth: 5,
         createdAt: Date.now(),
         updatedAt: Date.now(),

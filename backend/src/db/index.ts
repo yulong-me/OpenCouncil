@@ -1,12 +1,14 @@
 import { db, DB_PATH } from './db.js';
 import { resolveBootstrapAction } from './bootstrapStrategy.js';
-import { initSchema, migrateFromJson, ensureBuiltinScenes } from './migrate.js';
+import { initSchema, migrateFromJson } from './migrate.js';
 import { roomsRepo, messagesRepo } from './repositories/rooms.js';
 import { sessionsRepo } from './repositories/sessions.js';
 import { auditRepo } from './repositories/audit.js';
 import { agentsRepo } from './repositories/agents.js';
 import { providersRepo } from './repositories/providers.js';
-import { scenesRepo } from './repositories/scenes.js';
+import { systemSettingsRepo } from './repositories/systemSettings.js';
+import { teamsRepo } from './repositories/teams.js';
+import { evolutionRepo } from './repositories/teamEvolution.js';
 import { skillsRepo, agentSkillBindingsRepo, roomSkillBindingsRepo } from './repositories/skills.js';
 import { log } from '../log.js';
 import {
@@ -14,7 +16,7 @@ import {
   LEGACY_SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS,
   PREVIOUS_SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS,
   SOFTWARE_DEVELOPMENT_AGENT_DEFINITIONS,
-  SOFTWARE_DEVELOPMENT_SCENE_TAG,
+  SOFTWARE_DEVELOPMENT_TEAM_TAG,
   ROUNDTABLE_AGENT_DEFINITIONS,
   buildBuiltinProviderOptsForMigration,
   type BuiltinAgentDefinition,
@@ -25,7 +27,7 @@ import { matchesResolvedBuiltinAgent, shouldRunBuiltinAgentCatalogV5Migrations }
 import fs from 'fs';
 import path from 'path';
 
-function countRows(tableName: 'agents' | 'providers' | 'scenes' | 'rooms'): number {
+function countRows(tableName: 'agents' | 'providers' | 'teams' | 'rooms'): number {
   return (db.prepare(`SELECT COUNT(*) as cnt FROM ${tableName}`).get() as { cnt: number }).cnt;
 }
 
@@ -148,7 +150,7 @@ function ensureBuiltinAgentCatalogV6(): void {
 
       agentsRepo.upsert({
         ...existing,
-        tags: existing.tags.filter(tag => tag !== SOFTWARE_DEVELOPMENT_SCENE_TAG),
+        tags: existing.tags.filter(tag => tag !== SOFTWARE_DEVELOPMENT_TEAM_TAG),
       });
       retired++;
     }
@@ -182,26 +184,12 @@ function ensureBuiltinAgentCatalogV6(): void {
   log('INFO', 'db:seed:agents:catalog_v6', { inserted, retagged, providerMigrated, upgraded, retired });
 }
 
-function ensureBuiltinSceneCatalogV2(): void {
-  const row = db.prepare("SELECT value FROM app_meta WHERE key = 'builtin_scene_catalog_version'").get() as { value: string } | undefined;
-  const currentVersion = Number.parseInt(row?.value ?? '0', 10);
-  if (currentVersion >= 2) return;
-
-  const beforeCount = countRows('scenes');
-  ensureBuiltinScenes();
-  const afterCount = countRows('scenes');
-  const inserted = Math.max(0, afterCount - beforeCount);
-
-  db.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('builtin_scene_catalog_version', '2')").run();
-  log('INFO', 'db:seed:scenes:catalog_v2', { inserted });
-}
-
 const seedFreshBuiltinData = db.transaction(() => {
   const providersSeeded = seedBuiltinProviders();
-  ensureBuiltinScenes();
   const agentsSeeded = seedBuiltinAgents();
+  const teamSeedResult = teamsRepo.ensureBuiltinTeams();
   db.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('bootstrap_seed_version', '1')").run();
-  return { agentsSeeded, scenesSeeded: countRows('scenes'), providersSeeded };
+  return { agentsSeeded, teamsSeeded: teamSeedResult.teamsInserted, providersSeeded };
 });
 
 const backfillLegacyBuiltinAgents = db.transaction(() => {
@@ -219,19 +207,19 @@ export function initDB(): void {
   const metaRow = db.prepare("SELECT value FROM app_meta WHERE key = 'bootstrap_seed_version'").get() as { value: string } | undefined;
   const agentsCount = countRows('agents');
   const providersCount = countRows('providers');
-  const scenesCount = countRows('scenes');
+  const teamsCount = countRows('teams');
   const roomsCount = countRows('rooms');
   const bootstrapAction = resolveBootstrapAction({
     metaPresent: Boolean(metaRow),
     agentsCount,
     providersCount,
-    scenesCount,
+    teamsCount,
     roomsCount,
   });
 
   if (bootstrapAction === 'fresh_seed_all') {
-    const { agentsSeeded, scenesSeeded, providersSeeded } = seedFreshBuiltinData();
-    log('INFO', 'db:seed:bootstrap:done', { agentsSeeded, scenesSeeded, providersSeeded });
+    const { agentsSeeded, teamsSeeded, providersSeeded } = seedFreshBuiltinData();
+    log('INFO', 'db:seed:bootstrap:done', { agentsSeeded, teamsSeeded, providersSeeded });
   } else if (bootstrapAction === 'legacy_backfill_agents') {
     const { agentsSeeded } = backfillLegacyBuiltinAgents();
     log('INFO', 'db:seed:bootstrap:legacy_agents_backfilled', {
@@ -242,11 +230,11 @@ export function initDB(): void {
     db.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('bootstrap_seed_version', '1')").run();
     log('INFO', 'db:seed:bootstrap:legacy', { reason: 'historical data found, meta written only' });
   } else if (bootstrapAction === 'repair_partial') {
-    const { agentsSeeded, scenesSeeded, providersSeeded } = seedFreshBuiltinData();
+    const { agentsSeeded, teamsSeeded, providersSeeded } = seedFreshBuiltinData();
     log('WARN', 'db:seed:bootstrap:repair_partial', {
-      reason: 'bootstrap marker existed but agents/scenes were empty',
+      reason: 'bootstrap marker existed but agents/teams were empty',
       agentsSeeded,
-      scenesSeeded,
+      teamsSeeded,
       providersSeeded,
     });
   } else {
@@ -254,7 +242,10 @@ export function initDB(): void {
   }
 
   ensureBuiltinAgentCatalogV6();
-  ensureBuiltinSceneCatalogV2();
+  const teamSeedResult = teamsRepo.ensureBuiltinTeams();
+  if (teamSeedResult.teamsInserted > 0 || teamSeedResult.versionsInserted > 0) {
+    log('INFO', 'db:seed:teams', teamSeedResult);
+  }
 
   log('INFO', 'db:init:done', { dbPath: DB_PATH });
 }
@@ -265,7 +256,9 @@ export { sessionsRepo };
 export { auditRepo };
 export { agentsRepo };
 export { providersRepo };
-export { scenesRepo };
+export { systemSettingsRepo };
+export { teamsRepo };
+export { evolutionRepo };
 export { skillsRepo };
 export { agentSkillBindingsRepo };
 export { roomSkillBindingsRepo };

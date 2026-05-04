@@ -8,8 +8,9 @@ import providersRouter from './routes/providers.js';
 import { logsRouter } from './routes/logs.js';
 import { browseRouter } from './routes/browse.js';
 import { gitRouter } from './routes/git.js';
-import { scenesRouter } from './routes/scenes.js';
+import { teamsRouter } from './routes/teams.js';
 import { skillsRouter } from './routes/skills.js';
+import { systemSettingsRouter } from './routes/systemSettings.js';
 import { store } from './store.js';
 import { log } from './log.js';
 import { initDB, roomsRepo } from './db/index.js';
@@ -31,7 +32,7 @@ const io = new SocketIOServer(httpServer, {
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '16mb' }));
 
 // ── Request logging middleware ──────────────────────────────────────────────
 app.use((req, res, next) => {
@@ -52,8 +53,9 @@ app.use('/api/providers', providersRouter);
 app.use('/api/logs', logsRouter);
 app.use('/api/browse', browseRouter);
 app.use('/api/git', gitRouter);
-app.use('/api/scenes', scenesRouter);
+app.use('/api/teams', teamsRouter);
 app.use('/api/skills', skillsRouter);
+app.use('/api/system-settings', systemSettingsRouter);
 
 // ── Debug endpoint ──────────────────────────────────────────────────────────
 app.get('/api/debug', (_req, res) => {

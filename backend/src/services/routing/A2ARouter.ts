@@ -4,22 +4,22 @@
  * 核心职责：
  * 1. 解析消息中的 @mention（行首检测）
  * 2. 追踪 A2A 深度，防止无限递归
- * 3. 计算房间 / 场景的有效最大深度
+ * 3. 计算房间 / TeamVersion 的有效最大深度
  */
 
 import { store } from '../../store.js';
-import { scenesRepo } from '../../db/index.js';
+import { teamsRepo } from '../../db/index.js';
 import type { Agent } from '../../types.js';
 
 /**
  * 获取有效最大 A2A 深度
- * 优先级：room.maxA2ADepth > scene.maxA2ADepth > 5
+ * 优先级：room.maxA2ADepth > TeamVersion.maxA2ADepth > 5
  * 0 = 无限
  */
-export function resolveEffectiveMaxDepth(roomMaxDepth: number | null, sceneId: string): number {
+export function resolveEffectiveMaxDepth(roomMaxDepth: number | null, teamVersionId?: string): number {
   if (roomMaxDepth !== null) return roomMaxDepth;
-  const scene = scenesRepo.get(sceneId);
-  return scene?.maxA2ADepth ?? 5;
+  const teamVersion = teamVersionId ? teamsRepo.getVersion(teamVersionId) : undefined;
+  return teamVersion?.maxA2ADepth ?? 5;
 }
 
 /**
@@ -29,7 +29,13 @@ export function resolveEffectiveMaxDepth(roomMaxDepth: number | null, sceneId: s
 export function getEffectiveMaxDepthForRoom(roomId: string): number {
   const room = store.get(roomId);
   if (!room) return 5;
-  return resolveEffectiveMaxDepth(room.maxA2ADepth, room.sceneId);
+  if (room.maxA2ADepth !== null) return room.maxA2ADepth;
+  const teamVersion = room.teamVersionId
+    ? teamsRepo.getVersion(room.teamVersionId)
+    : room.teamId
+      ? teamsRepo.getActiveVersion(room.teamId)
+      : undefined;
+  return teamVersion?.maxA2ADepth ?? 5;
 }
 
 /**
@@ -125,21 +131,21 @@ function buildMentionCandidates(agents: Agent[]): string[] {
 
 export function computeEffectiveMessageMentions(
   text: string,
-  sceneId: string,
+  teamId: string | undefined,
   agents: Agent[],
 ): string[] {
   const aliasMap = buildCanonicalMentionAliasMap(agents);
   const mentionCandidates = buildMentionCandidates(agents);
   const normalize = (mention: string) => aliasMap.get(mention.toLocaleLowerCase()) ?? mention;
 
-  if (sceneId === 'roundtable-forum') {
+  if (teamId === 'roundtable-forum') {
     const handoff = detectRoundtableHandoff(text, mentionCandidates);
     return handoff ? [normalize(handoff.mention)] : [];
   }
 
   const mentions = scanForA2AMentions(text, mentionCandidates).map(normalize);
   if (mentions.length > 0) {
-    if (sceneId === 'software-development') {
+    if (teamId === 'software-development') {
       return mentions.slice(0, 1);
     }
     return mentions;
@@ -150,7 +156,7 @@ export function computeEffectiveMessageMentions(
     return [normalize(inlineFallback)];
   }
 
-  if (sceneId === 'software-development') {
+  if (teamId === 'software-development') {
     return [];
   }
 

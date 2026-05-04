@@ -16,10 +16,9 @@ import {
   X,
 } from 'lucide-react'
 import {
-  AGENT_COLORS,
-  DEFAULT_AGENT_COLOR,
   extractUserMentionsFromAgents,
   findActiveMentionTrigger,
+  getAgentColor,
   insertMention,
   type Agent,
 } from '../lib/agents'
@@ -77,7 +76,7 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
     return targetName ? agents.find(agent => agent.name === targetName) ?? null : null
   }, [agentNames, agents, userInput])
   const selectedRecipientColors = selectedRecipient
-    ? AGENT_COLORS[selectedRecipient.name] ?? DEFAULT_AGENT_COLOR
+    ? getAgentColor(selectedRecipient.name)
     : null
 
   const filteredAgents = useMemo(() => {
@@ -275,7 +274,7 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
     if (!content) return
     if (extractUserMentionsFromAgents(content, agentNames).length === 0) {
       openRecipientPicker()
-      onSendError('消息要发给谁？按 @ 选一位专家')
+      onSendError('先 @ 选择一位 Team 成员')
       focus()
       return
     }
@@ -318,7 +317,7 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
   }, [closeMentionPicker, filteredAgents, mentionHighlightIdx, mentionPickerOpen, selectMentionAgent, submitDraft])
 
   const canSend = Boolean(userInput.trim()) && !sending
-  const shortcutHint = mentionPickerOpen ? '↵ 选择 · esc 取消' : '↵ 发送 · ⇧↵ 换行 · Cmd+Enter 发送'
+  const shortcutHint = mentionPickerOpen ? '↵ 选择 · esc 取消' : '↵ 发送 · ⇧↵ 换行'
 
   return (
     <div className="relative flex flex-col gap-2">
@@ -349,7 +348,7 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
           >
             <span className="shrink-0 font-medium text-ink-soft">To:</span>
             <span className="min-w-0 truncate font-medium">
-              {selectedRecipient ? `@${selectedRecipient.name}` : '选择一位专家'}
+              {selectedRecipient ? `@${selectedRecipient.name}` : '选择 Team 成员'}
             </span>
           </button>
           {selectedRecipient ? (
@@ -368,7 +367,7 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
         <textarea
           ref={textareaRef}
           className="min-h-20 max-h-48 w-full resize-none border-0 bg-transparent px-1 pb-10 pr-12 pt-1 text-body text-ink placeholder:text-ink-faint focus:outline-none"
-          placeholder={selectedRecipient ? `写消息给 ${selectedRecipient.name}` : '写消息给一位专家'}
+          placeholder={selectedRecipient ? `告诉 ${selectedRecipient.name} 这次要做什么` : '告诉 Team 这次要做什么，或先 @ 选择成员'}
           value={userInput}
           onChange={handleInputChange}
           onCompositionStart={handleCompositionStart}

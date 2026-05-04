@@ -14,7 +14,7 @@ This is the lightweight workflow used for the OpenCouncil 30s product demo.
 Make a short demo that lets a new visitor understand the product before reading the setup docs:
 
 - Start from the pain: one agent is often not enough.
-- Show the product answer: custom scenes, custom agents, explicit routing, and `@mention` collaboration.
+- Show the product answer: custom Teams, custom agents, explicit routing, and `@mention` collaboration.
 - Keep the video short enough to watch inside the README.
 
 Target output:
@@ -35,7 +35,7 @@ Recommended sequence:
    - "这个 agent 说得对吗？最好有另一个 agent 校验。"
    - "我希望多个 agent 帮我做调研、质疑、收敛，并能继续推进到执行。"
 2. Show OpenCouncil:
-   - Create or select a custom Scene.
+   - Create or select a custom Team.
    - Put multiple specialized Agents into the room.
    - Send a concrete request.
 3. Show collaboration:

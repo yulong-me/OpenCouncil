@@ -136,8 +136,6 @@ export interface DiscussionRoom {
   report?: string;
   /** F006: 自定义工作目录，留空则使用 workspaces/room-{id}/ */
   workspace?: string;
-  /** F016: 场景 ID，默认为 roundtable-forum */
-  sceneId: string;
   createdAt: number;
   updatedAt: number;
   /** agentConfigId → session ID for CLI resume/continue support */
@@ -148,17 +146,216 @@ export interface DiscussionRoom {
   a2aDepth: number;
   /** A2A 调用链 */
   a2aCallChain: string[];
-  /** F017: Room 级最大 A2A 深度覆盖，null=继承 scene 默认值 */
+  /** F017: Room 级最大 A2A 深度覆盖，null=继承 TeamVersion 默认值 */
   maxA2ADepth: number | null;
+  /** Team ID for TeamVersion-backed rooms */
+  teamId?: string;
+  /** TeamVersion ID pinned at room creation */
+  teamVersionId?: string;
+  /** Team name (display hint) */
+  teamName?: string;
+  /** Team version number (display hint) */
+  teamVersionNumber?: number;
 }
 
-// F016: Scene 配置
-export interface SceneConfig {
+// F052: Team 配置
+export interface TeamConfig {
   id: string;
   name: string;
   description?: string;
-  prompt: string;
   builtin: boolean;
-  /** F017: Scene 默认 A2A 最大深度，0=无限 */
+  activeVersionId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TeamMemberSkillRef {
+  source: 'managed' | 'global' | 'workspace';
+  id?: string;
+  name: string;
+  sourcePath?: string;
+}
+
+export interface TeamVersionMemberSnapshot {
+  id: string;
+  name: string;
+  roleLabel: string;
+  provider: 'claude-code' | 'opencode' | 'codex';
+  providerOpts: Record<string, unknown>;
+  systemPrompt: string;
+  responsibility?: string;
+  whenToUse?: string;
+  skillIds?: string[];
+  skillRefs?: TeamMemberSkillRef[];
+}
+
+export interface TeamVersionConfig {
+  id: string;
+  teamId: string;
+  versionNumber: number;
+  name: string;
+  description?: string;
+  memberIds: string[];
+  memberSnapshots: TeamVersionMemberSnapshot[];
+  workflowPrompt: string;
+  routingPolicy: Record<string, unknown>;
+  teamMemory: string[];
   maxA2ADepth: number;
+  createdAt: number;
+  createdFrom: 'builtin-seed' | 'migration' | 'manual' | 'evolution-pr';
+}
+
+export interface TeamListItem extends TeamConfig {
+  activeVersion: TeamVersionConfig;
+  members: Array<{ id: string; name: string; roleLabel: string; provider: string }>;
+}
+
+export interface TeamDraftMember {
+  displayName: string;
+  role: string;
+  responsibility: string;
+  systemPrompt: string;
+  whenToUse: string;
+  providerPreference?: 'claude-code' | 'opencode' | 'codex';
+}
+
+export interface TeamDraftValidationCase {
+  title: string;
+  failureSummary: string;
+  inputSnapshot: unknown;
+  expectedBehavior: string;
+  assertionType: ValidationAssertionType;
+}
+
+export interface TeamDraft {
+  name: string;
+  mission: string;
+  members: TeamDraftMember[];
+  workflow: string;
+  teamProtocol: string;
+  routingPolicy: Record<string, unknown>;
+  teamMemory: string[];
+  validationCases: TeamDraftValidationCase[];
+  generationRationale: string;
+  generationSource?: 'agent' | 'fallback';
+  fallbackReason?: string;
+}
+
+export interface TeamSettingsPatch {
+  name?: string;
+  description?: string;
+  version?: {
+    name?: string;
+    description?: string;
+    memberSnapshots?: TeamVersionMemberSnapshot[];
+    workflowPrompt?: string;
+    routingPolicy?: Record<string, unknown>;
+    teamMemory?: string[];
+    maxA2ADepth?: number;
+  };
+}
+
+export type EvolutionProposalStatus = 'draft' | 'pending' | 'in-review' | 'applied' | 'rejected' | 'expired';
+export type EvolutionChangeKind =
+  | 'add-agent'
+  | 'edit-agent-prompt'
+  | 'edit-team-workflow'
+  | 'edit-routing-policy'
+  | 'add-team-memory'
+  | 'add-validation-case';
+export type EvolutionChangeDecision = 'accepted' | 'rejected';
+
+export interface EvolutionProposalChange {
+  id: string;
+  proposalId: string;
+  ordinal: number;
+  kind: EvolutionChangeKind;
+  title: string;
+  why: string;
+  evidenceMessageIds: string[];
+  targetLayer: string;
+  before: unknown;
+  after: unknown;
+  impact: string;
+  decision?: EvolutionChangeDecision;
+  decidedAt?: number;
+}
+
+export type ValidationAssertionType = 'checklist' | 'replay';
+export type ValidationCaseStatus = 'active' | 'archived';
+export type ValidationPreflightResult = 'pass' | 'fail' | 'needs-review';
+
+export interface ValidationCase {
+  id: string;
+  teamId: string;
+  sourceRoomId?: string;
+  sourceProposalId?: string;
+  sourceChangeId?: string;
+  baseVersionId?: string;
+  createdVersionId?: string;
+  failureSummary: string;
+  inputSnapshot: unknown;
+  expectedBehavior: string;
+  assertionType: ValidationAssertionType;
+  createdFromChangeId: string;
+  status: ValidationCaseStatus;
+  evidenceMessageIds: string[];
+  createdAt: number;
+}
+
+export interface ValidationPreflightCaseResult {
+  id: string;
+  proposalId: string;
+  validationCaseId: string;
+  targetVersionId: string;
+  result: ValidationPreflightResult;
+  reason: string;
+  checkedAt: number;
+}
+
+export interface ValidationPreflightSummary {
+  pass: number;
+  fail: number;
+  needsReview: number;
+}
+
+export interface ValidationPreflightReport {
+  proposalId: string;
+  targetVersionId: string;
+  summary: ValidationPreflightSummary;
+  results: ValidationPreflightCaseResult[];
+}
+
+export interface EvolutionProposal {
+  id: string;
+  roomId: string;
+  teamId: string;
+  baseVersionId: string;
+  targetVersionNumber: number;
+  status: EvolutionProposalStatus;
+  summary: string;
+  feedback?: string;
+  createdAt: number;
+  updatedAt: number;
+  validationPreflightCheckedAt?: number;
+  appliedVersionId?: string;
+  changes: EvolutionProposalChange[];
+  validationPreflight?: ValidationPreflightReport;
+}
+
+export interface TeamVersionQualityTimelineItem {
+  versionId: string;
+  versionNumber: number;
+  createdAt: number;
+  createdFrom: TeamVersionConfig['createdFrom'];
+  sourceProposalId?: string;
+  acceptedChangeCount: number;
+  addedValidationCaseCount: number;
+  preflightSummary: ValidationPreflightSummary;
+  validationCases: ValidationCase[];
+  rollbackEvidence: {
+    comparedToVersionId?: string;
+    validationCasesAddedAfterThisVersion: number;
+    failingPreflightsAfterThisVersion: number;
+  };
 }

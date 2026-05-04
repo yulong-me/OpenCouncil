@@ -1,11 +1,10 @@
-export type SettingsTab = 'agent' | 'provider' | 'scene' | 'skill'
+export type SettingsTab = 'team' | 'provider' | 'skill'
 
 export function resolveSettingsTab(value?: string | null): SettingsTab {
+  if (value === 'team' || value === 'teams') return 'team'
   if (value === 'skill' || value === 'skills') return 'skill'
   if (value === 'provider' || value === 'providers') return 'provider'
-  if (value === 'scene' || value === 'scenes') return 'scene'
-  if (value === 'agent' || value === 'agents') return 'agent'
-  return 'agent'
+  return 'team'
 }
 
 export function resolveSettingsReturnPath(value?: string | null): string {

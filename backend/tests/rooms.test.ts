@@ -21,7 +21,9 @@ vi.mock('../src/store.js', () => ({
 vi.mock('../src/db/index.js', () => ({
   roomsRepo: { create: vi.fn(), update: vi.fn() },
   auditRepo: { log: vi.fn() },
-  scenesRepo: { get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  teamsRepo: { list: vi.fn(), get: vi.fn(), getActiveVersion: vi.fn(), getVersion: vi.fn(), ensureBuiltinTeams: vi.fn() },
+  agentsRepo: { list: vi.fn(), get: vi.fn(), upsert: vi.fn(), delete: vi.fn() },
+  evolutionRepo: { create: vi.fn(), get: vi.fn(), listByRoom: vi.fn(), latestTargetVersionNumber: vi.fn(), setChangeDecision: vi.fn(), merge: vi.fn() },
 }));
 
 vi.mock('../src/config/agentConfig.js', () => ({
@@ -41,13 +43,20 @@ vi.mock('../src/services/stateMachine.js', async (importOriginal) => {
 describe('rooms 路由', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    // Default mock for scenesRepo — prevents scenePromptBuilder from throwing on old rooms without sceneId
-    const { scenesRepo } = await import('../src/db/index.js');
-    vi.mocked(scenesRepo.get).mockReturnValue({
+    const { teamsRepo } = await import('../src/db/index.js');
+    vi.mocked(teamsRepo.getActiveVersion).mockReturnValue({
       id: 'roundtable-forum',
+      teamId: 'roundtable-forum',
+      versionNumber: 1,
       name: '圆桌论坛',
-      prompt: '圆桌',
-      builtin: true,
+      memberIds: [],
+      memberSnapshots: [],
+      workflowPrompt: '圆桌',
+      routingPolicy: {},
+      teamMemory: [],
+      maxA2ADepth: 5,
+      createdAt: Date.now(),
+      createdFrom: 'builtin-seed',
     });
   });
 

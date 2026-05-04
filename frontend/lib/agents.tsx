@@ -23,6 +23,46 @@ export interface Agent {
   configId?: string
 }
 
+export interface TeamMemberSkillRef {
+  source: 'managed' | 'global' | 'workspace'
+  id?: string
+  name: string
+  sourcePath?: string
+}
+
+export interface TeamListItem {
+  id: string
+  name: string
+  description?: string
+  builtin: boolean
+  activeVersionId: string
+  activeVersion: {
+    id: string
+    teamId: string
+    versionNumber: number
+    name?: string
+    description?: string
+    memberIds: string[]
+    memberSnapshots?: Array<{
+      id: string
+      name: string
+      roleLabel: string
+      provider: 'claude-code' | 'opencode' | 'codex'
+      providerOpts?: Record<string, unknown>
+      systemPrompt: string
+      responsibility?: string
+      whenToUse?: string
+      skillIds?: string[]
+      skillRefs?: TeamMemberSkillRef[]
+    }>
+    workflowPrompt?: string
+    routingPolicy?: Record<string, unknown>
+    teamMemory?: string[]
+    maxA2ADepth: number
+  }
+  members: Array<{ id: string; name: string; roleLabel: string; provider: string }>
+}
+
 export interface AgentRunErrorEvent {
   traceId: string
   messageId?: string
@@ -121,7 +161,18 @@ export const AGENT_COLORS: Record<string, { bg: string; text: string }> = {
   马云: { bg: '#C43A2F', text: '#FFFFFF' },
 }
 
-export const DEFAULT_AGENT_COLOR = { bg: '#1F3A8A', text: '#FFFFFF' }
+export const AGENT_COLOR_PALETTE = [
+  '#C43A2F',
+  '#7C3AED',
+  '#0E8345',
+  '#1F3A8A',
+  '#475569',
+  '#2563EB',
+  '#B5832A',
+  '#0F766E',
+] as const
+
+export const DEFAULT_AGENT_COLOR = { bg: AGENT_COLOR_PALETTE[0], text: '#FFFFFF' }
 export const TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' })
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -139,6 +190,19 @@ export function formatRelativeTime(ts: number): string {
   if (day === 1) return '昨天'
   if (day < 7) return `${day}天前`
   return new Date(ts).toLocaleDateString('zh')
+}
+
+function hashAgentName(name: string): number {
+  return Array.from(name.trim()).reduce((hash, char) => {
+    return ((hash << 5) - hash + (char.codePointAt(0) ?? 0)) | 0
+  }, 0)
+}
+
+export function getAgentColor(name: string): { bg: string; text: string } {
+  const known = AGENT_COLORS[name]
+  if (known) return known
+  const index = Math.abs(hashAgentName(name || 'agent')) % AGENT_COLOR_PALETTE.length
+  return { bg: AGENT_COLOR_PALETTE[index] ?? DEFAULT_AGENT_COLOR.bg, text: '#FFFFFF' }
 }
 
 // ─── Markdown components (shared) ───────────────────────────────────────────

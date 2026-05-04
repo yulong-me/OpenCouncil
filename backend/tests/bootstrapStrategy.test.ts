@@ -7,7 +7,7 @@ describe('resolveBootstrapAction', () => {
       metaPresent: false,
       agentsCount: 0,
       providersCount: 0,
-      scenesCount: 0,
+      teamsCount: 0,
       roomsCount: 0,
     })).toBe('fresh_seed_all');
   });
@@ -17,7 +17,7 @@ describe('resolveBootstrapAction', () => {
       metaPresent: false,
       agentsCount: 0,
       providersCount: 2,
-      scenesCount: 2,
+      teamsCount: 2,
       roomsCount: 46,
     })).toBe('legacy_backfill_agents');
   });
@@ -27,7 +27,7 @@ describe('resolveBootstrapAction', () => {
       metaPresent: false,
       agentsCount: 3,
       providersCount: 2,
-      scenesCount: 2,
+      teamsCount: 2,
       roomsCount: 10,
     })).toBe('legacy_mark_only');
   });
@@ -37,7 +37,7 @@ describe('resolveBootstrapAction', () => {
       metaPresent: true,
       agentsCount: 0,
       providersCount: 2,
-      scenesCount: 0,
+      teamsCount: 0,
       roomsCount: 0,
     })).toBe('repair_partial');
   });
@@ -47,7 +47,7 @@ describe('resolveBootstrapAction', () => {
       metaPresent: true,
       agentsCount: 21,
       providersCount: 2,
-      scenesCount: 2,
+      teamsCount: 2,
       roomsCount: 49,
     })).toBe('skip');
   });
