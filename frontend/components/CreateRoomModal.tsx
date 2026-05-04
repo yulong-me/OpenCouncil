@@ -99,6 +99,7 @@ const PROVIDER_READINESS_META: Record<ProviderReadinessStatus, { label: string; 
   untested: { label: '待测试', className: 'tone-warning-pill border' },
   test_failed: { label: '测试失败', className: 'tone-warning-pill border' },
 }
+const TEAM_DRAFT_PROGRESS_MESSAGE = '正在整理 Team 方案…'
 
 function formatTeamDraftError(message?: string): string {
   if (!message) return '生成 Team 方案失败'
@@ -425,7 +426,7 @@ export default function CreateRoomModal({
 
   function handleTeamDraftStreamEvent(event: TeamDraftStreamEvent): TeamDraft | null {
     if (event.type === 'delta') {
-      setTeamDraftOutput(previous => `${previous}${event.text}`)
+      setTeamDraftOutput(TEAM_DRAFT_PROGRESS_MESSAGE)
       return null
     }
     if (event.type === 'draft') {
@@ -488,12 +489,14 @@ export default function CreateRoomModal({
       }
       const draft = await readTeamDraftStream(res)
       setTeamDraft(draft)
+      setTeamDraftOutput('')
       info('ui:team_draft:generated', {
         memberCount: draft.members?.length ?? 0,
         generationSource: draft.generationSource,
       })
     } catch (err) {
       warn('ui:team_draft:generate_failed', { error: err })
+      setTeamDraftOutput('')
       setTeamDraftError(formatTeamDraftError(getUserFacingError(err)))
     } finally {
       setTeamDraftLoading(false)

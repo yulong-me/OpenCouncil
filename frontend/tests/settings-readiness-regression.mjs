@@ -116,6 +116,11 @@ assert.match(createRoomModal, /\/api\/teams\/drafts\/stream/)
 assert.match(createRoomModal, /teamDraftOutput/)
 assert.match(createRoomModal, /type: 'delta'/)
 assert.match(createRoomModal, /Team Architect/)
+assert.doesNotMatch(
+  createRoomModal,
+  /setTeamDraftOutput\(previous\s*=>\s*`\$\{previous\}\$\{event\.text\}`\)/,
+  'CreateRoomModal must not render raw Team Architect delta text in the create-Team flow.',
+)
 assert.ok(!createRoomModal.includes(removedProgressCopy))
 assert.match(createRoomModal, /执行工具未准备好/)
 assert.match(createRoomModal, /去设置执行工具/)
