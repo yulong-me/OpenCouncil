@@ -157,7 +157,7 @@ export function RoomHeader({
           type="button"
           className="md:hidden p-2 -ml-2 text-ink-soft hover:text-ink"
           onClick={onToggleMobileMenu}
-          aria-label="打开讨论室"
+          aria-label="打开任务记录"
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -180,7 +180,7 @@ export function RoomHeader({
                 }}
                 className="h-9 min-w-0 max-w-[48vw] rounded-lg border border-line bg-surface px-2.5 text-title text-ink outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/[0.15]"
                 autoFocus
-                aria-label="编辑讨论标题"
+                aria-label="编辑任务记录标题"
               />
               {roomId && onGenerateTitleSuggestions && (
                 <button
@@ -212,16 +212,16 @@ export function RoomHeader({
               type="button"
               onClick={() => roomId && onRenameRoom ? setRenaming(true) : undefined}
               className="min-w-0 truncate text-left text-title text-ink underline-offset-4 transition-colors hover:text-accent hover:underline md:text-base"
-              title="重命名讨论"
+              title="重命名任务记录"
             >
-              {currentRoomTopic || '开始新讨论'}
+              {currentRoomTopic || '新任务记录'}
             </button>
           )}
           {renaming && roomId && suggestionsOpen && (
             <div className="absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-line bg-nav-bg p-3 shadow-xl">
               <div className="mb-2">
-                <p className="text-label uppercase text-accent">为这次讨论起个标题</p>
-                <p className="mt-1 text-[12px] text-ink-soft">点任意标题，直接替换当前会话名。</p>
+                <p className="text-label uppercase text-accent">为这次任务记录起个标题</p>
+                <p className="mt-1 text-[12px] text-ink-soft">点任意标题，直接替换当前任务记录名。</p>
               </div>
               {generatingSuggestions ? (
                 <div className="flex items-center gap-2 rounded-xl bg-surface-muted px-3 py-3 text-[12px] text-ink-soft">
@@ -281,10 +281,10 @@ export function RoomHeader({
               }}
               disabled={!isTeamRoom || creatingEvolutionProposal || (!onCreateEvolutionProposal && pendingEvolutionCount === 0)}
               className="hidden h-9 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-[12px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
-              title={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看 EVO PR' : '让 Team 复盘') : '当前讨论不是 Team 创建的'}
+              title={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进') : '当前任务记录不是由 Team 创建的'}
             >
               {creatingEvolutionProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
-              {creatingEvolutionProposal ? '团队反思中' : pendingEvolutionCount > 0 ? '查看进化提案' : '让 Team 复盘'}
+              {creatingEvolutionProposal ? '正在整理' : pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进'}
             </button>
             <button
               type="button"
@@ -300,8 +300,8 @@ export function RoomHeader({
               }}
               disabled={!isTeamRoom || creatingEvolutionProposal || (!onCreateEvolutionProposal && pendingEvolutionCount === 0)}
               className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent disabled:cursor-not-allowed disabled:opacity-60 md:hidden"
-              title={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看 EVO PR' : '让 Team 复盘') : '当前讨论不是 Team 创建的'}
-              aria-label={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看 EVO PR' : '让 Team 复盘') : '当前讨论不是 Team 创建的'}
+              title={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进') : '当前任务记录不是由 Team 创建的'}
+              aria-label={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进') : '当前任务记录不是由 Team 创建的'}
             >
               {creatingEvolutionProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
             </button>
@@ -319,7 +319,7 @@ export function RoomHeader({
             type="button"
             onClick={onOpenAgentDrawer}
             className="md:hidden p-2 text-ink-soft hover:text-accent transition-colors"
-            aria-label="查看讨论成员"
+            aria-label="查看 Team 成员"
           >
             <Users className="w-5 h-5" />
           </button>
@@ -328,7 +328,7 @@ export function RoomHeader({
           type="button"
           onClick={onOpenInviteDrawer}
           className="p-2 text-ink-soft hover:text-accent transition-colors"
-          aria-label="邀请 Agent 参与讨论"
+          aria-label="邀请 Agent 参与任务"
         >
           <UserPlus className="w-5 h-5" />
         </button>
@@ -336,8 +336,8 @@ export function RoomHeader({
           type="button"
           onClick={onToggleAgentPanel}
           className="hidden lg:inline-flex p-2 text-ink-soft hover:text-accent transition-colors"
-          aria-label={agentPanelCollapsed ? '展开讨论成员面板' : '收起讨论成员面板'}
-          title={agentPanelCollapsed ? '展开讨论成员面板' : '收起讨论成员面板'}
+          aria-label={agentPanelCollapsed ? '展开 Team 成员面板' : '收起 Team 成员面板'}
+          title={agentPanelCollapsed ? '展开 Team 成员面板' : '收起 Team 成员面板'}
         >
           {agentPanelCollapsed ? (
             <ChevronLeft className="w-5 h-5" />

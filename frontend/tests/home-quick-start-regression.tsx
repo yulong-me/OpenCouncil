@@ -14,16 +14,17 @@ const markup = renderToStaticMarkup(
 )
 
 assert.match(markup, /OpenCouncil/)
-assert.match(markup, /发起新讨论/)
+assert.match(markup, /发起一个任务，交给 Team 协作/)
+assert.match(markup, /发起任务/)
 assert.equal(QUICK_START_TEMPLATES.length, 5)
 assert.deepEqual(QUICK_START_TEMPLATES.map(template => template.title), [
-  '诉讼策略',
-  '竞品分析',
-  '论文返修',
-  '圆桌论坛',
-  '软件开发',
+  '诉讼策略 Team',
+  '竞品分析 Team',
+  '论文返修 Team',
+  '圆桌讨论 Team',
+  '软件开发 Team',
 ])
-assert.deepEqual(QUICK_START_TEMPLATES.map(template => template.sceneId), [
+assert.deepEqual(QUICK_START_TEMPLATES.map(template => template.teamId), [
   'litigation-strategy',
   'competitor-analysis',
   'paper-revision',
@@ -41,6 +42,7 @@ assert.deepEqual(QUICK_START_TEMPLATES.map(template => template.agentIds), [
 for (const template of QUICK_START_TEMPLATES) {
   assert.match(markup, new RegExp(template.title))
 }
-assert.doesNotMatch(markup, /选择讨论室后显示讨论成员/)
+const legacyChineseTerm = '\u573a\u666f'
+assert.doesNotMatch(markup, new RegExp(`专家会议|${legacyChineseTerm}|讨论室|选择讨论室后显示讨论成员`))
 
 console.log('home-quick-start-regression: ok')

@@ -25,13 +25,12 @@ vi.mock('../src/store.js', () => ({
 vi.mock('../src/db/index.js', () => ({
   roomsRepo: { create: vi.fn(), update: vi.fn(), listSidebar: vi.fn() },
   auditRepo: { log: vi.fn() },
-  scenesRepo: { get: vi.fn(), list: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   teamsRepo: {
     list: vi.fn(),
     get: vi.fn(),
     getActiveVersion: vi.fn(),
     getVersion: vi.fn(),
-    ensureFromScenes: vi.fn(),
+    ensureBuiltinTeams: vi.fn(),
     generateDraftFromGoal: vi.fn(),
     createFromDraft: vi.fn(),
   },
@@ -90,7 +89,7 @@ vi.mock('../src/services/teamEvolution.js', () => ({
 import { roomsRouter } from '../src/routes/rooms.js';
 import { teamsRouter } from '../src/routes/teams.js';
 import { store } from '../src/store.js';
-import { roomsRepo, scenesRepo, teamsRepo, evolutionRepo } from '../src/db/index.js';
+import { roomsRepo, teamsRepo, evolutionRepo } from '../src/db/index.js';
 import { generateTeamDraftFromGoal } from '../src/services/teamDrafts.js';
 import { createEvolutionProposalFromRoom } from '../src/services/teamEvolution.js';
 import { getAgent } from '../src/config/agentConfig.js';
@@ -151,6 +150,26 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    const roundtableVersion = {
+      id: 'roundtable-forum-v1',
+      teamId: 'roundtable-forum',
+      versionNumber: 1,
+      name: '圆桌论坛',
+      memberIds: ['worker-1', 'worker-2', 'worker-3'],
+      memberSnapshots: [],
+      workflowPrompt: '圆桌',
+      routingPolicy: {},
+      teamMemory: [],
+      maxA2ADepth: 5,
+      createdAt: 1,
+      createdFrom: 'builtin-seed' as const,
+    };
+    vi.mocked(teamsRepo.getActiveVersion).mockImplementation((teamId: string) => (
+      teamId === 'roundtable-forum' ? roundtableVersion : undefined
+    ));
+    vi.mocked(teamsRepo.getVersion).mockImplementation((versionId: string) => (
+      versionId === 'roundtable-forum-v1' ? roundtableVersion : undefined
+    ));
     vi.mocked(getProviderConfig).mockImplementation((name: string) => ({
       name,
       label: name,
@@ -357,7 +376,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'roundtable-forum',
+      teamId: 'roundtable-forum',
       maxA2ADepth: null,
       createdAt: 1,
       updatedAt: 1,
@@ -467,13 +486,20 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
   });
 
   _skipIfNoPort('preserves the user-provided topic when creating a room', async () => {
-    vi.mocked(scenesRepo.get).mockReturnValue({
-      id: 'software-development',
+    vi.mocked(teamsRepo.getActiveVersion).mockImplementation((teamId: string) => teamId === 'software-development' ? {
+      id: 'software-development-v1',
+      teamId: 'software-development',
+      versionNumber: 1,
       name: '软件开发',
-      prompt: '软件开发场景',
-      builtin: true,
+      memberIds: [],
+      memberSnapshots: [],
+      workflowPrompt: '软件开发团队',
+      routingPolicy: {},
+      teamMemory: [],
       maxA2ADepth: 5,
-    });
+      createdAt: 1,
+      createdFrom: 'builtin-seed',
+    } : undefined);
     const coreAgents = new Map([
       ['dev-architect', { id: 'dev-architect', name: '主架构师', role: 'WORKER', roleLabel: '方案设计', provider: 'claude-code', providerOpts: { thinking: true }, systemPrompt: '你是主架构师', enabled: true, tags: ['dev'] }],
       ['dev-challenge-architect', { id: 'dev-challenge-architect', name: '挑战架构师', role: 'WORKER', roleLabel: '方案质疑', provider: 'claude-code', providerOpts: { thinking: true }, systemPrompt: '你是挑战架构师', enabled: true, tags: ['dev'] }],
@@ -485,54 +511,46 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
     const missingCoreResult = await requestJson('POST', '/api/rooms', {
       topic: '实现登录态持久化',
       workerIds: ['dev-architect', 'dev-implementer', 'dev-reviewer'],
-      sceneId: 'software-development',
+      teamId: 'software-development',
     });
 
     expect(missingCoreResult.status).toBe(400);
     expect(missingCoreResult.data).toHaveProperty(
       'error',
-      '软件开发场景必须包含 4 位核心专家：主架构师、挑战架构师、实现工程师、Reviewer。当前缺少：挑战架构师',
+      '软件开发团队必须包含 4 位核心专家：主架构师、挑战架构师、实现工程师、Reviewer。当前缺少：挑战架构师',
     );
 
     const result = await requestJson('POST', '/api/rooms', {
       topic: '  实现登录态持久化  ',
       workerIds: ['dev-architect', 'dev-challenge-architect', 'dev-implementer', 'dev-reviewer'],
-      sceneId: 'software-development',
+      teamId: 'software-development',
     });
 
     expect(result.status).toBe(200);
     expect(result.data).toHaveProperty('topic', '实现登录态持久化');
     expect(store.create).toHaveBeenCalledWith(expect.objectContaining({
       topic: '实现登录态持久化',
-      sceneId: 'software-development',
+      teamId: 'software-development',
     }));
     expect(roomsRepo.create).toHaveBeenCalledWith(expect.objectContaining({
       topic: '实现登录态持久化',
-      sceneId: 'software-development',
+      teamId: 'software-development',
     }));
   });
 
   _skipIfNoPort('POST /api/rooms accepts teamId, resolves active TeamVersion, and defaults workers from the version', async () => {
-    vi.mocked(scenesRepo.get).mockReturnValue({
-      id: 'custom-scene',
-      name: '自定义场景',
-      prompt: '自定义场景 prompt',
-      builtin: false,
-      maxA2ADepth: 5,
-    });
     vi.mocked(teamsRepo.getActiveVersion).mockReturnValue({
-      id: 'custom-scene-v1',
-      teamId: 'custom-scene',
+      id: 'custom-team-v1',
+      teamId: 'custom-team',
       versionNumber: 1,
       name: '自定义团队',
-      sourceSceneId: 'custom-scene',
       memberIds: ['worker-1'],
       workflowPrompt: 'team workflow',
       routingPolicy: {},
       teamMemory: [],
       maxA2ADepth: 5,
       createdAt: 1,
-      createdFrom: 'scene-seed',
+      createdFrom: 'builtin-seed',
     });
     vi.mocked(getAgent).mockImplementation((id: string) => {
       if (id !== 'worker-1') return undefined;
@@ -545,45 +563,43 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
         providerOpts: { thinking: true },
         systemPrompt: '你是测试员',
         enabled: true,
-        tags: ['自定义场景'],
+        tags: ['自定义团队'],
       };
     });
 
     const result = await requestJson('POST', '/api/rooms', {
       topic: 'Team room',
-      teamId: 'custom-scene',
+      teamId: 'custom-team',
     });
 
     expect(result.status).toBe(200);
     expect(result.data).toMatchObject({
       topic: 'Team room',
-      sceneId: 'custom-scene',
-      teamId: 'custom-scene',
-      teamVersionId: 'custom-scene-v1',
+      teamId: 'custom-team',
+      teamVersionId: 'custom-team-v1',
       teamName: '自定义团队',
       teamVersionNumber: 1,
     });
     expect(roomsRepo.create).toHaveBeenCalledWith(expect.objectContaining({
-      sceneId: 'custom-scene',
-      teamId: 'custom-scene',
-      teamVersionId: 'custom-scene-v1',
+      teamId: 'custom-team',
+      teamVersionId: 'custom-team-v1',
     }));
   });
 
   _skipIfNoPort('POST /api/rooms accepts teamVersionId before teamId and pins that exact version', async () => {
-    vi.mocked(scenesRepo.get).mockReturnValue({
-      id: 'custom-scene',
-      name: '自定义场景',
-      prompt: '自定义场景 prompt',
+    vi.mocked(teamsRepo.get).mockReturnValue({
+      id: 'custom-team',
+      name: '自定义团队',
       builtin: false,
-      maxA2ADepth: 5,
+      activeVersionId: 'custom-team-v1',
+      createdAt: 1,
+      updatedAt: 1,
     });
     vi.mocked(teamsRepo.getVersion).mockReturnValue({
-      id: 'custom-scene-v2',
-      teamId: 'custom-scene',
+      id: 'custom-team-v2',
+      teamId: 'custom-team',
       versionNumber: 2,
       name: '自定义团队',
-      sourceSceneId: 'custom-scene',
       memberIds: ['worker-2'],
       workflowPrompt: 'team workflow v2',
       routingPolicy: {},
@@ -603,27 +619,26 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
         providerOpts: { thinking: true },
         systemPrompt: '你是测试员二',
         enabled: true,
-        tags: ['自定义场景'],
+        tags: ['自定义团队'],
       };
     });
 
     const result = await requestJson('POST', '/api/rooms', {
       topic: 'Pinned team room',
-      teamId: 'custom-scene',
-      teamVersionId: 'custom-scene-v2',
+      teamId: 'custom-team',
+      teamVersionId: 'custom-team-v2',
     });
 
     expect(result.status).toBe(200);
     expect(result.data).toMatchObject({
-      sceneId: 'custom-scene',
-      teamId: 'custom-scene',
-      teamVersionId: 'custom-scene-v2',
+      teamId: 'custom-team',
+      teamVersionId: 'custom-team-v2',
       teamVersionNumber: 2,
     });
     expect(teamsRepo.getActiveVersion).not.toHaveBeenCalled();
   });
 
-  _skipIfNoPort('PATCH /api/rooms/:id returns scene effective depth when clearing room override', async () => {
+  _skipIfNoPort('PATCH /api/rooms/:id returns TeamVersion effective depth when clearing room override', async () => {
     vi.mocked(store.get).mockReturnValue({
       id: 'room-depth',
       topic: 'Test',
@@ -633,7 +648,8 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 2,
       a2aCallChain: [],
-      sceneId: 'software-development',
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
       maxA2ADepth: 3,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -647,17 +663,25 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 2,
       a2aCallChain: [],
-      sceneId: 'software-development',
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
       maxA2ADepth: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-    vi.mocked(scenesRepo.get).mockReturnValue({
-      id: 'software-development',
+    vi.mocked(teamsRepo.getVersion).mockReturnValue({
+      id: 'software-development-v1',
+      teamId: 'software-development',
+      versionNumber: 1,
       name: '软件开发',
-      prompt: '软件开发场景',
-      builtin: true,
+      memberIds: [],
+      memberSnapshots: [],
+      workflowPrompt: '软件开发团队',
+      routingPolicy: {},
+      teamMemory: [],
       maxA2ADepth: 10,
+      createdAt: 1,
+      createdFrom: 'builtin-seed',
     });
 
     const result = await requestJson('PATCH', '/api/rooms/room-depth', {
@@ -696,7 +720,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'software-development',
+      teamId: 'software-development',
       teamId: 'software-development',
       teamVersionId: 'software-development-v1',
       teamName: '软件开发团队',
@@ -710,7 +734,6 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       teamId: 'software-development',
       versionNumber: 1,
       name: '软件开发团队',
-      sourceSceneId: 'software-development',
       memberIds: ['reviewer'],
       memberSnapshots: [{
         id: 'reviewer',
@@ -725,7 +748,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       teamMemory: [],
       maxA2ADepth: 5,
       createdAt: 1,
-      createdFrom: 'scene-seed',
+      createdFrom: 'builtin-seed',
     });
     vi.mocked(evolutionRepo.latestTargetVersionNumber).mockReturnValue(2);
     const proposal = {
@@ -808,7 +831,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'software-development',
+      teamId: 'software-development',
       teamId: 'software-development',
       teamVersionId: 'software-development-v1',
       teamName: '软件开发团队',
@@ -857,7 +880,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'software-development',
+      teamId: 'software-development',
       teamId: 'software-development',
       teamVersionId: 'software-development-v1',
       teamName: '软件开发团队',
@@ -893,7 +916,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'software-development',
+      teamId: 'software-development',
       teamId: 'software-development',
       teamVersionId: 'software-development-v1',
       teamName: '软件开发团队',
@@ -974,7 +997,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'software-development',
+      teamId: 'software-development',
       teamId: 'software-development',
       teamVersionId: 'software-development-v1',
       teamName: '软件开发团队',
@@ -1028,7 +1051,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'software-development',
+      teamId: 'software-development',
       teamId: 'software-development',
       teamVersionId: 'software-development-v1',
       teamName: '软件开发团队',
@@ -1064,17 +1087,17 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
     expect(evolutionRepo.reject).not.toHaveBeenCalled();
   });
 
-  _skipIfNoPort('POST /api/rooms/:id/evolution-proposals rejects scene-only rooms', async () => {
+  _skipIfNoPort('POST /api/rooms/:id/evolution-proposals rejects rooms without pinned TeamVersion', async () => {
     vi.mocked(store.get).mockReturnValue({
-      id: 'room-scene',
-      topic: 'Scene-only room',
+      id: 'room-without-version',
+      topic: 'Team room without pinned version',
       state: 'RUNNING' as const,
       agents: [],
       messages: [],
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'roundtable-forum',
+      teamId: 'roundtable-forum',
       maxA2ADepth: null,
       createdAt: 1,
       updatedAt: 1,
@@ -1083,7 +1106,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       new Error('Team-backed room required for evolution proposals'),
     );
 
-    const result = await requestJson('POST', '/api/rooms/room-scene/evolution-proposals', {});
+    const result = await requestJson('POST', '/api/rooms/room-without-version/evolution-proposals', {});
 
     expect(result.status).toBe(400);
     expect(result.data).toHaveProperty('error', 'Team-backed room required for evolution proposals');
@@ -1197,7 +1220,6 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
         teamId: 'software-development',
         versionNumber: 2,
         name: '软件开发团队',
-        sourceSceneId: 'software-development',
         memberIds: ['reviewer'],
         memberSnapshots: [],
         workflowPrompt: '新工作流',
@@ -1300,7 +1322,6 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       id: 'software-development',
       name: '软件开发团队',
       builtin: true,
-      sourceSceneId: 'software-development',
       activeVersionId: 'software-development-v2',
       createdAt: 1,
       updatedAt: 2,
@@ -1411,7 +1432,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
 
   _skipIfNoPort('POST /api/teams/drafts returns retryable error when Team Architect generation fails', async () => {
     vi.mocked(generateTeamDraftFromGoal).mockImplementation(() => {
-      throw Object.assign(new Error('生成 Team 草案失败，请重试'), {
+      throw Object.assign(new Error('生成 Team 方案失败，请重试'), {
         code: 'TEAM_DRAFT_AGENT_FAILED',
       });
     });
@@ -1424,13 +1445,13 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
     expect(teamsRepo.createFromDraft).not.toHaveBeenCalled();
     expect(result.data).toMatchObject({
       code: 'TEAM_DRAFT_AGENT_FAILED',
-      error: '生成 Team 草案失败，请重试',
+      error: '生成 Team 方案失败，请重试',
     });
   });
 
   _skipIfNoPort('POST /api/teams/drafts returns actionable errors for vague goals', async () => {
     vi.mocked(generateTeamDraftFromGoal).mockImplementation(() => {
-      throw Object.assign(new Error('请补充目标、交付物和边界后再生成 Team 草案'), {
+      throw Object.assign(new Error('请补充目标、交付物和边界后再生成 Team 方案'), {
         code: 'TEAM_GOAL_TOO_VAGUE',
       });
     });
@@ -1440,7 +1461,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
     expect(result.status).toBe(400);
     expect(result.data).toMatchObject({
       code: 'TEAM_GOAL_TOO_VAGUE',
-      error: '请补充目标、交付物和边界后再生成 Team 草案',
+      error: '请补充目标、交付物和边界后再生成 Team 方案',
     });
     expect(teamsRepo.createFromDraft).not.toHaveBeenCalled();
   });
@@ -1451,7 +1472,6 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
         id: 'custom-team',
         name: '我的功能交付 Team',
         builtin: false,
-        sourceSceneId: 'software-development',
         activeVersionId: 'custom-team-v1',
         createdAt: 1,
         updatedAt: 1,
@@ -1461,7 +1481,6 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
         teamId: 'custom-team',
         versionNumber: 1,
         name: '我的功能交付 Team',
-        sourceSceneId: 'software-development',
         memberIds: ['draft-member-1'],
         memberSnapshots: [],
         workflowPrompt: '工作流',
@@ -1541,7 +1560,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'roundtable-forum',
+      teamId: 'roundtable-forum',
       maxA2ADepth: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -1555,12 +1574,12 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'roundtable-forum',
+      teamId: 'roundtable-forum',
       maxA2ADepth: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-    vi.mocked(scenesRepo.get).mockReturnValue({
+    vi.mocked(teamsRepo.get).mockReturnValue({
       id: 'roundtable-forum',
       name: '圆桌论坛',
       prompt: '圆桌论坛',
@@ -1607,7 +1626,7 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
       sessionIds: {},
       a2aDepth: 0,
       a2aCallChain: [],
-      sceneId: 'roundtable-forum',
+      teamId: 'roundtable-forum',
       maxA2ADepth: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),

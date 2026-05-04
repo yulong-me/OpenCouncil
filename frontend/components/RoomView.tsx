@@ -30,6 +30,11 @@ interface RoomViewProps {
   defaultCreateOpen?: boolean
 }
 
+type EvolutionProposalStreamEvent =
+  | { type: 'delta'; text: string; timestamp?: number }
+  | { type: 'proposal'; proposal: EvolutionProposal }
+  | { type: 'error'; error: string; code?: string }
+
 const AGENT_PANEL_DEFAULT_WIDTH = 240
 const AGENT_PANEL_MIN_WIDTH = 220
 const AGENT_PANEL_MAX_WIDTH = 360
@@ -57,12 +62,12 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(defaultCreateOpen)
   const [createInitialTopic, setCreateInitialTopic] = useState<string | undefined>(undefined)
-  const [createInitialSceneId, setCreateInitialSceneId] = useState<string | undefined>(undefined)
+  const [createInitialTeamId, setCreateInitialTeamId] = useState<string | undefined>(undefined)
   const [createInitialWorkerIds, setCreateInitialWorkerIds] = useState<string[] | undefined>(undefined)
   const [activeRoomId, setActiveRoomId] = useState<string | undefined>(roomId)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsInitialTab, setSettingsInitialTab] = useState<'agent' | 'provider'>('agent')
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'team' | 'provider'>('team')
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -79,6 +84,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [evolutionError, setEvolutionError] = useState<string | null>(null)
   const [evolutionFeedbackOpen, setEvolutionFeedbackOpen] = useState(false)
   const [evolutionFeedbackDraft, setEvolutionFeedbackDraft] = useState('')
+  const [evolutionOutput, setEvolutionOutput] = useState('')
 
   const { theme, resolvedTheme, setTheme } = useTheme()
   const currentTheme = resolvedTheme ?? theme
@@ -234,6 +240,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     setEvolutionProposals([])
     setSelectedEvolutionId(null)
     setEvolutionError(null)
+    setEvolutionOutput('')
   }, [activeRoomId])
 
   const refreshEvolutionProposals = useCallback(async () => {
@@ -244,7 +251,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     const response = await fetch(`${API}/api/rooms/${activeRoomId}/evolution-proposals`)
     const data = await response.json().catch(() => []) as EvolutionProposal[] | { error?: string }
     if (!response.ok) {
-      throw new Error(!Array.isArray(data) && data.error ? data.error : '读取 EVO PR 失败')
+      throw new Error(!Array.isArray(data) && data.error ? data.error : '读取改进建议失败')
     }
     const proposals = Array.isArray(data) ? data : []
     setEvolutionProposals(proposals)
@@ -286,8 +293,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   }, [currentTheme, setTheme])
 
   const openSystemSettings = useCallback(() => {
-    debug('ui:settings:open', { tab: 'agent' })
-    setSettingsInitialTab('agent')
+    debug('ui:settings:open', { tab: 'team' })
+    setSettingsInitialTab('team')
     setSettingsOpen(true)
   }, [])
 
@@ -363,9 +370,9 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     setMobileMenuOpen(open => !open)
   }, [])
 
-  const openCreateRoom = useCallback((preset?: Pick<QuickStartTemplate, 'topic' | 'sceneId' | 'agentIds'>) => {
+  const openCreateRoom = useCallback((preset?: Pick<QuickStartTemplate, 'topic' | 'teamId' | 'agentIds'>) => {
     setCreateInitialTopic(preset?.topic)
-    setCreateInitialSceneId(preset?.sceneId)
+    setCreateInitialTeamId(preset?.teamId)
     setCreateInitialWorkerIds(preset?.agentIds)
     setIsCreateModalOpen(true)
   }, [])
@@ -373,7 +380,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const closeCreateRoom = useCallback(() => {
     setIsCreateModalOpen(false)
     setCreateInitialTopic(undefined)
-    setCreateInitialSceneId(undefined)
+    setCreateInitialTeamId(undefined)
     setCreateInitialWorkerIds(undefined)
   }, [])
 
@@ -459,32 +466,77 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     }
   }, [activeRoomId, currentRoomTopic, setRooms])
 
+  function handleEvolutionStreamEvent(event: EvolutionProposalStreamEvent): EvolutionProposal | null {
+    if (event.type === 'delta') {
+      setEvolutionOutput(previous => `${previous}${event.text}`)
+      return null
+    }
+    if (event.type === 'proposal') {
+      return event.proposal
+    }
+    throw new Error(event.error || '生成改进建议失败')
+  }
+
+  async function readEvolutionProposalStream(response: Response): Promise<EvolutionProposal> {
+    if (!response.body) {
+      const data = await response.json().catch(() => ({})) as EvolutionProposal | { error?: string }
+      if (!response.ok) throw new Error('error' in data && data.error ? data.error : '生成改进建议失败')
+      return data as EvolutionProposal
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let finalProposal: EvolutionProposal | null = null
+
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        const event = JSON.parse(trimmed) as EvolutionProposalStreamEvent
+        finalProposal = handleEvolutionStreamEvent(event) ?? finalProposal
+      }
+
+      if (done) break
+    }
+
+    if (buffer.trim()) {
+      const event = JSON.parse(buffer.trim()) as EvolutionProposalStreamEvent
+      finalProposal = handleEvolutionStreamEvent(event) ?? finalProposal
+    }
+
+    if (!finalProposal) throw new Error('生成改进建议失败，请重试')
+    return finalProposal
+  }
+
   const handleCreateEvolutionProposal = useCallback(async (feedback: string) => {
     if (!activeRoomId || creatingEvolutionProposal) return
     const trimmedFeedback = feedback.trim()
     if (!trimmedFeedback) {
-      setEvolutionError('请先写下你希望 Team 怎么改进')
+      setEvolutionError('请先写下这支 Team 下次怎么做会更好')
       return
     }
     setCreatingEvolutionProposal(true)
     setEvolutionError(null)
+    setEvolutionOutput('')
     try {
-      const response = await fetch(`${API}/api/rooms/${activeRoomId}/evolution-proposals`, {
+      const response = await fetch(`${API}/api/rooms/${activeRoomId}/evolution-proposals/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ feedback: trimmedFeedback }),
       })
-      const data = await response.json().catch(() => ({})) as EvolutionProposal | { error?: string }
-      if (!response.ok) {
-        throw new Error('error' in data && data.error ? data.error : '创建 EVO PR 失败')
-      }
-      const proposal = data as EvolutionProposal
+      const proposal = await readEvolutionProposalStream(response)
       setEvolutionProposals(previous => [proposal, ...previous.filter(item => item.id !== proposal.id)])
       setSelectedEvolutionId(proposal.id)
       setEvolutionFeedbackOpen(false)
       setEvolutionFeedbackDraft('')
     } catch (error) {
-      const message = error instanceof Error ? error.message : '创建 EVO PR 失败'
+      const message = error instanceof Error ? error.message : '生成改进建议失败'
       setEvolutionError(message)
       warn('ui:evolution:create_failed', { roomId: activeRoomId, error })
     } finally {
@@ -527,13 +579,13 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       })
       const data = await response.json().catch(() => ({})) as EvolutionProposal | { error?: string }
       if (!response.ok) {
-        throw new Error('error' in data && data.error ? data.error : '放弃 EVO PR 失败')
+        throw new Error('error' in data && data.error ? data.error : '放弃改进建议失败')
       }
       const proposal = data as EvolutionProposal
       setEvolutionProposals(previous => previous.map(item => item.id === proposal.id ? proposal : item))
       setSelectedEvolutionId(null)
     } catch (error) {
-      const message = error instanceof Error ? error.message : '放弃 EVO PR 失败'
+      const message = error instanceof Error ? error.message : '放弃改进建议失败'
       setEvolutionError(message)
       warn('ui:evolution:reject_failed', { proposalId: activeEvolutionProposal.id, error })
     } finally {
@@ -551,8 +603,9 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     const replacedProposalId = activeEvolutionProposal.id
     setRegeneratingEvolutionProposal(true)
     setEvolutionError(null)
+    setEvolutionOutput('')
     try {
-      const response = await fetch(`${API}/api/rooms/${activeRoomId}/evolution-proposals`, {
+      const response = await fetch(`${API}/api/rooms/${activeRoomId}/evolution-proposals/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -560,11 +613,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           replacesProposalId: replacedProposalId,
         }),
       })
-      const data = await response.json().catch(() => ({})) as EvolutionProposal | { error?: string }
-      if (!response.ok) {
-        throw new Error('error' in data && data.error ? data.error : '重新生成 EVO PR 失败')
-      }
-      const proposal = data as EvolutionProposal
+      const proposal = await readEvolutionProposalStream(response)
       const rejectedAt = Date.now()
       setEvolutionProposals(previous => [
         proposal,
@@ -576,7 +625,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       ])
       setSelectedEvolutionId(proposal.id)
     } catch (error) {
-      const message = error instanceof Error ? error.message : '重新生成 EVO PR 失败'
+      const message = error instanceof Error ? error.message : '重新生成改进建议失败'
       setEvolutionError(message)
       try {
         await refreshEvolutionProposals()
@@ -601,14 +650,14 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       })
       const data = await response.json().catch(() => ({})) as { proposal?: EvolutionProposal; error?: string }
       if (!response.ok || !data.proposal) {
-        throw new Error(data.error ?? '合并 EVO PR 失败')
+        throw new Error(data.error ?? '确认升级失败')
       }
       setEvolutionProposals(previous => previous.map(item => item.id === data.proposal!.id ? data.proposal! : item))
       if (data.proposal.status === 'applied' || data.proposal.status === 'rejected') {
         setSelectedEvolutionId(null)
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : '合并 EVO PR 失败'
+      const message = error instanceof Error ? error.message : '确认升级失败'
       setEvolutionError(message)
       warn('ui:evolution:merge_failed', { proposalId: activeEvolutionProposal.id, error })
     } finally {
@@ -630,7 +679,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         isOpen={isCreateModalOpen}
         onClose={closeCreateRoom}
         initialTopic={createInitialTopic}
-        initialSceneId={createInitialSceneId}
+        initialTeamId={createInitialTeamId}
         initialWorkerIds={createInitialWorkerIds}
       />
       <div className="app-islands-shell h-[100dvh] flex overflow-hidden text-ink font-sans">
@@ -693,6 +742,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
             creatingEvolutionProposal={creatingEvolutionProposal}
             onCreateEvolutionProposal={async () => {
               setEvolutionError(null)
+              setEvolutionOutput('')
               setEvolutionFeedbackDraft('')
               setEvolutionFeedbackOpen(true)
             }}
@@ -793,21 +843,21 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           <div className="w-full max-w-xl rounded-lg border border-line bg-nav-bg shadow-xl">
             <div className="flex items-center justify-between border-b border-line px-5 py-4">
               <div>
-                <p className="text-[11px] font-semibold uppercase text-accent">Team Architect</p>
-                <h2 className="mt-1 text-base font-semibold text-ink">生成 Team 改进提案</h2>
+                <p className="text-[11px] font-semibold uppercase text-accent">改进建议</p>
+                <h2 className="mt-1 text-base font-semibold text-ink">改进这支 Team</h2>
               </div>
               <button
                 type="button"
                 onClick={() => setEvolutionFeedbackOpen(false)}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
-                aria-label="关闭 Team 改进提案"
+                aria-label="关闭改进建议"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="space-y-3 p-5">
               <label className="block text-[13px] font-semibold text-ink" htmlFor="team-evolution-feedback">
-                你的改进意见
+                这支 Team 下次怎么做会更好？
               </label>
               <textarea
                 id="team-evolution-feedback"
@@ -815,12 +865,27 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                 onChange={event => setEvolutionFeedbackDraft(event.target.value)}
                 rows={6}
                 className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-5 text-ink outline-none transition-colors placeholder:text-ink-muted focus:border-accent"
-                placeholder="例如：新增一个负责验证的成员；让 Reviewer 必须贴出测试命令和结果；把最终交付前的路由改成先审查再回复。"
+                placeholder="例如：下次先问清楚限制条件，再开始给方案。"
               />
               {evolutionError && (
                 <p className="rounded-lg bg-[color:var(--danger)]/8 px-3 py-2 text-[12px] text-[color:var(--danger)]">
                   {evolutionError}
                 </p>
+              )}
+              {(creatingEvolutionProposal || evolutionOutput.trim().length > 0) && (
+                <div className="rounded-lg border border-line bg-surface px-3 py-3">
+                  <p className="flex items-center gap-1.5 text-[11px] font-bold text-ink-soft">
+                    {creatingEvolutionProposal && <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />}
+                    Team Architect
+                  </p>
+                  <div
+                    className="custom-scrollbar mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-surface-muted px-3 py-2 text-[12px] leading-relaxed text-ink-soft"
+                    aria-live="polite"
+                  >
+                    {evolutionOutput}
+                    {creatingEvolutionProposal && <span className="ml-0.5 animate-pulse text-accent">|</span>}
+                  </div>
+                </div>
               )}
               <div className="flex justify-end gap-2 pt-1">
                 <button
@@ -837,7 +902,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                   className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {creatingEvolutionProposal && <Loader2 className="h-4 w-4 animate-spin" />}
-                  生成提案
+                  生成改进建议
                 </button>
               </div>
             </div>

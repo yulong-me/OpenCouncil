@@ -1,18 +1,22 @@
 import { db } from '../db.js';
 import { agentsRepo } from './agents.js';
+import { skillsRepo } from './skills.js';
 import { v4 as uuid } from 'uuid';
+import { BUILTIN_TEAMS } from '../../prompts/builtinTeams.js';
 import type {
   TeamConfig,
   TeamDraft,
   TeamDraftMember,
   TeamDraftValidationCase,
   TeamListItem,
+  TeamMemberSkillRef,
   TeamVersionConfig,
   TeamVersionMemberSnapshot,
   ValidationCase,
+  TeamSettingsPatch,
 } from '../../types.js';
 
-export type TeamRepoErrorCode = 'TEAM_GOAL_TOO_VAGUE' | 'TEAM_DRAFT_INVALID';
+export type TeamRepoErrorCode = 'TEAM_GOAL_TOO_VAGUE' | 'TEAM_DRAFT_INVALID' | 'TEAM_NOT_FOUND' | 'TEAM_SETTINGS_INVALID';
 
 export class TeamRepoError extends Error {
   code: TeamRepoErrorCode;
@@ -39,7 +43,6 @@ function rowToTeamConfig(r: Record<string, unknown>): TeamConfig {
     name: r.name as string,
     description: (r.description as string) ?? undefined,
     builtin: Boolean(r.builtin),
-    sourceSceneId: r.source_scene_id as string,
     activeVersionId: r.active_version_id as string,
     createdAt: r.created_at as number,
     updatedAt: r.updated_at as number,
@@ -53,7 +56,6 @@ function rowToTeamVersionConfig(r: Record<string, unknown>): TeamVersionConfig {
     versionNumber: r.version_number as number,
     name: r.name as string,
     description: (r.description as string) ?? undefined,
-    sourceSceneId: r.source_scene_id as string,
     memberIds: parseJsonField<string[]>(r.member_ids_json, []),
     memberSnapshots: parseJsonField<TeamVersionMemberSnapshot[]>(r.member_snapshots_json, []),
     workflowPrompt: r.workflow_prompt as string,
@@ -106,6 +108,149 @@ function requireNonEmptyString(value: unknown, field: string): string {
     throw new TeamRepoError('TEAM_DRAFT_INVALID', `Team draft requires ${field}`);
   }
   return value;
+}
+
+function optionalSanitizedString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  return sanitizeGeneratedText(value);
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.min(10, Math.round(value)));
+}
+
+function normalizeTeamMemory(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return fallback;
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map(item => sanitizeGeneratedText(item))
+    .filter(Boolean);
+}
+
+function normalizeRoutingPolicy(value: unknown, fallback: Record<string, unknown>): Record<string, unknown> {
+  if (!isRecord(value)) return fallback;
+  return sanitizeStructuredValue(value);
+}
+
+function normalizeMemberSkillIds(value: unknown, fallback: string[] = []): string[] {
+  if (!Array.isArray(value)) return fallback;
+  const skillIds = Array.from(new Set(value
+    .filter((item): item is string => typeof item === 'string')
+    .map(item => item.trim())
+    .filter(Boolean)));
+  for (const skillId of skillIds) {
+    const skill = skillsRepo.getById(skillId);
+    if (!skill || skill.sourceType !== 'managed') {
+      throw new TeamRepoError('TEAM_SETTINGS_INVALID', `Skill not found: ${skillId}`);
+    }
+  }
+  return skillIds;
+}
+
+function normalizeMemberSkillRefs(
+  value: unknown,
+  fallback: TeamMemberSkillRef[] = [],
+  skillIds: string[] = [],
+): TeamMemberSkillRef[] {
+  if (!Array.isArray(value)) {
+    if (fallback.length > 0) return fallback;
+    return skillIds.map(skillId => {
+      const skill = skillsRepo.getById(skillId);
+      return {
+        source: 'managed',
+        id: skillId,
+        name: skill?.name ?? skillId,
+      };
+    });
+  }
+
+  const refs: TeamMemberSkillRef[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    if (!isRecord(raw)) {
+      throw new TeamRepoError('TEAM_SETTINGS_INVALID', 'Skill reference is invalid');
+    }
+    if (raw.source === 'managed') {
+      const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+      const rawName = typeof raw.name === 'string' ? raw.name.trim() : '';
+      const skill = id ? skillsRepo.getById(id) : skillsRepo.getManagedByName(rawName);
+      if (!skill || skill.sourceType !== 'managed') {
+        throw new TeamRepoError('TEAM_SETTINGS_INVALID', `Skill not found: ${id || rawName}`);
+      }
+      const key = `managed:${skill.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      refs.push({ source: 'managed', id: skill.id, name: skill.name });
+      continue;
+    }
+
+    if (raw.source === 'global' || raw.source === 'workspace') {
+      const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+      const sourcePath = typeof raw.sourcePath === 'string' ? raw.sourcePath.trim() : '';
+      if (!name || !sourcePath) {
+        throw new TeamRepoError('TEAM_SETTINGS_INVALID', 'Scanned Skill reference requires name and sourcePath');
+      }
+      const key = `${raw.source}:${sourcePath}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      refs.push({ source: raw.source, name, sourcePath });
+      continue;
+    }
+
+    throw new TeamRepoError('TEAM_SETTINGS_INVALID', 'Skill reference source is invalid');
+  }
+  return refs;
+}
+
+function normalizeProviderName(value: unknown): TeamVersionMemberSnapshot['provider'] {
+  if (value === 'claude-code' || value === 'opencode' || value === 'codex') return value;
+  throw new TeamRepoError('TEAM_SETTINGS_INVALID', 'Provider is invalid');
+}
+
+function normalizeMemberSnapshots(value: unknown, fallback: TeamVersionMemberSnapshot[]): TeamVersionMemberSnapshot[] {
+  if (!Array.isArray(value)) return fallback;
+  const members = value.map((raw, index) => {
+    if (!isRecord(raw)) {
+      throw new TeamRepoError('TEAM_SETTINGS_INVALID', `Team member ${index + 1} is incomplete`);
+    }
+    const normalizedProvider = normalizeProviderName(raw.provider);
+    const id = requireNonEmptyString(raw.id, `memberSnapshots[${index}].id`);
+    const name = requireNonEmptyString(raw.name, `memberSnapshots[${index}].name`);
+    const roleLabel = requireNonEmptyString(raw.roleLabel, `memberSnapshots[${index}].roleLabel`);
+    const systemPrompt = requireNonEmptyString(raw.systemPrompt, `memberSnapshots[${index}].systemPrompt`);
+    const fallbackMember = fallback.find(member => member.id === id);
+    const hasSkillIds = Array.isArray(raw.skillIds);
+    const hasSkillRefs = Array.isArray(raw.skillRefs);
+    const skillIds = normalizeMemberSkillIds(raw.skillIds, hasSkillRefs ? [] : fallbackMember?.skillIds ?? []);
+    const skillRefs = normalizeMemberSkillRefs(
+      raw.skillRefs,
+      hasSkillRefs || hasSkillIds ? [] : fallbackMember?.skillRefs ?? [],
+      skillIds,
+    );
+    const managedSkillIds = Array.from(new Set([
+      ...skillIds,
+      ...skillRefs
+        .filter(ref => ref.source === 'managed' && typeof ref.id === 'string' && ref.id.trim())
+        .map(ref => ref.id as string),
+    ]));
+    return {
+      id,
+      name,
+      roleLabel,
+      provider: normalizedProvider,
+      providerOpts: isRecord(raw.providerOpts) ? sanitizeStructuredValue(raw.providerOpts) : {},
+      systemPrompt,
+      responsibility: optionalSanitizedString(raw.responsibility),
+      whenToUse: optionalSanitizedString(raw.whenToUse),
+      skillIds: managedSkillIds,
+      skillRefs,
+    };
+  });
+  if (members.length < 1) {
+    throw new TeamRepoError('TEAM_SETTINGS_INVALID', 'Team requires at least one member');
+  }
+  return members;
 }
 
 export function assertDraft(draft: unknown): asserts draft is TeamDraft {
@@ -370,7 +515,7 @@ export const teamsRepo = {
     const meaningfulTokens = goal.match(/[\p{Script=Han}A-Za-z0-9]/gu) ?? [];
     const hasActionableVerb = /帮我|做|搭|建|创建|设计|开发|实现|生成|输出|完成|研究|调研|分析|写|整理|优化|制作|构建|create|build|make|design|develop|implement|generate|write|research|analyze/i.test(goal);
     if (meaningfulTokens.length < 6 || !hasActionableVerb) {
-      throw new TeamRepoError('TEAM_GOAL_TOO_VAGUE', '请补充目标、交付物和边界后再生成 Team 草案');
+      throw new TeamRepoError('TEAM_GOAL_TOO_VAGUE', '请补充目标、交付物和边界后再生成 Team 方案');
     }
     return buildDraft(goal);
   },
@@ -380,11 +525,6 @@ export const teamsRepo = {
     const now = Date.now();
     const teamId = `team-${uuid()}`;
     const versionId = `${teamId}-v1`;
-    const sourceSceneId = db.prepare('SELECT id FROM scenes WHERE id = ?').get('software-development')
-      ? 'software-development'
-      : db.prepare('SELECT id FROM scenes WHERE id = ?').get('roundtable-forum')
-        ? 'roundtable-forum'
-        : 'custom-team';
     const memberSnapshots: TeamVersionMemberSnapshot[] = draft.members.map((member, index) => ({
       id: `draft-member-${index + 1}-${uuid().slice(0, 8)}`,
       name: member.displayName.trim(),
@@ -401,7 +541,6 @@ export const teamsRepo = {
       versionNumber: 1,
       name: draft.name.trim(),
       description: sanitizeGeneratedText(draft.mission),
-      sourceSceneId,
       memberIds: memberSnapshots.map(member => member.id),
       memberSnapshots,
       workflowPrompt: sanitizeGeneratedText([draft.mission, draft.workflow, draft.teamProtocol].join('\n\n')),
@@ -414,25 +553,24 @@ export const teamsRepo = {
 
     const insert = db.transaction(() => {
       db.prepare(`
-        INSERT INTO teams (id, name, description, builtin, source_scene_id, active_version_id, created_at, updated_at)
-        VALUES (@id, @name, @description, 0, @sourceSceneId, @activeVersionId, @createdAt, @updatedAt)
+        INSERT INTO teams (id, name, description, builtin, active_version_id, created_at, updated_at)
+        VALUES (@id, @name, @description, 0, @activeVersionId, @createdAt, @updatedAt)
       `).run({
         id: teamId,
         name: draft.name.trim(),
         description: sanitizeGeneratedText(draft.mission),
-        sourceSceneId,
         activeVersionId: versionId,
         createdAt: now,
         updatedAt: now,
       });
       db.prepare(`
         INSERT INTO team_versions (
-          id, team_id, version_number, name, description, source_scene_id, member_ids_json,
+          id, team_id, version_number, name, description, member_ids_json,
           member_snapshots_json, workflow_prompt, routing_policy_json, team_memory_json,
           max_a2a_depth, created_at, created_from
         )
         VALUES (
-          @id, @teamId, @versionNumber, @name, @description, @sourceSceneId, @memberIdsJson,
+          @id, @teamId, @versionNumber, @name, @description, @memberIdsJson,
           @memberSnapshotsJson, @workflowPrompt, @routingPolicyJson, @teamMemoryJson,
           @maxA2ADepth, @createdAt, @createdFrom
         )
@@ -442,7 +580,6 @@ export const teamsRepo = {
         versionNumber: version.versionNumber,
         name: version.name,
         description: version.description ?? null,
-        sourceSceneId: version.sourceSceneId,
         memberIdsJson: JSON.stringify(version.memberIds),
         memberSnapshotsJson: JSON.stringify(version.memberSnapshots),
         workflowPrompt: version.workflowPrompt,
@@ -482,7 +619,6 @@ export const teamsRepo = {
           teamId: team.id,
           versionNumber: 0,
           name: '',
-          sourceSceneId: team.sourceSceneId,
           memberIds: [],
           memberSnapshots: [],
           workflowPrompt: '',
@@ -490,7 +626,7 @@ export const teamsRepo = {
           teamMemory: [],
           maxA2ADepth: 5,
           createdAt: 0,
-          createdFrom: 'scene-seed',
+          createdFrom: 'builtin-seed',
         },
         members,
       };
@@ -515,37 +651,106 @@ export const teamsRepo = {
     return this.getVersion(team.activeVersionId);
   },
 
-  /** Seed Teams from existing Scenes. Idempotent — never overwrites existing data. */
-  ensureFromScenes(): { teamsInserted: number; versionsInserted: number } {
-    const scenes = db.prepare('SELECT * FROM scenes').all() as Record<string, unknown>[];
+  updateSettings(teamId: string, patch: TeamSettingsPatch): TeamListItem {
+    if (!isRecord(patch)) {
+      throw new TeamRepoError('TEAM_SETTINGS_INVALID', 'Team settings patch is required');
+    }
+    const team = this.get(teamId);
+    if (!team) {
+      throw new TeamRepoError('TEAM_NOT_FOUND', 'Team not found');
+    }
+    const version = this.getVersion(team.activeVersionId);
+    if (!version) {
+      throw new TeamRepoError('TEAM_NOT_FOUND', 'Team active version not found');
+    }
+
+    const now = Date.now();
+    const nextName = typeof patch.name === 'string' && patch.name.trim()
+      ? sanitizeGeneratedText(patch.name)
+      : team.name;
+    const nextDescription = typeof patch.description === 'string'
+      ? sanitizeGeneratedText(patch.description)
+      : team.description;
+    const versionPatch = isRecord(patch.version) ? patch.version : {};
+    const nextVersionName = typeof versionPatch.name === 'string' && versionPatch.name.trim()
+      ? sanitizeGeneratedText(versionPatch.name)
+      : nextName;
+    const nextVersionDescription = typeof versionPatch.description === 'string'
+      ? sanitizeGeneratedText(versionPatch.description)
+      : nextDescription;
+    const nextMemberSnapshots = normalizeMemberSnapshots(versionPatch.memberSnapshots, version.memberSnapshots);
+    const nextWorkflowPrompt = typeof versionPatch.workflowPrompt === 'string' && versionPatch.workflowPrompt.trim()
+      ? sanitizeGeneratedText(versionPatch.workflowPrompt)
+      : version.workflowPrompt;
+    const nextRoutingPolicy = normalizeRoutingPolicy(versionPatch.routingPolicy, version.routingPolicy);
+    const nextTeamMemory = normalizeTeamMemory(versionPatch.teamMemory, version.teamMemory);
+    const nextMaxA2ADepth = normalizePositiveInteger(versionPatch.maxA2ADepth, version.maxA2ADepth);
+
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE teams
+        SET name = @name, description = @description, updated_at = @updatedAt
+        WHERE id = @id
+      `).run({
+        id: team.id,
+        name: nextName,
+        description: nextDescription ?? null,
+        updatedAt: now,
+      });
+      db.prepare(`
+        UPDATE team_versions
+        SET name = @name,
+            description = @description,
+            member_ids_json = @memberIdsJson,
+            member_snapshots_json = @memberSnapshotsJson,
+            workflow_prompt = @workflowPrompt,
+            routing_policy_json = @routingPolicyJson,
+            team_memory_json = @teamMemoryJson,
+            max_a2a_depth = @maxA2ADepth
+        WHERE id = @id
+      `).run({
+        id: version.id,
+        name: nextVersionName,
+        description: nextVersionDescription ?? null,
+        memberIdsJson: JSON.stringify(nextMemberSnapshots.map(member => member.id)),
+        memberSnapshotsJson: JSON.stringify(nextMemberSnapshots),
+        workflowPrompt: nextWorkflowPrompt,
+        routingPolicyJson: JSON.stringify(nextRoutingPolicy),
+        teamMemoryJson: JSON.stringify(nextTeamMemory),
+        maxA2ADepth: nextMaxA2ADepth,
+      });
+    })();
+
+    const updated = this.list().find(item => item.id === teamId);
+    if (!updated) {
+      throw new TeamRepoError('TEAM_NOT_FOUND', 'Team not found after update');
+    }
+    return updated;
+  },
+
+  /** Seed builtin Teams. Idempotent — never overwrites existing data. */
+  ensureBuiltinTeams(): { teamsInserted: number; versionsInserted: number } {
     let teamsInserted = 0;
     let versionsInserted = 0;
 
     const insertTeam = db.prepare(`
-      INSERT INTO teams (id, name, description, builtin, source_scene_id, active_version_id, created_at, updated_at)
-      SELECT @id, @name, @description, @builtin, @sourceSceneId, @activeVersionId, @createdAt, @updatedAt
+      INSERT INTO teams (id, name, description, builtin, active_version_id, created_at, updated_at)
+      SELECT @id, @name, @description, @builtin, @activeVersionId, @createdAt, @updatedAt
       WHERE NOT EXISTS (SELECT 1 FROM teams WHERE id = @id)
     `);
 
     const insertVersion = db.prepare(`
-      INSERT INTO team_versions (id, team_id, version_number, name, description, source_scene_id, member_ids_json, member_snapshots_json, workflow_prompt, routing_policy_json, team_memory_json, max_a2a_depth, created_at, created_from)
-      SELECT @id, @teamId, @versionNumber, @name, @description, @sourceSceneId, @memberIdsJson, @memberSnapshotsJson, @workflowPrompt, @routingPolicyJson, @teamMemoryJson, @maxA2ADepth, @createdAt, @createdFrom
+      INSERT INTO team_versions (id, team_id, version_number, name, description, member_ids_json, member_snapshots_json, workflow_prompt, routing_policy_json, team_memory_json, max_a2a_depth, created_at, created_from)
+      SELECT @id, @teamId, @versionNumber, @name, @description, @memberIdsJson, @memberSnapshotsJson, @workflowPrompt, @routingPolicyJson, @teamMemoryJson, @maxA2ADepth, @createdAt, @createdFrom
       WHERE NOT EXISTS (SELECT 1 FROM team_versions WHERE id = @id)
     `);
 
     const allAgents = agentsRepo.list();
     const now = Date.now();
 
-    for (const scene of scenes) {
-      const sceneId = scene.id as string;
-      const sceneName = scene.name as string;
-      const versionId = `${sceneId}-v1`;
-
-      // Generate team name: append 团队 if not already ending with it
-      const teamName = sceneName.endsWith('团队') ? sceneName : `${sceneName}团队`;
-
-      // Find agents whose tags include this scene's name
-      const members = allAgents.filter(agent => agent.tags.includes(sceneName));
+    for (const team of BUILTIN_TEAMS) {
+      const versionId = `${team.id}-v1`;
+      const members = allAgents.filter(agent => agent.tags.includes(team.memberTag));
       const memberIds = members.map(agent => agent.id);
       const memberSnapshots: TeamVersionMemberSnapshot[] = members.map(agent => ({
         id: agent.id,
@@ -557,11 +762,10 @@ export const teamsRepo = {
       }));
 
       const info = insertTeam.run({
-        id: sceneId,
-        name: teamName,
-        description: (scene.description as string) ?? null,
-        builtin: scene.builtin ? 1 : 0,
-        sourceSceneId: sceneId,
+        id: team.id,
+        name: team.name,
+        description: team.description,
+        builtin: team.builtin,
         activeVersionId: versionId,
         createdAt: now,
         updatedAt: now,
@@ -570,19 +774,18 @@ export const teamsRepo = {
 
       const vinfo = insertVersion.run({
         id: versionId,
-        teamId: sceneId,
+        teamId: team.id,
         versionNumber: 1,
-        name: teamName,
-        description: (scene.description as string) ?? null,
-        sourceSceneId: sceneId,
+        name: team.name,
+        description: team.description,
         memberIdsJson: JSON.stringify(memberIds),
         memberSnapshotsJson: JSON.stringify(memberSnapshots),
-        workflowPrompt: scene.prompt as string,
-        routingPolicyJson: JSON.stringify({ source: 'scene-default' }),
+        workflowPrompt: team.workflowPrompt,
+        routingPolicyJson: JSON.stringify({ source: 'builtin-team-default' }),
         teamMemoryJson: '[]',
-        maxA2ADepth: (scene.max_a2a_depth as number) ?? 5,
+        maxA2ADepth: team.maxA2ADepth,
         createdAt: now,
-        createdFrom: 'scene-seed',
+        createdFrom: 'builtin-seed',
       });
       if (vinfo.changes > 0) versionsInserted++;
     }

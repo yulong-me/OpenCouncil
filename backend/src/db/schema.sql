@@ -1,23 +1,12 @@
 -- F004: Manager Router - Simplified state machine
 -- State: RUNNING (active discussion) | DONE (report generated)
 
--- F016: Scene — 讨论室场景配置
-CREATE TABLE IF NOT EXISTS scenes (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  description TEXT,
-  prompt      TEXT NOT NULL,
-  builtin     INTEGER NOT NULL DEFAULT 0,
-  max_a2a_depth INTEGER DEFAULT 5 NOT NULL
-);
-
--- F052: Team — teams and team_versions for versioned team templates
+-- Team — teams and team_versions for versioned team templates
 CREATE TABLE IF NOT EXISTS teams (
   id                TEXT PRIMARY KEY,
   name              TEXT NOT NULL,
   description       TEXT,
   builtin           INTEGER NOT NULL DEFAULT 0,
-  source_scene_id   TEXT NOT NULL,
   active_version_id TEXT NOT NULL,
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL
@@ -29,7 +18,6 @@ CREATE TABLE IF NOT EXISTS team_versions (
   version_number     INTEGER NOT NULL,
   name               TEXT NOT NULL,
   description        TEXT,
-  source_scene_id    TEXT NOT NULL,
   member_ids_json    TEXT NOT NULL DEFAULT '[]',
   member_snapshots_json TEXT NOT NULL DEFAULT '[]',
   workflow_prompt    TEXT NOT NULL,
@@ -121,7 +109,6 @@ CREATE TABLE IF NOT EXISTS team_validation_preflight_results (
   FOREIGN KEY (validation_case_id) REFERENCES team_validation_cases(id)
 );
 
--- F016: Room Scene — scene_id references scenes.id
 CREATE TABLE IF NOT EXISTS rooms (
   id          TEXT PRIMARY KEY,
   topic       TEXT NOT NULL,
@@ -130,7 +117,6 @@ CREATE TABLE IF NOT EXISTS rooms (
   report      TEXT,
   agent_ids   TEXT NOT NULL DEFAULT '[]',
   workspace   TEXT,
-  scene_id    TEXT NOT NULL DEFAULT 'roundtable-forum',
   max_a2a_depth INTEGER,
   team_id     TEXT,
   team_version_id TEXT,
@@ -250,7 +236,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 -- Indexes for common query patterns
--- F016: Seed-once meta table — tracks whether builtin data has been seeded.
+-- Seed-once meta table — tracks whether builtin data has been seeded.
 -- Once seeded, system never auto-overwrites user data on restart.
 CREATE TABLE IF NOT EXISTS app_meta (
   key   TEXT PRIMARY KEY,

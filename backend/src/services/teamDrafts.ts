@@ -1,7 +1,9 @@
 import { spawn } from 'child_process';
-import { getProvider as getProviderConfig } from '../config/providerConfig.js';
+import { getProvider as getProviderConfig, type ProviderConfig } from '../config/providerConfig.js';
 import { buildProviderReadiness } from './providerReadiness.js';
-import { sanitizeDraftFromUntrustedSource, teamsRepo } from '../db/repositories/teams.js';
+import { systemSettingsRepo } from '../db/repositories/systemSettings.js';
+import { sanitizeDraftFromUntrustedSource } from '../db/repositories/teams.js';
+import type { ProviderName } from '../db/repositories/agents.js';
 import type { TeamDraft } from '../types.js';
 
 export interface TeamDraftAgentInput {
@@ -13,8 +15,12 @@ export interface TeamDraftAgentInput {
   runtime?: TeamDraftAgentRuntimeOptions;
 }
 
+export interface TeamDraftAgentGenerateOptions {
+  onDelta?: (text: string) => void;
+}
+
 export interface TeamDraftAgentClient {
-  generateDraft(input: TeamDraftAgentInput): Promise<unknown>;
+  generateDraft(input: TeamDraftAgentInput, options?: TeamDraftAgentGenerateOptions): Promise<unknown>;
 }
 
 export type TeamArchitectPermissionMode = 'acceptEdits' | 'bypassPermissions' | 'default' | 'dontAsk' | 'plan' | 'auto';
@@ -28,6 +34,7 @@ export interface TeamDraftAgentRuntimeOptions {
 
 interface GenerateTeamDraftOptions {
   agentClient?: TeamDraftAgentClient;
+  onDelta?: (text: string) => void;
 }
 
 class TeamDraftAgentOutputError extends Error {
@@ -40,7 +47,7 @@ class TeamDraftGenerationError extends Error {
   code = 'TEAM_DRAFT_AGENT_FAILED';
 
   constructor() {
-    super('生成 Team 草案失败，请重试');
+    super('生成 Team 方案失败，请重试');
   }
 }
 
@@ -176,15 +183,41 @@ function resolveRuntimeOptions(input: TeamDraftAgentInput): Required<Pick<TeamDr
   };
 }
 
-export function buildTeamArchitectCliArgs(input: TeamDraftAgentInput, model?: string): string[] {
+export function buildTeamArchitectCliArgs(
+  input: TeamDraftAgentInput,
+  model?: string,
+  providerName: ProviderName = 'claude-code',
+  thinking = true,
+): string[] {
   const runtime = resolveRuntimeOptions(input);
+  if (providerName === 'codex') {
+    const args = [
+      'exec',
+      '--json',
+      '--color',
+      'never',
+      '--skip-git-repo-check',
+      '-s',
+      'read-only',
+      '-c',
+      `model_reasoning_effort=${thinking ? 'high' : 'low'}`,
+    ];
+    if (model?.trim()) args.push('-m', model.trim());
+    args.push(input.prompt);
+    return args;
+  }
+  if (providerName === 'opencode') {
+    const args = ['run', '--format', 'json'];
+    if (thinking) args.push('--thinking');
+    args.push('--', input.prompt);
+    return args;
+  }
   const args = [
-    '--bare',
     '-p',
     input.prompt,
-    '--output-format=json',
-    '--json-schema',
-    JSON.stringify(input.schema),
+    '--verbose',
+    '--output-format=stream-json',
+    '--include-partial-messages',
     '--no-session-persistence',
     '--permission-mode',
     runtime.permissionMode,
@@ -217,7 +250,9 @@ function buildArchitectPrompt(goal: string): string {
     '- workflow 必须按用户目标的阶段顺序写，不能只写“梳理素材、写正文、审稿”。',
     '- routingPolicy 必须使用 { "rules": [{ "when": "...", "memberRole": "..." }] }，不要使用 transitionRules、stateMachine、defaultRoute。',
     'validationCases[].assertionType 只能使用 checklist 或 replay；不确定时使用 checklist。',
-    '输出必须由 --json-schema 约束为严格 JSON；不要 Markdown，不要解释，不要代码块。',
+    'TeamDraft 输出 JSON Schema：',
+    JSON.stringify(TEAM_DRAFT_SCHEMA, null, 2),
+    '输出必须是严格 JSON；所有 required 字段都必须出现；不要 Markdown，不要解释，不要代码块。',
   ].join('\n');
 }
 
@@ -251,6 +286,173 @@ function parseClaudeStructuredOutput(stdout: string): unknown {
   } catch {
     throw new TeamDraftAgentOutputError();
   }
+}
+
+function extractClaudeEventText(parsed: Record<string, unknown>): { kind: 'delta' | 'message'; text: string } | null {
+  const eventType = getRecordText(parsed, ['type']);
+  if (eventType === 'stream_event') {
+    const event = isRecord(parsed.event) ? parsed.event : undefined;
+    const delta = isRecord(event?.delta) ? event.delta : undefined;
+    if (event?.type === 'content_block_delta' && delta?.type === 'text_delta') {
+      return { kind: 'delta', text: getRecordText(delta, ['text']) };
+    }
+  }
+  if (eventType === 'assistant') {
+    const message = isRecord(parsed.message) ? parsed.message : undefined;
+    const content = Array.isArray(message?.content) ? message.content as Record<string, unknown>[] : [];
+    const text = content
+      .filter(block => block.type === 'text')
+      .map(block => getRecordText(block, ['text']))
+      .join('');
+    return text ? { kind: 'message', text } : null;
+  }
+  if (eventType === 'result') {
+    const text = getRecordText(parsed, ['result']);
+    return text ? { kind: 'message', text } : null;
+  }
+  return null;
+}
+
+function getRecordText(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string') return value;
+  }
+  return '';
+}
+
+function extractCodexEventText(parsed: Record<string, unknown>): { kind: 'delta' | 'message'; text: string } | null {
+  const current = isRecord(parsed.msg) ? parsed.msg : parsed;
+  const eventType = getRecordText(current, ['type']);
+  if (eventType === 'agent_message_delta') {
+    return { kind: 'delta', text: getRecordText(current, ['delta', 'text']) };
+  }
+  if (eventType === 'agent_message') {
+    return { kind: 'message', text: getRecordText(current, ['text', 'message']) };
+  }
+  if (eventType === 'item.completed' || eventType === 'item.updated') {
+    const item = isRecord(current.item) ? current.item : undefined;
+    if (item?.type === 'agent_message') {
+      return { kind: 'message', text: getRecordText(item, ['text']) };
+    }
+  }
+  return null;
+}
+
+function extractOpenCodeEventText(parsed: Record<string, unknown>): { kind: 'delta' | 'message'; text: string } | null {
+  const eventType = getRecordText(parsed, ['type']);
+  const part = isRecord(parsed.part) ? parsed.part : undefined;
+  const text = getRecordText(parsed, ['text']) || (part ? getRecordText(part, ['text']) : '');
+  if (!text) return null;
+  if (eventType === 'text' || eventType === 'delta') return { kind: 'delta', text };
+  if (eventType === 'message') return { kind: 'message', text };
+  return null;
+}
+
+function extractJsonTextFromProviderEvents(stdout: string, providerName: ProviderName): string {
+  let deltaText = '';
+  let messageText = '';
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const event = providerName === 'claude-code'
+        ? extractClaudeEventText(parsed)
+        : providerName === 'codex'
+          ? extractCodexEventText(parsed)
+          : providerName === 'opencode'
+            ? extractOpenCodeEventText(parsed)
+            : null;
+      if (!event?.text) continue;
+      if (event.kind === 'delta') {
+        deltaText += event.text;
+      } else {
+        messageText = event.text;
+      }
+    } catch {
+      // A non-event line may be the raw JSON payload; parseAgentOutput handles it below.
+    }
+  }
+  return deltaText.trim() || messageText.trim() || stdout;
+}
+
+export function parseTeamArchitectProviderOutput(providerName: ProviderName, stdout: string): unknown {
+  if (providerName === 'claude-code') {
+    try {
+      return parseClaudeStructuredOutput(stdout);
+    } catch {
+      return parseAgentOutput(extractJsonTextFromProviderEvents(stdout, providerName));
+    }
+  }
+  return parseAgentOutput(extractJsonTextFromProviderEvents(stdout, providerName));
+}
+
+function stringifyAgentOutputForDisplay(output: unknown): string {
+  if (typeof output === 'string') return output;
+  try {
+    return JSON.stringify(output, null, 2);
+  } catch {
+    return '';
+  }
+}
+
+function createTeamArchitectOutputStreamer(providerName: ProviderName, onDelta: ((text: string) => void) | undefined) {
+  let lineBuffer = '';
+  let emittedText = '';
+
+  function emit(text: string) {
+    if (!text) return;
+    emittedText += text;
+    onDelta?.(text);
+  }
+
+  function handleLine(line: string) {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const event = providerName === 'claude-code'
+        ? extractClaudeEventText(parsed)
+        : providerName === 'codex'
+          ? extractCodexEventText(parsed)
+          : providerName === 'opencode'
+            ? extractOpenCodeEventText(parsed)
+            : null;
+      if (!event?.text) return;
+      if (event.kind === 'delta' || !emittedText) emit(event.text);
+    } catch {
+      // Non-event output is parsed after the process exits.
+    }
+  }
+
+  return {
+    push(chunk: string) {
+      lineBuffer += chunk;
+      const lines = lineBuffer.split(/\r?\n/);
+      lineBuffer = lines.pop() ?? '';
+      for (const line of lines) handleLine(line);
+    },
+    flush() {
+      if (lineBuffer.trim()) handleLine(lineBuffer);
+      lineBuffer = '';
+    },
+    hasEmittedText() {
+      return emittedText.trim().length > 0;
+    },
+  };
+}
+
+function buildTeamArchitectEnv(providerName: ProviderName, providerConfig: ProviderConfig): Record<string, string> {
+  const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+  if (providerName === 'codex') {
+    if (providerConfig.apiKey) env.OPENAI_API_KEY = providerConfig.apiKey;
+    if (providerConfig.baseUrl) env.OPENAI_BASE_URL = providerConfig.baseUrl;
+    return env;
+  }
+  if (providerConfig.apiKey) env.ANTHROPIC_API_KEY = providerConfig.apiKey;
+  if (providerConfig.baseUrl) env.ANTHROPIC_BASE_URL = providerConfig.baseUrl;
+  return env;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -309,8 +511,9 @@ function assertAgentTeamDraftContract(draft: TeamDraft): void {
 }
 
 export const defaultTeamDraftAgentClient: TeamDraftAgentClient = {
-  async generateDraft(input: TeamDraftAgentInput): Promise<unknown> {
-    const providerConfig = getProviderConfig('claude-code');
+  async generateDraft(input: TeamDraftAgentInput, options: TeamDraftAgentGenerateOptions = {}): Promise<unknown> {
+    const providerName = systemSettingsRepo.getTeamArchitectProvider();
+    const providerConfig = getProviderConfig(providerName);
     if (!providerConfig) {
       throw new Error('Team Architect 暂不可用：provider 未配置');
     }
@@ -319,12 +522,10 @@ export const defaultTeamDraftAgentClient: TeamDraftAgentClient = {
       throw new Error(`Team Architect 暂不可用：${readiness.message}`);
     }
 
-    const cliPath = (providerConfig.cliPath || 'claude').replace(/^~/, process.env.HOME || '/root');
-    const env: Record<string, string> = { ...(process.env as Record<string, string>) };
-    if (providerConfig.apiKey) env.ANTHROPIC_API_KEY = providerConfig.apiKey;
-    if (providerConfig.baseUrl) env.ANTHROPIC_BASE_URL = providerConfig.baseUrl;
+    const cliPath = providerConfig.cliPath.replace(/^~/, process.env.HOME || '/root');
+    const env = buildTeamArchitectEnv(providerName, providerConfig);
     const model = providerConfig.defaultModel?.trim();
-    const args = buildTeamArchitectCliArgs(input, model);
+    const args = buildTeamArchitectCliArgs(input, model, providerName, providerConfig.thinking);
     const timeoutMs = resolveTeamArchitectTimeoutMs(input, providerConfig.timeout);
 
     return await new Promise<unknown>((resolve, reject) => {
@@ -334,7 +535,9 @@ export const defaultTeamDraftAgentClient: TeamDraftAgentClient = {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let stdout = '';
+      let stderr = '';
       let timedOut = false;
+      const outputStreamer = createTeamArchitectOutputStreamer(providerName, options.onDelta);
       const timer = timeoutMs === null
         ? null
         : setTimeout(() => {
@@ -347,7 +550,12 @@ export const defaultTeamDraftAgentClient: TeamDraftAgentClient = {
           }, timeoutMs);
 
       proc.stdout?.on('data', chunk => {
-        stdout += chunk.toString();
+        const text = chunk.toString();
+        stdout += text;
+        outputStreamer.push(text);
+      });
+      proc.stderr?.on('data', chunk => {
+        stderr += chunk.toString();
       });
       proc.on('error', () => {
         if (timer) clearTimeout(timer);
@@ -360,11 +568,17 @@ export const defaultTeamDraftAgentClient: TeamDraftAgentClient = {
           return;
         }
         if (code !== 0) {
-          reject(new Error('Team Architect unavailable'));
+          const detail = stderr.trim() || stdout.trim();
+          reject(new Error(detail ? `Team Architect unavailable: ${detail}` : 'Team Architect unavailable'));
           return;
         }
         try {
-          resolve(parseClaudeStructuredOutput(stdout));
+          outputStreamer.flush();
+          const output = parseTeamArchitectProviderOutput(providerName, stdout);
+          if (!outputStreamer.hasEmittedText()) {
+            options.onDelta?.(stringifyAgentOutputForDisplay(output));
+          }
+          resolve(output);
         } catch (err) {
           reject(err);
         }
@@ -387,7 +601,7 @@ export async function generateTeamDraftFromGoal(
   };
 
   try {
-    const output = await agentClient.generateDraft(input);
+    const output = await agentClient.generateDraft(input, { onDelta: options.onDelta });
     const parsed = parseAgentOutput(output);
     const draft = sanitizeDraftFromUntrustedSource(parsed);
     assertAgentTeamDraftContract(draft);

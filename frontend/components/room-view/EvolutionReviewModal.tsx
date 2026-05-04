@@ -194,7 +194,7 @@ export function EvolutionReviewModal({
     : `已处理 ${reviewedCount}/${proposal.changes.length} 条，还有 ${remainingCount} 条。`
   const mergeHelpText = allReviewed
     ? acceptedCount > 0
-      ? `可以确认升级到 ${targetVersionLabel}，后续新讨论会使用新版团队。`
+      ? `可以确认升级到 ${targetVersionLabel}，后续新任务会使用新版 Team。`
       : '没有采纳任何建议，不能升级。请先采纳至少一条建议，或放弃本次升级。'
     : `处理完所有建议后，才能确认升级到 ${targetVersionLabel}。`
 
@@ -203,12 +203,12 @@ export function EvolutionReviewModal({
       <div className="flex min-h-full flex-col">
         <div className="grid shrink-0 gap-4 border-b border-line bg-nav-bg/95 px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
           <div className="min-w-0">
-            <p className="text-[12px] font-semibold text-accent">团队升级确认</p>
+            <p className="text-[12px] font-semibold text-accent">改进建议</p>
             <h2 className="mt-1 text-xl font-semibold leading-tight text-ink">
-              确认升级后，新讨论将使用 {targetVersionLabel}
+              确认后，这支 Team 会升级到 {targetVersionLabel}
             </h2>
             <p className="mt-2 text-[13px] leading-5 text-ink-soft">
-              {teamLabel} {currentVersionLabel} → {targetVersionLabel}。确认后，后续新讨论会使用新版团队；当前已完成的讨论不受影响。
+              {teamLabel} {currentVersionLabel} → {targetVersionLabel}。确认后，后续新任务会使用新版 Team；旧任务记录不受影响。
             </p>
           </div>
           <div className="flex items-center justify-between gap-2 md:justify-end">
@@ -219,7 +219,7 @@ export function EvolutionReviewModal({
               type="button"
               onClick={onClose}
               className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
-              aria-label="关闭团队升级确认"
+              aria-label="关闭改进建议"
             >
               <X className="h-4 w-4" />
             </button>
@@ -231,7 +231,7 @@ export function EvolutionReviewModal({
             <div className="border-b border-line p-4">
               <p className="text-[12px] font-semibold text-ink-soft">本次要做什么</p>
               <p className="mt-2 text-[13px] leading-6 text-ink">
-                你正在确认是否把当前团队升级到 {targetVersionLabel}。确认升级后，后续新讨论会使用新版团队。
+                你正在确认是否把当前 Team 升级到 {targetVersionLabel}。确认升级后，后续新任务会使用新版 Team。
               </p>
               <div className="mt-3 grid gap-2">
                 <div className="flex items-center justify-between gap-3 text-[12px] text-ink-soft">
@@ -244,12 +244,12 @@ export function EvolutionReviewModal({
                 </div>
                 <div className="flex items-center justify-between gap-3 text-[12px] text-ink-soft">
                   <span>生效范围</span>
-                  <strong className="text-ink">新讨论</strong>
+                  <strong className="text-ink">新任务</strong>
                 </div>
               </div>
             </div>
             <div className="border-b border-line p-4">
-              <p className="text-[12px] font-semibold text-ink-soft">为什么建议升级</p>
+              <p className="text-[12px] font-semibold text-ink-soft">为什么建议改进</p>
               <p className="mt-2 text-[13px] leading-6 text-ink">{proposal.summary}</p>
               {proposal.feedback && (
                 <p className="mt-3 rounded-md bg-surface-muted px-3 py-2 text-[12px] leading-5 text-ink-soft">
@@ -330,7 +330,7 @@ export function EvolutionReviewModal({
                     }`}>3</span>
                     <span>
                       <strong className="block text-[13px] text-ink">确认升级</strong>
-                      <small className="mt-1 block text-[11px] leading-4 text-ink-soft">确认后，新讨论使用 {targetVersionLabel}</small>
+                      <small className="mt-1 block text-[11px] leading-4 text-ink-soft">确认后，新任务使用 {targetVersionLabel}</small>
                     </span>
                   </li>
                 </ol>
@@ -442,7 +442,7 @@ export function EvolutionReviewModal({
                 className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {merging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                确认升级到 {targetVersionLabel}
+                确认升级 Team
               </button>
             </section>
 

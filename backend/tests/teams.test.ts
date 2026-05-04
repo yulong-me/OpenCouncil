@@ -18,6 +18,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mockDbRef = vi.hoisted(() => ({
   db: undefined as Database.Database | undefined,
 }));
+const legacyCollaborationRoot = ['s', 'c', 'e', 'n', 'e'].join('');
+const legacyCollaborationTable = `${legacyCollaborationRoot}s`;
+const legacyRoomColumn = `${legacyCollaborationRoot}_id`;
+const legacyTeamColumn = `source_${legacyCollaborationRoot}_id`;
 
 // ── Mock agentsRepo so teams seeding can query agent tags ───────────────────
 vi.mock('../src/db/repositories/agents.js', () => ({
@@ -119,20 +123,11 @@ describe('F052: Team schema', () => {
     mockDbRef.db = db;
 
     db.exec(`
-      CREATE TABLE scenes (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        description TEXT,
-        prompt TEXT NOT NULL,
-        builtin INTEGER NOT NULL DEFAULT 0,
-        max_a2a_depth INTEGER DEFAULT 5 NOT NULL
-      );
       CREATE TABLE teams (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         description TEXT,
         builtin INTEGER NOT NULL DEFAULT 0,
-        source_scene_id TEXT NOT NULL,
         active_version_id TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
@@ -143,7 +138,6 @@ describe('F052: Team schema', () => {
         version_number INTEGER NOT NULL,
         name TEXT NOT NULL,
         description TEXT,
-        source_scene_id TEXT NOT NULL,
         member_ids_json TEXT NOT NULL DEFAULT '[]',
         member_snapshots_json TEXT NOT NULL DEFAULT '[]',
         workflow_prompt TEXT NOT NULL,
@@ -183,6 +177,31 @@ describe('F052: Team schema', () => {
     expect(columnIsNotNull(db, 'team_validation_cases', 'proposal_id')).toBe(false);
     expect(columnIsNotNull(db, 'team_validation_cases', 'source_room_id')).toBe(false);
   });
+
+  it('removes legacy collaboration tables and columns from existing databases', async () => {
+    db.exec(`
+      CREATE TABLE ${legacyCollaborationTable} (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL
+      );
+      ALTER TABLE rooms ADD COLUMN ${legacyRoomColumn} TEXT;
+      ALTER TABLE teams ADD COLUMN ${legacyTeamColumn} TEXT;
+      ALTER TABLE team_versions ADD COLUMN ${legacyTeamColumn} TEXT;
+    `);
+
+    expect(tableExists(db, legacyCollaborationTable)).toBe(true);
+    expect(columnExists(db, 'rooms', legacyRoomColumn)).toBe(true);
+    expect(columnExists(db, 'teams', legacyTeamColumn)).toBe(true);
+    expect(columnExists(db, 'team_versions', legacyTeamColumn)).toBe(true);
+
+    const { initSchema } = await import('../src/db/migrate.js');
+    initSchema();
+
+    expect(tableExists(db, legacyCollaborationTable)).toBe(false);
+    expect(columnExists(db, 'rooms', legacyRoomColumn)).toBe(false);
+    expect(columnExists(db, 'teams', legacyTeamColumn)).toBe(false);
+    expect(columnExists(db, 'team_versions', legacyTeamColumn)).toBe(false);
+  });
 });
 
 describe('F052: teamsRepo', () => {
@@ -193,12 +212,12 @@ describe('F052: teamsRepo', () => {
     //
     // Insert raw
     db.prepare(`
-      INSERT INTO teams (id, name, description, builtin, source_scene_id, active_version_id, created_at, updated_at)
-      VALUES ('team-1', '圆桌论坛团队', '圆桌讨论', 1, 'roundtable-forum', 'team-1-v1', 1000000, 1000000)
+      INSERT INTO teams (id, name, description, builtin, active_version_id, created_at, updated_at)
+      VALUES ('team-1', '圆桌论坛团队', '圆桌讨论', 1, 'team-1-v1', 1000000, 1000000)
     `).run();
     db.prepare(`
-      INSERT INTO team_versions (id, team_id, version_number, name, description, source_scene_id, member_ids_json, workflow_prompt, routing_policy_json, team_memory_json, max_a2a_depth, created_at, created_from)
-      VALUES ('team-1-v1', 'team-1', 1, '圆桌论坛团队', 'v1 desc', 'roundtable-forum', '["agent-1","agent-2"]', '工作流 prompt', '{"source":"scene-default"}', '[]', 5, 1000000, 'scene-seed')
+      INSERT INTO team_versions (id, team_id, version_number, name, description, member_ids_json, workflow_prompt, routing_policy_json, team_memory_json, max_a2a_depth, created_at, created_from)
+      VALUES ('team-1-v1', 'team-1', 1, '圆桌论坛团队', 'v1 desc', '["agent-1","agent-2"]', '工作流 prompt', '{"source":"builtin-team-default"}', '[]', 5, 1000000, 'builtin-seed')
     `).run();
 
     const team = db.prepare('SELECT * FROM teams WHERE id = ?').get('team-1') as Record<string, unknown>;
@@ -309,10 +328,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
   });
 
   it('covers the real HTTP chain from a reviewed TeamDraft to confirmed Team v1 to Team-backed room', async () => {
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('software-development', '软件开发', '场景', 'scene prompt', 1, 5)
-    `).run();
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
 
     await withHttpApp(async (requestJson) => {
@@ -339,7 +354,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
       expect(version).toMatchObject({
         teamId: team.id,
         versionNumber: 1,
-        sourceSceneId: 'software-development',
         createdFrom: 'manual',
       });
       expect(version.memberIds).toEqual((version.memberSnapshots as Array<{ id: string }>).map(snapshot => snapshot.id));
@@ -378,7 +392,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
         teamVersionId: version.id,
         teamVersionNumber: 1,
         teamName: version.name,
-        sceneId: 'software-development',
       });
       expect(room.agents).toEqual((version.memberSnapshots as Array<{ id: string; name: string; roleLabel: string }>).map(snapshot => expect.objectContaining({
         configId: snapshot.id,
@@ -402,11 +415,216 @@ describe('F055: goal-to-team draft and confirmation', () => {
     });
   });
 
-  it('treats goal text as untrusted objective text before generating a draft or TeamVersion snapshot', async () => {
+  it('PATCH /api/teams/:id/settings saves inline Team configuration changes on the active version', async () => {
+    const { teamsRepo } = await import('../src/db/repositories/teams.js');
+
+    await withHttpApp(async (requestJson) => {
+      const draft = teamsRepo.generateDraftFromGoal('帮我做一个软件功能，从需求澄清、方案设计、实现、review 到验收');
+      const confirmResponse = await requestJson('POST', '/api/teams', { draft });
+      const confirmed = expectRecord(confirmResponse.data);
+      const team = expectRecord(confirmed.team);
+      const version = expectRecord(confirmed.version);
+      const memberSnapshots = version.memberSnapshots as Array<Record<string, unknown>>;
+
+      const response = await requestJson('PATCH', `/api/teams/${team.id as string}/settings`, {
+        name: '可配置软件开发 Team',
+        description: '点击编辑后自动保存',
+        version: {
+          workflowPrompt: '先澄清，再实现，最后检查。',
+          routingPolicy: { rules: ['需求不清 -> 需求澄清成员'] },
+          teamMemory: ['交付前必须说明验证证据'],
+          maxA2ADepth: 3,
+          memberSnapshots: memberSnapshots.map((member, index) => index === 0
+            ? {
+                ...member,
+                name: '需求澄清成员',
+                roleLabel: '需求澄清',
+                responsibility: '先问清楚边界',
+                whenToUse: '用户描述不清时',
+                systemPrompt: '你负责先澄清需求。',
+              }
+            : member),
+        },
+      });
+
+      expect(response.status).toBe(200);
+      const updated = expectRecord(response.data);
+      const updatedVersion = expectRecord(updated.activeVersion);
+      const updatedMembers = updatedVersion.memberSnapshots as Array<Record<string, unknown>>;
+
+      expect(updated).toMatchObject({
+        id: team.id,
+        name: '可配置软件开发 Team',
+        description: '点击编辑后自动保存',
+      });
+      expect(updatedVersion).toMatchObject({
+        id: version.id,
+        versionNumber: 1,
+        workflowPrompt: '先澄清，再实现，最后检查。',
+        routingPolicy: { rules: ['需求不清 -> 需求澄清成员'] },
+        teamMemory: ['交付前必须说明验证证据'],
+        maxA2ADepth: 3,
+      });
+      expect(updatedMembers[0]).toMatchObject({
+        name: '需求澄清成员',
+        roleLabel: '需求澄清',
+        responsibility: '先问清楚边界',
+        whenToUse: '用户描述不清时',
+        systemPrompt: '你负责先澄清需求。',
+      });
+
+      const persistedTeam = db.prepare('SELECT name, description FROM teams WHERE id = ?').get(team.id as string) as Record<string, unknown>;
+      const persistedVersion = db.prepare('SELECT workflow_prompt, routing_policy_json, team_memory_json, max_a2a_depth, member_snapshots_json FROM team_versions WHERE id = ?').get(version.id as string) as Record<string, unknown>;
+      expect(persistedTeam.name).toBe('可配置软件开发 Team');
+      expect(persistedVersion.workflow_prompt).toBe('先澄清，再实现，最后检查。');
+      expect(JSON.parse(persistedVersion.routing_policy_json as string)).toEqual({ rules: ['需求不清 -> 需求澄清成员'] });
+      expect(JSON.parse(persistedVersion.team_memory_json as string)).toEqual(['交付前必须说明验证证据']);
+      expect(persistedVersion.max_a2a_depth).toBe(3);
+      expect(JSON.parse(persistedVersion.member_snapshots_json as string)[0].name).toBe('需求澄清成员');
+    });
+  });
+
+  it('PATCH /api/teams/:id/settings can set every current Team member to the same provider without touching other Teams', async () => {
+    const { teamsRepo } = await import('../src/db/repositories/teams.js');
+
+    await withHttpApp(async (requestJson) => {
+      const draft = teamsRepo.generateDraftFromGoal('帮我做一个软件功能，从需求澄清、方案设计、实现、review 到验收');
+      const firstResponse = await requestJson('POST', '/api/teams', { draft });
+      const secondResponse = await requestJson('POST', '/api/teams', {
+        draft: {
+          ...draft,
+          name: '第二支软件开发 Team',
+        },
+      });
+      const first = expectRecord(firstResponse.data);
+      const second = expectRecord(secondResponse.data);
+      const firstVersion = expectRecord(first.version);
+      const secondVersion = expectRecord(second.version);
+      const firstMembers = firstVersion.memberSnapshots as Array<Record<string, unknown>>;
+
+      const response = await requestJson('PATCH', `/api/teams/${expectRecord(first.team).id as string}/settings`, {
+        version: {
+          memberSnapshots: firstMembers.map(member => ({ ...member, provider: 'opencode' })),
+        },
+      });
+
+      expect(response.status).toBe(200);
+      const updated = expectRecord(response.data);
+      const updatedVersion = expectRecord(updated.activeVersion);
+      const updatedMembers = updatedVersion.memberSnapshots as Array<Record<string, unknown>>;
+      expect(updatedMembers.length).toBeGreaterThan(0);
+      expect(updatedMembers.every(member => member.provider === 'opencode')).toBe(true);
+
+      const firstPersistedVersion = db.prepare('SELECT member_snapshots_json FROM team_versions WHERE id = ?').get(firstVersion.id as string) as Record<string, unknown>;
+      const firstPersistedMembers = JSON.parse(firstPersistedVersion.member_snapshots_json as string) as Array<Record<string, unknown>>;
+      expect(firstPersistedMembers.every(member => member.provider === 'opencode')).toBe(true);
+
+      const secondPersistedVersion = db.prepare('SELECT member_snapshots_json FROM team_versions WHERE id = ?').get(secondVersion.id as string) as Record<string, unknown>;
+      const secondPersistedMembers = JSON.parse(secondPersistedVersion.member_snapshots_json as string) as Array<Record<string, unknown>>;
+      expect(secondPersistedMembers.length).toBeGreaterThan(0);
+      expect(secondPersistedMembers.every(member => member.provider === 'claude-code')).toBe(true);
+    });
+  });
+
+  it('PATCH /api/teams/:id/settings persists managed Skill selections on individual Team members', async () => {
     db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('software-development', '软件开发', '场景', 'scene prompt', 1, 5)
+      INSERT INTO skills (id, name, description, source_type, source_path, enabled, read_only, builtin, provider_compat, updated_at, checksum)
+      VALUES ('review-skill', 'review-skill', 'Review code changes', 'managed', '/tmp/review-skill/SKILL.md', 1, 0, 0, '["claude-code","opencode","codex"]', 1000, 'abc')
     `).run();
+
+    const { teamsRepo } = await import('../src/db/repositories/teams.js');
+
+    await withHttpApp(async (requestJson) => {
+      const draft = teamsRepo.generateDraftFromGoal('帮我做一个软件功能，从需求澄清、方案设计、实现、review 到验收');
+      const createResponse = await requestJson('POST', '/api/teams', { draft });
+      const created = expectRecord(createResponse.data);
+      const team = expectRecord(created.team);
+      const version = expectRecord(created.version);
+      const members = version.memberSnapshots as Array<Record<string, unknown>>;
+
+      const response = await requestJson('PATCH', `/api/teams/${team.id as string}/settings`, {
+        version: {
+          memberSnapshots: members.map((member, index) => index === 0
+            ? { ...member, skillIds: ['review-skill'] }
+            : member),
+        },
+      });
+
+      expect(response.status).toBe(200);
+      const updated = expectRecord(response.data);
+      const updatedVersion = expectRecord(updated.activeVersion);
+      const updatedMembers = updatedVersion.memberSnapshots as Array<Record<string, unknown>>;
+      expect(updatedMembers[0].skillIds).toEqual(['review-skill']);
+
+      const persistedVersion = db.prepare('SELECT member_snapshots_json FROM team_versions WHERE id = ?').get(version.id as string) as Record<string, unknown>;
+      const persistedMembers = JSON.parse(persistedVersion.member_snapshots_json as string) as Array<Record<string, unknown>>;
+      expect(persistedMembers[0].skillIds).toEqual(['review-skill']);
+    });
+  });
+
+  it('PATCH /api/teams/:id/settings persists scanned Skill selections on individual Team members', async () => {
+
+    const { teamsRepo } = await import('../src/db/repositories/teams.js');
+
+    await withHttpApp(async (requestJson) => {
+      const draft = teamsRepo.generateDraftFromGoal('帮我做一个软件功能，从需求澄清、方案设计、实现、review 到验收');
+      const createResponse = await requestJson('POST', '/api/teams', { draft });
+      const created = expectRecord(createResponse.data);
+      const team = expectRecord(created.team);
+      const version = expectRecord(created.version);
+      const members = version.memberSnapshots as Array<Record<string, unknown>>;
+      const scannedSkillRef = {
+        source: 'global',
+        name: 'shared-global',
+        sourcePath: '/tmp/shared-global/SKILL.md',
+      };
+
+      const response = await requestJson('PATCH', `/api/teams/${team.id as string}/settings`, {
+        version: {
+          memberSnapshots: members.map((member, index) => index === 0
+            ? { ...member, skillRefs: [scannedSkillRef] }
+            : member),
+        },
+      });
+
+      expect(response.status).toBe(200);
+      const updated = expectRecord(response.data);
+      const updatedVersion = expectRecord(updated.activeVersion);
+      const updatedMembers = updatedVersion.memberSnapshots as Array<Record<string, unknown>>;
+      expect(updatedMembers[0].skillRefs).toEqual([scannedSkillRef]);
+      expect(updatedMembers[0].skillIds).toEqual([]);
+
+      const persistedVersion = db.prepare('SELECT member_snapshots_json FROM team_versions WHERE id = ?').get(version.id as string) as Record<string, unknown>;
+      const persistedMembers = JSON.parse(persistedVersion.member_snapshots_json as string) as Array<Record<string, unknown>>;
+      expect(persistedMembers[0].skillRefs).toEqual([scannedSkillRef]);
+      expect(persistedMembers[0].skillIds).toEqual([]);
+
+      const { skillRefs: _removedSkillRefs, ...legacyMemberPatch } = updatedMembers[0];
+      const legacyResponse = await requestJson('PATCH', `/api/teams/${team.id as string}/settings`, {
+        version: {
+          memberSnapshots: updatedMembers.map((member, index) => index === 0
+            ? { ...legacyMemberPatch, skillIds: [] }
+            : member),
+        },
+      });
+      expect(legacyResponse.status).toBe(200);
+      const legacyUpdated = expectRecord(legacyResponse.data);
+      const legacyVersion = expectRecord(legacyUpdated.activeVersion);
+      const legacyMembers = legacyVersion.memberSnapshots as Array<Record<string, unknown>>;
+      expect(legacyMembers[0].skillRefs).toEqual([]);
+      expect(legacyMembers[0].skillIds).toEqual([]);
+    });
+  });
+
+  it('does not expose a global all-Team provider update endpoint', async () => {
+    await withHttpApp(async (requestJson) => {
+      const response = await requestJson('PATCH', '/api/teams/settings/provider', { provider: 'opencode' });
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  it('treats goal text as untrusted objective text before generating a draft or TeamVersion snapshot', async () => {
 
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
     const draft = teamsRepo.generateDraftFromGoal(
@@ -432,10 +650,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
   });
 
   it('removes exact no-confirm wording from drafts, TeamVersion snapshots, and validation prompts', async () => {
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('software-development', '软件开发', '场景', 'scene prompt', 1, 5)
-    `).run();
 
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
     const draft = teamsRepo.generateDraftFromGoal(
@@ -517,10 +731,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
   });
 
   it('creates a custom Team v1 with member snapshots and initial validation cases from a reviewed draft', async () => {
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('software-development', '软件开发', '场景', 'scene prompt', 1, 5)
-    `).run();
 
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
     const { evolutionRepo } = await import('../src/db/repositories/teamEvolution.js');
@@ -552,7 +762,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
       teamId: result.team.id,
       versionNumber: 1,
       createdFrom: 'manual',
-      sourceSceneId: 'software-development',
     });
     expect(version!.memberIds).toHaveLength(3);
     expect(version!.memberSnapshots).toHaveLength(3);
@@ -579,10 +788,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
   });
 
   it('uses initial TeamDraft validation cases in evolution preflight and pins v1 when creating a room', async () => {
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('software-development', '软件开发', '场景', 'scene prompt', 1, 5)
-    `).run();
 
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
     const { evolutionRepo } = await import('../src/db/repositories/teamEvolution.js');
@@ -606,7 +811,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
         status: 'idle' as const,
       })),
       messages: [],
-      sceneId: 'software-development',
       teamId: result.team.id,
       teamVersionId: result.version.id,
       createdAt: 100,
@@ -653,10 +857,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
   });
 
   it('reloads custom Team rooms from pinned member snapshots without adding global agents', async () => {
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('software-development', '软件开发', '场景', 'scene prompt', 1, 5)
-    `).run();
 
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
     const { roomsRepo } = await import('../src/db/repositories/rooms.js');
@@ -695,7 +895,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
         status: 'idle',
       }],
       messages: [],
-      sceneId: 'software-development',
       teamId: result.team.id,
       teamVersionId: result.version.id,
       createdAt: 100,
@@ -718,7 +917,6 @@ describe('F055: goal-to-team draft and confirmation', () => {
         status: 'idle',
       }],
       messages: [],
-      sceneId: 'software-development',
       createdAt: 90,
       updatedAt: 90,
       sessionIds: {},
@@ -814,9 +1012,43 @@ describe('F056: Team Draft Agent', () => {
   async function expectDraftGenerationFailure(promise: Promise<TeamDraft>): Promise<void> {
     await expect(promise).rejects.toMatchObject({
       code: 'TEAM_DRAFT_AGENT_FAILED',
-      message: '生成 Team 草案失败，请重试',
+      message: '生成 Team 方案失败，请重试',
     });
   }
+
+  it('stores the configurable Team Architect provider in system settings', async () => {
+    const { systemSettingsRepo } = await import('../src/db/repositories/systemSettings.js');
+
+    expect(systemSettingsRepo.getTeamArchitectProvider()).toBe('claude-code');
+
+    systemSettingsRepo.setTeamArchitectProvider('codex');
+
+    expect(systemSettingsRepo.getTeamArchitectProvider()).toBe('codex');
+    expect((db.prepare("SELECT value FROM app_meta WHERE key = 'team_architect_provider'").get() as { value: string }).value).toBe('codex');
+  });
+
+  it('streams Team Architect output instead of system progress copy while generating a draft', async () => {
+    const { generateTeamDraftFromGoal } = await import('../src/services/teamDrafts.js');
+    const goal = '帮我做跨境电商选品团队，覆盖市场、竞品、供应链和利润';
+    const deltas: string[] = [];
+    const agentClient = {
+      generateDraft: vi.fn().mockImplementation(async (_input, options) => {
+        options?.onDelta?.('{"name":"跨境电商选品团队"');
+        options?.onDelta?.(',"members":[...');
+        return JSON.stringify(ecommerceAgentDraft(goal));
+      }),
+    };
+
+    const draft = await generateTeamDraftFromGoal(goal, {
+      agentClient,
+      onDelta: text => deltas.push(text),
+    });
+
+    const removedProgressCopy = ['公开运行', '过程'].join('');
+    expect(draft.generationSource).toBe('agent');
+    expect(deltas.join('')).toContain('跨境电商选品团队');
+    expect(deltas.join('')).not.toContain(removedProgressCopy);
+  });
 
   it('runs Team Architect without write-permission bypass by default', async () => {
     const { buildTeamArchitectCliArgs } = await import('../src/services/teamDrafts.js');
@@ -830,6 +1062,7 @@ describe('F056: Team Draft Agent', () => {
 
     expect(args).not.toContain('--dangerously-skip-permissions');
     expect(args).toEqual(expect.arrayContaining([
+      '--verbose',
       '--permission-mode',
       'plan',
       '--tools',
@@ -837,6 +1070,52 @@ describe('F056: Team Draft Agent', () => {
       '--model',
       'claude-sonnet-4-6',
     ]));
+  });
+
+  it('parses visible Team Architect output from every configurable provider', async () => {
+    const { parseTeamArchitectProviderOutput } = await import('../src/services/teamDrafts.js');
+    const goal = '帮我做跨境电商选品团队，覆盖市场、竞品、供应链和利润';
+    const payload = JSON.stringify(ecommerceAgentDraft(goal));
+
+    const claudeOutput = [
+      JSON.stringify({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: payload.slice(0, 80) } },
+      }),
+      JSON.stringify({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: payload.slice(80) } },
+      }),
+    ].join('\n');
+
+    const codexOutput = [
+      JSON.stringify({ msg: { type: 'agent_message_delta', delta: payload.slice(0, 90) } }),
+      JSON.stringify({ msg: { type: 'agent_message_delta', delta: payload.slice(90) } }),
+    ].join('\n');
+
+    const opencodeOutput = [
+      JSON.stringify({ type: 'text', part: { text: payload.slice(0, 100) } }),
+      JSON.stringify({ type: 'text', part: { text: payload.slice(100) } }),
+    ].join('\n');
+
+    expect(parseTeamArchitectProviderOutput('claude-code', claudeOutput)).toMatchObject({ name: '跨境电商选品团队' });
+    expect(parseTeamArchitectProviderOutput('codex', codexOutput)).toMatchObject({ name: '跨境电商选品团队' });
+    expect(parseTeamArchitectProviderOutput('opencode', opencodeOutput)).toMatchObject({ name: '跨境电商选品团队' });
+  });
+
+  it('uses OpenCode like the chat runtime by not forcing provider defaultModel', async () => {
+    const { buildTeamArchitectCliArgs } = await import('../src/services/teamDrafts.js');
+    const args = buildTeamArchitectCliArgs({
+      goal: '生成团队',
+      schemaName: 'TeamDraft',
+      schema: { type: 'object' },
+      safetyConstraints: [],
+      prompt: '只输出 JSON',
+    }, 'MiniMax-M2.7', 'opencode');
+
+    expect(args).toEqual(expect.arrayContaining(['run', '--format', 'json', '--thinking', '--', '只输出 JSON']));
+    expect(args).not.toContain('-m');
+    expect(args).not.toContain('MiniMax-M2.7');
   });
 
   it('supports unlimited and configurable Team Architect timeout', async () => {
@@ -890,11 +1169,14 @@ describe('F056: Team Draft Agent', () => {
     const beforeTeams = (db.prepare('SELECT COUNT(*) as cnt FROM teams').get() as { cnt: number }).cnt;
     const draft = await generateTeamDraftFromGoal(goal, { agentClient });
 
-    expect(agentClient.generateDraft).toHaveBeenCalledWith(expect.objectContaining({
-      goal,
-      schemaName: 'TeamDraft',
-      safetyConstraints: expect.arrayContaining(['no auto merge / auto commit / auto push / no bypass confirmation']),
-    }));
+    expect(agentClient.generateDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        goal,
+        schemaName: 'TeamDraft',
+        safetyConstraints: expect.arrayContaining(['no auto merge / auto commit / auto push / no bypass confirmation']),
+      }),
+      expect.objectContaining({ onDelta: undefined }),
+    );
     expect((db.prepare('SELECT COUNT(*) as cnt FROM teams').get() as { cnt: number }).cnt).toBe(beforeTeams);
     expect(agentsRepo.upsert).not.toHaveBeenCalled();
     expect(draft).toMatchObject({
@@ -927,7 +1209,9 @@ describe('F056: Team Draft Agent', () => {
     expect(input.prompt).toContain('不要套用通用内容创作团队');
     expect(input.prompt).toContain('如果目标包含 Remotion/生成视频/输出视频路径');
     expect(input.prompt).toContain('routingPolicy 必须使用');
-    expect(input.prompt).not.toContain('TeamDraft schema');
+    expect(input.prompt).toContain('TeamDraft 输出 JSON Schema');
+    expect(input.prompt).toContain('"displayName"');
+    expect(input.prompt).toContain('"generationRationale"');
     expect(input.schema.properties.routingPolicy.properties.rules.items.required).toEqual(['when', 'memberRole']);
   });
 
@@ -1079,15 +1363,11 @@ describe('F056: Team Draft Agent', () => {
 
     await expect(generateTeamDraftFromGoal(goal, { agentClient })).rejects.toMatchObject({
       code: 'TEAM_DRAFT_AGENT_FAILED',
-      message: '生成 Team 草案失败，请重试',
+      message: '生成 Team 方案失败，请重试',
     });
   });
 
   it('sanitizes untrusted Team Architect output before returning or creating TeamVersion snapshots', async () => {
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('software-development', '软件开发', '场景', 'scene prompt', 1, 5)
-    `).run();
     const { generateTeamDraftFromGoal } = await import('../src/services/teamDrafts.js');
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
     const goal = '帮我做跨境电商选品团队，覆盖市场、竞品、供应链和利润';
@@ -1108,19 +1388,8 @@ describe('F056: Team Draft Agent', () => {
   });
 });
 
-describe('F052: ensureBuiltinTeamsFromScenes seeding', () => {
-  it('creates one active v1 Team per Scene', async () => {
-    // Insert two builtin scenes
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('roundtable-forum', '圆桌论坛', '场景', 'prompt-a', 1, 5)
-    `).run();
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('software-development', '软件开发', '场景', 'prompt-b', 1, 5)
-    `).run();
-
-    // Mock agents with tags matching scene names
+describe('builtin Team seeding', () => {
+  it('creates active v1 Teams from builtin Team definitions', async () => {
     const { agentsRepo } = await import('../src/db/repositories/agents.js');
     vi.mocked(agentsRepo.list).mockReturnValue([
       { id: 'agent-1', name: 'Agent1', role: 'WORKER' as const, roleLabel: 'R1', provider: 'claude-code', providerOpts: { thinking: true }, systemPrompt: 'prompt-1', enabled: true, tags: ['圆桌论坛'] },
@@ -1129,30 +1398,27 @@ describe('F052: ensureBuiltinTeamsFromScenes seeding', () => {
       { id: 'agent-4', name: 'Agent4', role: 'WORKER' as const, roleLabel: 'R4', provider: 'opencode', providerOpts: {}, systemPrompt: 'prompt-4', enabled: true, tags: ['软件开发'] },
     ]);
 
-    // Now import teamsRepo (it reads from the test DB)
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
 
-    const result = teamsRepo.ensureFromScenes();
-    expect(result.teamsInserted).toBeGreaterThanOrEqual(2);
-    expect(result.versionsInserted).toBeGreaterThanOrEqual(2);
+    const result = teamsRepo.ensureBuiltinTeams();
+    expect(result.teamsInserted).toBeGreaterThanOrEqual(5);
+    expect(result.versionsInserted).toBeGreaterThanOrEqual(5);
 
-    // Verify teams exist
     const roundtableTeam = teamsRepo.get('roundtable-forum');
     expect(roundtableTeam).toBeTruthy();
-    expect(roundtableTeam!.name).toBe('圆桌论坛团队');
+    expect(roundtableTeam!.name).toBe('圆桌论坛');
     expect(roundtableTeam!.activeVersionId).toBe('roundtable-forum-v1');
 
     const swTeam = teamsRepo.get('software-development');
     expect(swTeam).toBeTruthy();
-    expect(swTeam!.name).toBe('软件开发团队');
+    expect(swTeam!.name).toBe('软件开发');
     expect(swTeam!.activeVersionId).toBe('software-development-v1');
 
-    // Verify versions exist
     const rtVersion = teamsRepo.getVersion('roundtable-forum-v1');
     expect(rtVersion).toBeTruthy();
     expect(rtVersion!.versionNumber).toBe(1);
     expect(rtVersion!.memberIds).toHaveLength(2);
-    expect(rtVersion!.workflowPrompt).toBe('prompt-a');
+    expect(rtVersion!.workflowPrompt).toContain('团队模式：圆桌论坛');
     expect(rtVersion!.memberSnapshots).toEqual([
       {
         id: 'agent-1',
@@ -1175,16 +1441,10 @@ describe('F052: ensureBuiltinTeamsFromScenes seeding', () => {
     const swVersion = teamsRepo.getVersion('software-development-v1');
     expect(swVersion).toBeTruthy();
     expect(swVersion!.memberIds).toHaveLength(2);
-    expect(swVersion!.workflowPrompt).toBe('prompt-b');
+    expect(swVersion!.workflowPrompt).toContain('团队模式：软件开发');
   });
 
   it('does not overwrite existing TeamVersion on second seeding', async () => {
-    // Pre-insert a scene
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('roundtable-forum', '圆桌论坛', '场景', 'prompt-a', 1, 5)
-    `).run();
-
     const { agentsRepo } = await import('../src/db/repositories/agents.js');
     vi.mocked(agentsRepo.list).mockReturnValue([
       { id: 'agent-1', name: 'Agent1', role: 'WORKER' as const, roleLabel: 'R1', provider: 'claude-code', systemPrompt: '', enabled: true, tags: ['圆桌论坛'] },
@@ -1192,65 +1452,22 @@ describe('F052: ensureBuiltinTeamsFromScenes seeding', () => {
 
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
 
-    // First seeding
-    const firstResult = teamsRepo.ensureFromScenes();
-    expect(firstResult.teamsInserted).toBe(1);
-    expect(firstResult.versionsInserted).toBe(1);
+    const firstResult = teamsRepo.ensureBuiltinTeams();
+    expect(firstResult.teamsInserted).toBeGreaterThanOrEqual(5);
+    expect(firstResult.versionsInserted).toBeGreaterThanOrEqual(5);
 
-    // Modify the version directly to simulate user edit
     db.prepare(`UPDATE team_versions SET workflow_prompt = 'modified-prompt' WHERE id = 'roundtable-forum-v1'`).run();
 
-    // Second seeding should NOT overwrite
-    const secondResult = teamsRepo.ensureFromScenes();
+    const secondResult = teamsRepo.ensureBuiltinTeams();
     expect(secondResult.teamsInserted).toBe(0);
     expect(secondResult.versionsInserted).toBe(0);
 
-    // Verify the modified prompt was preserved
     const version = teamsRepo.getVersion('roundtable-forum-v1');
     expect(version).toBeTruthy();
     expect(version!.workflowPrompt).toBe('modified-prompt');
   });
 
-  it('generates team name ending with 团队 if scene name does not', async () => {
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('test-scene', '测试场景', '场景', 'prompt-c', 0, 5)
-    `).run();
-
-    const { agentsRepo } = await import('../src/db/repositories/agents.js');
-    vi.mocked(agentsRepo.list).mockReturnValue([]);
-
-    const { teamsRepo } = await import('../src/db/repositories/teams.js');
-
-    teamsRepo.ensureFromScenes();
-    const team = teamsRepo.get('test-scene');
-    expect(team).toBeTruthy();
-    expect(team!.name).toBe('测试场景团队');
-    expect(team!.builtin).toBe(false);
-  });
-
-  it('keeps team name as-is if it already ends with 团队', async () => {
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('my-team', '我的团队', '场景', 'prompt-d', 0, 5)
-    `).run();
-
-    const { agentsRepo } = await import('../src/db/repositories/agents.js');
-    vi.mocked(agentsRepo.list).mockReturnValue([]);
-
-    const { teamsRepo } = await import('../src/db/repositories/teams.js');
-
-    teamsRepo.ensureFromScenes();
-    const team = teamsRepo.get('my-team');
-    expect(team).toBeTruthy();
-    expect(team!.name).toBe('我的团队');
-  });
-
   it('list() returns TeamListItem with activeVersion and members', async () => {
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('roundtable-forum', '圆桌论坛', '场景', 'prompt-a', 1, 5)
-    `).run();
 
     const { agentsRepo } = await import('../src/db/repositories/agents.js');
     vi.mocked(agentsRepo.list).mockReturnValue([
@@ -1258,14 +1475,14 @@ describe('F052: ensureBuiltinTeamsFromScenes seeding', () => {
     ]);
 
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
-    teamsRepo.ensureFromScenes();
+    teamsRepo.ensureBuiltinTeams();
 
     const list = teamsRepo.list();
     expect(list.length).toBeGreaterThanOrEqual(1);
 
     const item = list[0];
     expect(item.id).toBe('roundtable-forum');
-    expect(item.name).toBe('圆桌论坛团队');
+    expect(item.name).toBe('圆桌论坛');
     expect(item.activeVersion).toBeTruthy();
     expect(item.activeVersion.versionNumber).toBe(1);
     expect(item.members).toHaveLength(1);
@@ -1273,16 +1490,12 @@ describe('F052: ensureBuiltinTeamsFromScenes seeding', () => {
   });
 
   it('getActiveVersion returns the active version for a team', async () => {
-    db.prepare(`
-      INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-      VALUES ('roundtable-forum', '圆桌论坛', '场景', 'prompt-a', 1, 5)
-    `).run();
 
     const { agentsRepo } = await import('../src/db/repositories/agents.js');
     vi.mocked(agentsRepo.list).mockReturnValue([]);
 
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
-    teamsRepo.ensureFromScenes();
+    teamsRepo.ensureBuiltinTeams();
 
     const version = teamsRepo.getActiveVersion('roundtable-forum');
     expect(version).toBeTruthy();

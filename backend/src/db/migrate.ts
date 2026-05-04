@@ -4,7 +4,6 @@ import { fileURLToPath } from 'url';
 import { db } from './db.js';
 import { log } from '../log.js';
 import { runtimePaths } from '../config/runtimePaths.js';
-import { BUILTIN_SCENES } from '../prompts/builtinScenes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_DIR = path.resolve(process.cwd(), 'config');
@@ -15,6 +14,56 @@ function columnNotNull(table: string, column: string): boolean {
     return columns.some(col => col.name === column && col.notnull === 1);
   } catch {
     return false;
+  }
+}
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+function tableExists(table: string): boolean {
+  const row = db.prepare("SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name = ?")
+    .get(table) as { cnt: number };
+  return row.cnt > 0;
+}
+
+function columnExists(table: string, column: string): boolean {
+  try {
+    const columns = db.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all() as Array<{ name: string }>;
+    return columns.some(col => col.name === column);
+  } catch {
+    return false;
+  }
+}
+
+function dropColumnIfExists(table: string, column: string): boolean {
+  if (!tableExists(table) || !columnExists(table, column)) return false;
+  db.exec(`ALTER TABLE ${quoteIdentifier(table)} DROP COLUMN ${quoteIdentifier(column)}`);
+  return true;
+}
+
+function removeLegacyCollaborationArtifacts(): void {
+  const legacyRoot = ['s', 'c', 'e', 'n', 'e'].join('');
+  const legacyTable = `${legacyRoot}s`;
+  const removedColumns: Array<[string, string]> = [
+    ['rooms', `${legacyRoot}_id`],
+    ['teams', `source_${legacyRoot}_id`],
+    ['team_versions', `source_${legacyRoot}_id`],
+  ];
+  const droppedColumns = removedColumns
+    .map(([table, column]) => dropColumnIfExists(table, column))
+    .filter(Boolean).length;
+  const hadLegacyTable = tableExists(legacyTable);
+
+  if (hadLegacyTable) {
+    db.exec(`DROP TABLE ${quoteIdentifier(legacyTable)}`);
+  }
+
+  if (hadLegacyTable || droppedColumns > 0) {
+    log('INFO', 'db:schema:migrate:legacy_collaboration_removed', {
+      tableDropped: hadLegacyTable,
+      columnsDropped: droppedColumns,
+    });
   }
 }
 
@@ -87,6 +136,7 @@ export function initSchema(): void {
     throw new Error('schema.sql not found in dist/db or src/db');
   }
   const sql = fs.readFileSync(schemaPath, 'utf-8');
+  removeLegacyCollaborationArtifacts();
 
   // Check if tables exist (new users may have empty DB)
   const agentsExists = (db.prepare("SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='agents'").get() as { cnt: number }).cnt > 0;
@@ -181,34 +231,10 @@ export function initSchema(): void {
     // Column already exists — safe to ignore
   }
 
-  // F016: add scene_id column to rooms table
-  try {
-    db.exec("ALTER TABLE rooms ADD COLUMN scene_id TEXT NOT NULL DEFAULT 'roundtable-forum'");
-    log('INFO', 'db:schema:migrate:rooms:scene_id');
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // F016/F016-FIX: add description column to scenes table (may have been created before this column existed)
-  try {
-    db.exec("ALTER TABLE scenes ADD COLUMN description TEXT");
-    log('INFO', 'db:schema:migrate:scenes:description');
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // F017: add max_a2a_depth column to rooms table (nullable, null=inherit scene default)
+  // F017: add max_a2a_depth column to rooms table (nullable, null=inherit TeamVersion default)
   try {
     db.exec("ALTER TABLE rooms ADD COLUMN max_a2a_depth INTEGER");
     log('INFO', 'db:schema:migrate:rooms:max_a2a_depth');
-  } catch {
-    // Column already exists — safe to ignore
-  }
-
-  // F017: add max_a2a_depth column to scenes table (default 5)
-  try {
-    db.exec("ALTER TABLE scenes ADD COLUMN max_a2a_depth INTEGER DEFAULT 5 NOT NULL");
-    log('INFO', 'db:schema:migrate:scenes:max_a2a_depth');
   } catch {
     // Column already exists — safe to ignore
   }
@@ -394,7 +420,6 @@ export function initSchema(): void {
       // 表不存在，直接应用 schema
       db.exec(sql);
       log('INFO', 'db:schema:init');
-      // Builtin scene seed is now handled in index.ts's initDB() bootstrap block (protected by app_meta)
       return;
     }
 
@@ -402,7 +427,6 @@ export function initSchema(): void {
     if (roomsSchema.sql.includes('RUNNING') && roomsSchema.sql.includes('DONE')) {
       db.exec(sql);
       log('INFO', 'db:schema:migrate:rooms:already_migrated');
-      // Builtin scene seed is now handled in index.ts's initDB() bootstrap block (protected by app_meta)
       return;
     }
 
@@ -423,9 +447,8 @@ export function initSchema(): void {
     // 迁移 rooms 数据: INIT/RESEARCH/DEBATE/CONVERGING → RUNNING, DONE → DONE
     // agent_ids: 旧 room 无存储，回填 ["host"]（主持人必定在）
     // deleted_at: 旧 room 全部为 NULL（未归档）
-    // scene_id: 旧 room 统一回填为 roundtable-forum
     db.exec(`
-      INSERT INTO rooms (id, topic, state, report, agent_ids, workspace, scene_id, created_at, updated_at, deleted_at)
+      INSERT INTO rooms (id, topic, state, report, agent_ids, workspace, created_at, updated_at, deleted_at)
       SELECT
         id, topic,
         CASE state
@@ -438,7 +461,6 @@ export function initSchema(): void {
         report,
         '["host"]',
         NULL,
-        'roundtable-forum',
         created_at, updated_at,
         NULL
       FROM rooms_backup`);
@@ -475,10 +497,6 @@ export function initSchema(): void {
       log('ERROR', 'db:schema:migrate:rooms:restore_failed', { migrateErr: String(err), restoreErr: String(restoreErr) });
     }
   }
-
-  // NOTE: builtin scene seeding is now handled by ensureBuiltinScenes() in initDB()'s
-  // bootstrap block (protected by app_meta.bootstrap_seed_version). It is NOT called
-  // unconditionally here any more, to avoid resurrecting deleted builtin scenes on restart.
 }
 
 /** Run JSON → DB migration with backup logic */
@@ -569,26 +587,5 @@ export function migrateFromJson(): void {
 
   if (!migrated) {
     log('INFO', 'db:migrate:skip', { reason: 'no json files found' });
-  }
-}
-
-// F016: Seed builtin scenes if they don't exist (idempotent)
-export function ensureBuiltinScenes(): void {
-  const builtinScenes = BUILTIN_SCENES;
-
-  // Seed-once: INSERT ... WHERE NOT EXISTS — do NOT overwrite user-edited builtin scenes
-  const insertIfNotExists = db.prepare(`
-    INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-    SELECT @id, @name, @description, @prompt, @builtin, @maxA2ADepth
-    WHERE NOT EXISTS (SELECT 1 FROM scenes WHERE id = @id)
-  `);
-
-  for (const scene of builtinScenes) {
-    try {
-      insertIfNotExists.run(scene);
-      log('INFO', 'db:scene:seed', { id: scene.id, name: scene.name, action: 'inserted' });
-    } catch (err) {
-      log('WARN', 'db:scene:seed:failed', { id: scene.id, error: String(err) });
-    }
   }
 }

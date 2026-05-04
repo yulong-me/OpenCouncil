@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouse
 import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, Check, ChevronDown, Clock3, Copy, Crown, GripVertical, Users, X } from 'lucide-react'
 import { AgentAvatar } from './AgentAvatar'
-import { AGENT_COLORS, DEFAULT_AGENT_COLOR, type Agent, type SessionTelemetry } from '../lib/agents'
+import { getAgentColor, type Agent, type SessionTelemetry } from '../lib/agents'
 import { formatCompactTokenCount, formatLatencyMs, getRemainingContextRatio } from '../lib/telemetry'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 
@@ -55,7 +55,7 @@ function AgentItem({
         ? { label: '已结束', className: 'bg-surface text-ink-soft border border-line', dotClassName: 'bg-ink-soft/35' }
         : { label: '待命', className: 'bg-surface text-ink-soft border border-line', dotClassName: 'bg-ink-soft/40' }
   const isManager = agent.role === 'MANAGER'
-  const avatarColors = AGENT_COLORS[agent.name] ?? DEFAULT_AGENT_COLOR
+  const avatarColors = getAgentColor(agent.name)
   const hasSessionTelemetry = Boolean(sessionTelemetry)
   const contextHealth = sessionTelemetry?.contextHealth
   const headerStatusLabel = contextHealth
@@ -425,7 +425,7 @@ function TelemetryPopover({
   }
 
   return createPortal((
-    <div className="fixed inset-0 z-[260] pointer-events-none">
+    <div className="fixed inset-0 z-[60] pointer-events-none">
       <div
         ref={(node) => {
           popoverRef.current = node
@@ -630,7 +630,7 @@ export function AgentPanel({
               type="button"
               onMouseDown={handleResizeStart}
               className="absolute inset-y-0 left-0 z-10 flex w-3 -translate-x-1/2 items-center justify-center text-ink-soft/40 transition-colors hover:text-accent"
-              aria-label="调整讨论成员面板宽度"
+              aria-label="调整 Team 成员面板宽度"
               title="拖拽调整面板宽度"
             >
               <GripVertical className="h-4 w-4 rounded-full bg-bg" />
@@ -722,10 +722,10 @@ function PanelContent({
           >
             <span className="opacity-60 group-hover:opacity-100 shrink-0">ID:</span>
             <span className="font-mono truncate group-hover:text-accent">{roomId.slice(0, 8)}…</span>
-            <span className="text-[10px] opacity-40 ml-auto">📋</span>
+            <Copy className="ml-auto h-3 w-3 opacity-40 transition-opacity group-hover:opacity-80" aria-hidden />
           </button>
         )}
-        <h2 className="pt-0.5 text-title text-ink">本房成员</h2>
+        <h2 className="pt-0.5 text-title text-ink">Team 成员</h2>
       </div>
 
       <div className="flex-1 overflow-y-auto px-2.5 py-2.5 space-y-2.5 custom-scrollbar">
@@ -734,7 +734,7 @@ function PanelContent({
             <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-surface text-ink-soft/60">
               <Users className="h-4 w-4" />
             </div>
-            <p className="text-[12px] font-medium text-ink-soft">选择讨论室后显示讨论成员</p>
+            <p className="text-[12px] font-medium text-ink-soft">选择任务记录后显示 Team 成员</p>
           </div>
         ) : (
           <div className="space-y-2">

@@ -225,7 +225,7 @@ Team 建议复盘并生成 EVO
 
 ## Validation Evidence
 
-- `pnpm --dir backend exec vitest run tests/teams.test.ts tests/rooms.http.test.ts tests/scenes.test.ts tests/team-evolution.test.ts`：75 tests passed
+- `pnpm --dir backend exec vitest run tests/teams.test.ts tests/rooms.http.test.ts tests/team-evolution.test.ts`：passed
 - `pnpm --dir backend exec tsc --noEmit`：passed
 - `pnpm --dir frontend exec tsc --noEmit`：passed
 

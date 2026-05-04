@@ -1,18 +1,19 @@
 /**
- * F016: Scene Prompt Builder
+ * Team Prompt Builder
  *
  * Assembles the effective system prompt for every agent execution:
- *   Scene Prompt + basePrompt (Agent/Action) + Runtime Context
- *
- * All execution paths MUST go through this builder so that Scene constraints
- * are always applied, even to hardcoded action prompts like generateReportInline.
+ *   TeamVersion workflow prompt + basePrompt (Agent/Action) + Runtime Context
  */
 
 import { store } from '../store.js';
-import { scenesRepo, teamsRepo } from '../db/index.js';
+import { teamsRepo } from '../db/index.js';
 import { getEffectiveMaxDepthForRoom } from './routing/A2ARouter.js';
 import { debug, warn } from '../lib/logger.js';
 import type { TeamVersionMemberSnapshot } from '../types.js';
+
+const DEFAULT_TEAM_WORKFLOW_PROMPT = `【团队工作流】
+
+围绕用户目标协作推进：先澄清目标和边界，再给出判断、行动和验证证据。需要同伴介入时，另起一行行首 @专家名，并说明对方需要判断的具体问题。`;
 
 interface RuntimeContext {
   /** Current user input / task text */
@@ -56,21 +57,23 @@ export function buildRoomScopedSystemPrompt(
 ): string | null {
   const room = store.get(roomId);
   if (!room) {
-    warn('scene:prompt:room_missing', { roomId });
+    warn('team:prompt:room_missing', { roomId });
     return null;
   }
 
-  const teamVersion = room.teamVersionId ? teamsRepo.getVersion(room.teamVersionId) : undefined;
-  const scene = scenesRepo.get(room.sceneId);
-  const workflowPrompt = teamVersion?.workflowPrompt || scene?.prompt;
-  if (!workflowPrompt) {
-    warn('scene:prompt:scene_missing', { roomId, sceneId: room.sceneId });
-    throw new Error(`Scene not found: ${room.sceneId}`);
+  const teamVersion = room.teamVersionId
+    ? teamsRepo.getVersion(room.teamVersionId)
+    : room.teamId
+      ? teamsRepo.getActiveVersion(room.teamId)
+      : teamsRepo.getActiveVersion('roundtable-forum');
+  const workflowPrompt = teamVersion?.workflowPrompt ?? DEFAULT_TEAM_WORKFLOW_PROMPT;
+  if (!teamVersion) {
+    warn('team:prompt:version_missing', { roomId, teamId: room.teamId, teamVersionId: room.teamVersionId });
   }
 
   const parts: string[] = [];
 
-  // 1. TeamVersion workflow prompt is pinned at room creation; old rooms fall back to Scene.
+  // 1. TeamVersion workflow prompt is pinned at room creation.
   parts.push(workflowPrompt);
 
   // 2. Base prompt (Agent persona prompt or system action prompt)
@@ -91,12 +94,11 @@ export function buildRoomScopedSystemPrompt(
   parts.push(buildRuntimeContextString(roomRuntime));
 
   const prompt = parts.join('\n\n');
-  debug('scene:prompt:built', {
+  debug('team:prompt:built', {
     roomId,
-    sceneId: scene?.id ?? room.sceneId,
     teamId: room.teamId,
     teamVersionId: room.teamVersionId,
-    promptSource: teamVersion ? 'team_version' : 'scene',
+    promptSource: 'team_version',
     basePromptLength: basePrompt.length,
     promptLength: prompt.length,
     participantCount: roomRuntime.participants?.length ?? 0,

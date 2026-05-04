@@ -9,7 +9,7 @@ interface BootstrapState {
   metaPresent: boolean;
   agentsCount: number;
   providersCount: number;
-  scenesCount: number;
+  teamsCount: number;
   roomsCount: number;
 }
 
@@ -18,7 +18,7 @@ export function resolveBootstrapAction(state: BootstrapState): BootstrapAction {
     const hasHistoricalData =
       state.agentsCount > 0 ||
       state.providersCount > 0 ||
-      state.scenesCount > 0;
+      state.teamsCount > 0;
 
     if (!hasHistoricalData) {
       return 'fresh_seed_all';
@@ -31,7 +31,7 @@ export function resolveBootstrapAction(state: BootstrapState): BootstrapAction {
     return 'legacy_mark_only';
   }
 
-  if (state.agentsCount === 0 && state.scenesCount === 0 && state.roomsCount === 0) {
+  if (state.agentsCount === 0 && state.teamsCount === 0 && state.roomsCount === 0) {
     return 'repair_partial';
   }
 

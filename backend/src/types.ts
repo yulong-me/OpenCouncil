@@ -136,8 +136,6 @@ export interface DiscussionRoom {
   report?: string;
   /** F006: 自定义工作目录，留空则使用 workspaces/room-{id}/ */
   workspace?: string;
-  /** F016: 场景 ID，默认为 roundtable-forum */
-  sceneId: string;
   createdAt: number;
   updatedAt: number;
   /** agentConfigId → session ID for CLI resume/continue support */
@@ -148,15 +146,15 @@ export interface DiscussionRoom {
   a2aDepth: number;
   /** A2A 调用链 */
   a2aCallChain: string[];
-  /** F017: Room 级最大 A2A 深度覆盖，null=继承 scene 默认值 */
+  /** F017: Room 级最大 A2A 深度覆盖，null=继承 TeamVersion 默认值 */
   maxA2ADepth: number | null;
-  /** F052: Team ID for TeamVersion-backed rooms */
+  /** Team ID for TeamVersion-backed rooms */
   teamId?: string;
-  /** F052: TeamVersion ID pinned at room creation */
+  /** TeamVersion ID pinned at room creation */
   teamVersionId?: string;
-  /** F052: Team name (display hint) */
+  /** Team name (display hint) */
   teamName?: string;
-  /** F052: Team version number (display hint) */
+  /** Team version number (display hint) */
   teamVersionNumber?: number;
 }
 
@@ -166,10 +164,16 @@ export interface TeamConfig {
   name: string;
   description?: string;
   builtin: boolean;
-  sourceSceneId: string;
   activeVersionId: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface TeamMemberSkillRef {
+  source: 'managed' | 'global' | 'workspace';
+  id?: string;
+  name: string;
+  sourcePath?: string;
 }
 
 export interface TeamVersionMemberSnapshot {
@@ -181,6 +185,8 @@ export interface TeamVersionMemberSnapshot {
   systemPrompt: string;
   responsibility?: string;
   whenToUse?: string;
+  skillIds?: string[];
+  skillRefs?: TeamMemberSkillRef[];
 }
 
 export interface TeamVersionConfig {
@@ -189,7 +195,6 @@ export interface TeamVersionConfig {
   versionNumber: number;
   name: string;
   description?: string;
-  sourceSceneId: string;
   memberIds: string[];
   memberSnapshots: TeamVersionMemberSnapshot[];
   workflowPrompt: string;
@@ -197,7 +202,7 @@ export interface TeamVersionConfig {
   teamMemory: string[];
   maxA2ADepth: number;
   createdAt: number;
-  createdFrom: 'scene-seed' | 'migration' | 'manual' | 'evolution-pr';
+  createdFrom: 'builtin-seed' | 'migration' | 'manual' | 'evolution-pr';
 }
 
 export interface TeamListItem extends TeamConfig {
@@ -234,6 +239,20 @@ export interface TeamDraft {
   generationRationale: string;
   generationSource?: 'agent' | 'fallback';
   fallbackReason?: string;
+}
+
+export interface TeamSettingsPatch {
+  name?: string;
+  description?: string;
+  version?: {
+    name?: string;
+    description?: string;
+    memberSnapshots?: TeamVersionMemberSnapshot[];
+    workflowPrompt?: string;
+    routingPolicy?: Record<string, unknown>;
+    teamMemory?: string[];
+    maxA2ADepth?: number;
+  };
 }
 
 export type EvolutionProposalStatus = 'draft' | 'pending' | 'in-review' | 'applied' | 'rejected' | 'expired';
@@ -339,15 +358,4 @@ export interface TeamVersionQualityTimelineItem {
     validationCasesAddedAfterThisVersion: number;
     failingPreflightsAfterThisVersion: number;
   };
-}
-
-// F016: Scene 配置
-export interface SceneConfig {
-  id: string;
-  name: string;
-  description?: string;
-  prompt: string;
-  builtin: boolean;
-  /** F017: Scene 默认 A2A 最大深度，0=无限 */
-  maxA2ADepth: number;
 }

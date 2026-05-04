@@ -69,6 +69,7 @@ interface EvolutionArchitectOutput {
 interface EvolutionArchitectOptions {
   agentClient?: TeamDraftAgentClient;
   replacesProposalId?: string;
+  onDelta?: (text: string) => void;
 }
 
 export class EvolutionProposalGenerationError extends Error {
@@ -178,7 +179,9 @@ function buildArchitectPrompt(room: DiscussionRoom, version: TeamVersionConfig, 
     ...SAFETY_CONSTRAINTS.map(item => `- ${item}`),
     '输入上下文 JSON：',
     JSON.stringify(payload, null, 2),
-    '输出必须由 --json-schema 约束为严格 JSON；不要 Markdown，不要解释，不要代码块。',
+    'TeamEvolutionProposal 输出 JSON Schema：',
+    JSON.stringify(EVOLUTION_PROPOSAL_SCHEMA, null, 2),
+    '输出必须是严格 JSON；所有 required 字段都必须出现；不要 Markdown，不要解释，不要代码块。',
   ].join('\n');
 }
 
@@ -306,17 +309,20 @@ export async function createEvolutionProposalFromRoom(
   let changes: CreateEvolutionChangeInput[];
   try {
     const runtime = getTeamArchitectRuntimeFromEnv();
-    const rawOutput = await agentClient.generateDraft({
-      goal: `${baseVersion.name} v${baseVersion.versionNumber} evolution proposal`,
-      schemaName: 'TeamEvolutionProposal',
-      schema: EVOLUTION_PROPOSAL_SCHEMA,
-      safetyConstraints: SAFETY_CONSTRAINTS,
-      prompt: buildArchitectPrompt(room, baseVersion, feedbackText),
-      runtime: {
-        ...runtime,
-        timeoutSeconds: runtime.timeoutSeconds ?? null,
+    const rawOutput = await agentClient.generateDraft(
+      {
+        goal: `${baseVersion.name} v${baseVersion.versionNumber} evolution proposal`,
+        schemaName: 'TeamEvolutionProposal',
+        schema: EVOLUTION_PROPOSAL_SCHEMA,
+        safetyConstraints: SAFETY_CONSTRAINTS,
+        prompt: buildArchitectPrompt(room, baseVersion, feedbackText),
+        runtime: {
+          ...runtime,
+          timeoutSeconds: runtime.timeoutSeconds ?? null,
+        },
       },
-    });
+      { onDelta: options.onDelta },
+    );
     const output = parseAgentOutput(rawOutput);
     assertArchitectOutput(output);
     summary = truncate(output.summary.trim(), 240);

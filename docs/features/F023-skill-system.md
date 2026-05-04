@@ -1,6 +1,6 @@
 ---
 feature_ids: [F023]
-related_features: [F001, F006, F016]
+related_features: [F001, F006, F052]
 topics: [skill, runtime, workspace, room, provider, settings]
 doc_kind: spec
 created: 2026-04-20
@@ -15,14 +15,14 @@ updated: 2026-04-21
 
 当前 OpenCouncil 已经有：
 
-- `scene`：房间协作模式
+- `team`：房间协作模式与成员组合
 - `agent.systemPrompt`：参与者身份职责
 - `workspace`：工作对象目录
 
 但还没有真正的平台级 Skill System。这导致 5 个问题：
 
 1. **缺少可复用能力层**：workflow / best practice / knowledge 只能塞进 `systemPrompt`
-2. **`scene` 与 `skill` 语义混淆**：房间工作模式和能力包职责混在一起
+2. **`team` 与 `skill` 语义混淆**：房间工作模式和能力包职责混在一起
 3. **平台无法维护 skill**：缺少 catalog、启停、绑定、来源和使用情况
 4. **Agent / Room / Workspace 缺少统一合并规则**：同一 agent 在不同房间和目录下的技能集合不可预测
 5. **运行时注入路径缺失**：即使平台知道“哪些 skill 生效”，provider 也还没有一个稳定、原生可发现的技能目录视图
@@ -75,9 +75,9 @@ updated: 2026-04-21
 
 ## 术语边界
 
-### Scene
+### Team
 
-Room 级工作模式。回答“这间房间如何协作”。
+Room 级团队配置。回答“谁一起做事、如何协作”。
 
 ### Agent
 
@@ -115,7 +115,7 @@ Room 默认工作目录，由平台维护。
 
 ## 结论摘要
 
-1. **Skill 是一等配置实体**，独立于 Scene 和 Agent
+1. **Skill 是一等配置实体**，独立于 Team 和 Agent
 2. **Runtime App Root 是运行中的应用目录**，不是当前源码 checkout
 3. **所有系统维护的可变目录都必须相对 Runtime App Root 布局**
 4. **Room 默认工作目录是 Runtime App Root 下的一块系统管理目录**
@@ -458,7 +458,7 @@ Phase 1 采用 **provider-native skill injection as primary path**。
   "topic": "F023 方案讨论",
   "workerIds": ["dev-architect", "dev-reviewer"],
   "workspacePath": "/Users/yulong/work/other-repo",
-  "sceneId": "software-development",
+  "teamId": "software-development",
   "roomSkills": [
     { "skillName": "request-review", "mode": "required", "enabled": true }
   ]
@@ -506,12 +506,12 @@ Phase 1 采用 **provider-native skill injection as primary path**。
 - Workspace discovered count
 - 来源标签：Room / Workspace / Agent
 
-## 与 Scene / Agent Prompt 的关系
+## 与 Team / Agent Prompt 的关系
 
 当前已有：
 
 ```text
-Scene Prompt
+Team Workflow Prompt
 + Agent Prompt
 + Runtime Context
 ```
@@ -519,7 +519,7 @@ Scene Prompt
 本 Feature 之后，逻辑应变为：
 
 ```text
-Scene Prompt
+Team Workflow Prompt
 + Agent Prompt
 + Runtime Context
 + Provider-native Skill Discovery
@@ -527,7 +527,7 @@ Scene Prompt
 
 说明：
 
-- Scene 继续表达房间工作模式
+- Team 继续表达房间工作模式、成员和协作协议
 - Agent Prompt 继续表达身份职责
 - Skill 不再以“主路径 prompt 拼接正文”的方式注入
 - prompt 中可以保留一段精简 skill summary，但那是辅助说明，不是真正的注入主路径
@@ -535,7 +535,7 @@ Scene Prompt
 ## 向后兼容
 
 1. 不删除现有 `system_prompt`
-2. 不修改 F016 Scene 语义
+2. 不修改 Team 工作流语义
 3. 现有 builtin perspective agents 继续按原逻辑工作
 4. 旧 Room / Agent 没有 skill bindings 时，行为与今天一致
 5. Seed-once 原则保持不变

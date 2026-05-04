@@ -15,6 +15,8 @@ const EVOLUTION_ERROR_STATUS: Record<string, number> = {
   TEAM_GOAL_TOO_VAGUE: 400,
   TEAM_DRAFT_INVALID: 400,
   TEAM_DRAFT_AGENT_FAILED: 503,
+  TEAM_NOT_FOUND: 404,
+  TEAM_SETTINGS_INVALID: 400,
 };
 
 function sendEvolutionError(res: Response, err: unknown, fallback: string) {
@@ -32,6 +34,38 @@ teamsRouter.post('/drafts', async (req, res) => {
     return res.json(await generateTeamDraftFromGoal(goal));
   } catch (err) {
     return sendEvolutionError(res, err, 'Failed to generate Team draft');
+  }
+});
+
+function writeDraftStreamEvent(res: Response, event: Record<string, unknown>) {
+  res.write(`${JSON.stringify(event)}\n`);
+}
+
+teamsRouter.post('/drafts/stream', async (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const onDelta = (text: string) => {
+    writeDraftStreamEvent(res, { type: 'delta', text, timestamp: Date.now() });
+  };
+
+  try {
+    const goal = typeof req.body?.goal === 'string' ? req.body.goal : '';
+    const draft = await generateTeamDraftFromGoal(goal, { onDelta });
+    writeDraftStreamEvent(res, { type: 'draft', draft });
+  } catch (err) {
+    const error = err as Error & { code?: string };
+    writeDraftStreamEvent(res, {
+      type: 'error',
+      ...(error.code ? { code: error.code } : {}),
+      error: error.message || 'Failed to generate Team draft',
+    });
+  } finally {
+    res.end();
   }
 });
 
@@ -94,6 +128,14 @@ teamsRouter.post('/evolution-proposals/:proposalId/preflight', (req, res) => {
 
 teamsRouter.get('/', (_req, res) => {
   res.json(teamsRepo.list());
+});
+
+teamsRouter.patch('/:id/settings', (req, res) => {
+  try {
+    return res.json(teamsRepo.updateSettings(req.params.id, req.body));
+  } catch (err) {
+    return sendEvolutionError(res, err, 'Failed to update Team settings');
+  }
 });
 
 teamsRouter.get('/:id/quality-timeline', (req, res) => {

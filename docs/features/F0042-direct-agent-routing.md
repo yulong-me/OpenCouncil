@@ -154,7 +154,7 @@ export async function routeToAgent(
 
 ## 兼容性
 
-| 场景 | 行为 |
+| 情况 | 行为 |
 |------|------|
 | 新客户端 + `toAgentId`=MANAGER | 走主持人路由逻辑 |
 | 新客户端 + `toAgentId`=WORKER | 直接发给目标 Worker |

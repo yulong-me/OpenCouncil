@@ -30,6 +30,7 @@ Thumbs.db
 # Cache
 .cache/
 .turbo/
+frontend/.tmp-tests/
 
 # TypeScript
 *.tsbuildinfo

@@ -7,13 +7,13 @@
  * - 移除 /start 和 /advance（无状态机阶段）
  */
 
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { debug, error, info, warn } from '../lib/logger.js';
 import { v4 as uuid } from 'uuid';
 import { store } from '../store.js';
 import type { DiscussionRoom, TeamVersionConfig } from '../types.js';
 import { routeToAgent, generateReportInline, generateTitleSuggestionsInline, stopAgentRun, isRoomBusy } from '../services/stateMachine.js';
-import { roomsRepo, sessionsRepo, messagesRepo, scenesRepo, teamsRepo } from '../db/index.js';
+import { roomsRepo, sessionsRepo, messagesRepo, teamsRepo } from '../db/index.js';
 import { auditRepo } from '../db/index.js';
 import { evolutionRepo } from '../db/index.js';
 import { archiveWorkspace, validateWorkspacePath } from '../services/workspace.js';
@@ -175,13 +175,12 @@ roomsRouter.post('/preflight', (req, res) => {
 
 // POST /api/rooms — 创建讨论室（运行期仅创建 WORKER）
 roomsRouter.post('/', async (req, res) => {
-  const { topic, workerIds: rawWorkerIds, workspacePath, sceneId, teamId, teamVersionId, roomSkills: rawRoomSkills } = req.body as {
+  const { topic, workerIds: rawWorkerIds, workspacePath, teamId, teamVersionId, roomSkills: rawRoomSkills } = req.body as {
     topic?: string;
     workerIds?: string[];
     workspacePath?: string; // F006: custom workspace directory
-    sceneId?: string; // F016: scene ID, defaults to roundtable-forum
-    teamId?: string; // F052: active TeamVersion source
-    teamVersionId?: string; // F052: pinned TeamVersion source
+    teamId?: string; // active TeamVersion source
+    teamVersionId?: string; // pinned TeamVersion source
     roomSkills?: Array<{ skillId?: string; skillName?: string; mode?: 'auto' | 'required'; enabled?: boolean }>;
   };
 
@@ -194,19 +193,13 @@ roomsRouter.post('/', async (req, res) => {
       warn('room:create:invalid_team_version', { teamVersionId });
       return res.status(400).json({ error: `TeamVersion not found: ${teamVersionId}` });
     }
-  } else if (teamId) {
-    teamVersion = teamsRepo.getActiveVersion(teamId);
+  } else {
+    const requestedTeamId = teamId ?? 'roundtable-forum';
+    teamVersion = teamsRepo.getActiveVersion(requestedTeamId);
     if (!teamVersion) {
-      warn('room:create:invalid_team', { teamId });
-      return res.status(400).json({ error: `Team not found or has no active version: ${teamId}` });
+      warn('room:create:invalid_team', { teamId: requestedTeamId });
+      return res.status(400).json({ error: `Team not found or has no active version: ${requestedTeamId}` });
     }
-  }
-
-  // F016: Validate sceneId — always check effectiveSceneId exists
-  const effectiveSceneId = teamVersion?.sourceSceneId ?? sceneId ?? 'roundtable-forum';
-  if (!scenesRepo.get(effectiveSceneId)) {
-    warn('room:create:invalid_scene', { sceneId: effectiveSceneId });
-    return res.status(400).json({ error: `Scene not found: ${effectiveSceneId}` });
   }
 
   // F006: Validate custom workspace path if provided
@@ -242,25 +235,25 @@ roomsRouter.post('/', async (req, res) => {
     return res.status(400).json({ error: `Invalid workers (must be enabled WORKER): ${disabled.join(', ')}` });
   }
 
-  if (effectiveSceneId === 'roundtable-forum' && workerIds.length < 3) {
+  if (teamVersion.teamId === 'roundtable-forum' && workerIds.length < 3) {
     warn('room:create:invalid_workers', {
       reason: 'insufficient_workers_for_roundtable',
       workerCount: workerIds.length,
-      sceneId: effectiveSceneId,
+      teamId: teamVersion.teamId,
     });
     return res.status(400).json({ error: '圆桌论坛至少选择 3 位专家' });
   }
 
-  if (effectiveSceneId === 'software-development' && !teamVersion) {
+  if (teamVersion.teamId === 'software-development') {
     const missingCore = SOFTWARE_DEVELOPMENT_CORE_REQUIREMENTS.filter(requirement => !workerIds.includes(requirement.id));
     if (missingCore.length > 0) {
       warn('room:create:invalid_workers', {
         reason: 'missing_software_development_core_agents',
         missing: missingCore.map(requirement => requirement.id),
-        sceneId: effectiveSceneId,
+        teamId: teamVersion.teamId,
       });
       return res.status(400).json({
-        error: `软件开发场景必须包含 4 位核心专家：主架构师、挑战架构师、实现工程师、Reviewer。当前缺少：${missingCore.map(requirement => requirement.label).join('、')}`,
+        error: `软件开发团队必须包含 4 位核心专家：主架构师、挑战架构师、实现工程师、Reviewer。当前缺少：${missingCore.map(requirement => requirement.label).join('、')}`,
       });
     }
   }
@@ -285,18 +278,17 @@ roomsRouter.post('/', async (req, res) => {
     agents: workerEntries, // F012: no MANAGER in room
     messages: [],
     workspace: workspacePath,
-    sceneId: effectiveSceneId, // F016: validated above
-    teamId: teamVersion?.teamId,
-    teamVersionId: teamVersion?.id,
-    teamName: teamVersion?.name,
-    teamVersionNumber: teamVersion?.versionNumber,
+    teamId: teamVersion.teamId,
+    teamVersionId: teamVersion.id,
+    teamName: teamVersion.name,
+    teamVersionNumber: teamVersion.versionNumber,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     sessionIds: {},
     sessionTelemetryByAgent: {},
     a2aDepth: 0,
     a2aCallChain: [],
-    maxA2ADepth: null, // F017: null = inherit from scene
+    maxA2ADepth: null,
   };
   store.create(room);
   roomsRepo.create(room);
@@ -312,7 +304,6 @@ roomsRouter.post('/', async (req, res) => {
   }
   info('room:create', {
     roomId: room.id,
-    sceneId: room.sceneId,
     teamId: room.teamId,
     teamVersionId: room.teamVersionId,
     workerCount: workerEntries.length,
@@ -323,7 +314,6 @@ roomsRouter.post('/', async (req, res) => {
     roomId: room.id,
     workerCount: workerEntries.length,
     workers: workerEntries.map(w => w.name),
-    sceneId: room.sceneId,
     teamId: room.teamId,
     teamVersionId: room.teamVersionId,
   });
@@ -344,6 +334,98 @@ roomsRouter.get('/:id/evolution-proposals', (req, res) => {
     return res.status(404).json({ error: 'Room not found' });
   }
   res.json(evolutionRepo.listByRoom(req.params.id));
+});
+
+function writeEvolutionStreamEvent(res: Response, event: Record<string, unknown>) {
+  res.write(`${JSON.stringify(event)}\n`);
+}
+
+function createEvolutionProposalStreamResponse(res: Response): Response {
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  return res;
+}
+
+roomsRouter.post('/:id/evolution-proposals/stream', async (req, res) => {
+  const streamRes = createEvolutionProposalStreamResponse(res);
+  const room = store.get(req.params.id);
+  if (!room) {
+    writeEvolutionStreamEvent(streamRes, { type: 'error', error: 'Room not found' });
+    streamRes.end();
+    return;
+  }
+  if (isRoomBusy(req.params.id)) {
+    writeEvolutionStreamEvent(streamRes, { type: 'error', code: 'ROOM_BUSY', error: 'Room has an Agent currently executing' });
+    streamRes.end();
+    return;
+  }
+
+  const onDelta = (text: string) => {
+    writeEvolutionStreamEvent(streamRes, { type: 'delta', text, timestamp: Date.now() });
+  };
+
+  try {
+    const replacesProposalId = typeof req.body?.replacesProposalId === 'string' ? req.body.replacesProposalId.trim() : '';
+    let proposalToReplace = '';
+    if (replacesProposalId) {
+      const existingProposal = evolutionRepo.get(replacesProposalId);
+      if (!existingProposal) {
+        writeEvolutionStreamEvent(streamRes, {
+          type: 'error',
+          code: 'EVOLUTION_PROPOSAL_NOT_FOUND',
+          error: `Evolution proposal not found: ${replacesProposalId}`,
+        });
+        return;
+      }
+      if (existingProposal.roomId !== room.id) {
+        writeEvolutionStreamEvent(streamRes, { type: 'error', error: 'Replacement proposal does not belong to this room' });
+        return;
+      }
+      if (!REPLACEABLE_EVOLUTION_PROPOSAL_STATUSES.has(existingProposal.status)) {
+        writeEvolutionStreamEvent(streamRes, {
+          type: 'error',
+          code: 'EVOLUTION_PROPOSAL_STATE_CONFLICT',
+          error: `Cannot replace ${existingProposal.status} proposal`,
+        });
+        return;
+      }
+      proposalToReplace = existingProposal.id;
+    }
+
+    const feedback = typeof req.body?.feedback === 'string' ? req.body.feedback : undefined;
+    const proposal = await createEvolutionProposalFromRoom(room, feedback, {
+      ...(proposalToReplace ? { replacesProposalId: proposalToReplace } : {}),
+      onDelta,
+    });
+    info('room:evolution:create', {
+      roomId: room.id,
+      teamId: proposal.teamId,
+      proposalId: proposal.id,
+      changeCount: proposal.changes.length,
+    });
+    auditRepo.log('team:evolution:create', proposal.summary, undefined, {
+      roomId: room.id,
+      teamId: proposal.teamId,
+      proposalId: proposal.id,
+      baseVersionId: proposal.baseVersionId,
+      targetVersionNumber: proposal.targetVersionNumber,
+    });
+    writeEvolutionStreamEvent(streamRes, { type: 'proposal', proposal });
+  } catch (err) {
+    const errorWithCode = err as Error & { code?: string };
+    warn('room:evolution:create:invalid', { roomId: req.params.id, error: err });
+    writeEvolutionStreamEvent(streamRes, {
+      type: 'error',
+      ...(errorWithCode.code ? { code: errorWithCode.code } : {}),
+      error: errorWithCode.message || '生成改进建议失败',
+    });
+  } finally {
+    streamRes.end();
+  }
 });
 
 roomsRouter.post('/:id/evolution-proposals', async (req, res) => {
@@ -427,18 +509,27 @@ roomsRouter.get('/:id/skills', async (req, res) => {
   const workspacePath = await getRoomWorkspace(req.params.id);
   const roomBindings = listRoomSkillBindings(req.params.id);
   const discoveredResult = await discoverWorkspaceSkills(workspacePath);
+  const teamMemberSnapshotsById = new Map(
+    (room.teamVersionId ? teamsRepo.getVersion(room.teamVersionId)?.memberSnapshots ?? [] : [])
+      .map(snapshot => [snapshot.id, snapshot]),
+  );
   const agentSkillStates = await Promise.all(room.agents.map(async agent => {
+    const snapshot = teamMemberSnapshotsById.get(agent.configId);
+    const provider = snapshot?.provider ?? getAgent(agent.configId)?.provider ?? 'claude-code';
     const effective = await resolveEffectiveSkills({
       roomId: req.params.id,
       agentConfigId: agent.configId,
       workspacePath,
-      providerName: getAgent(agent.configId)?.provider ?? 'claude-code',
+      providerName: provider,
+      teamSkillIds: snapshot?.skillIds ?? [],
+      teamSkillRefs: snapshot?.skillRefs ?? [],
+      includeDiscoveredSkills: snapshot ? false : undefined,
     });
     return {
       agentId: agent.id,
       configId: agent.configId,
       agentName: agent.name,
-      provider: getAgent(agent.configId)?.provider ?? 'claude-code',
+      provider,
       agentBindings: effective.agentBindings,
       effectiveSkills: effective.effective,
     };
@@ -497,7 +588,7 @@ roomsRouter.patch('/:id', (req, res) => {
 
   const { maxA2ADepth, topic } = req.body as { maxA2ADepth?: number | null; topic?: string };
 
-  // 有效值：3, 5, 10, 0(无限), null(继承scene)
+  // 有效值：3, 5, 10, 0(无限), null(继承 TeamVersion)
   const validValues = new Set([3, 5, 10, 0, null]);
   if (maxA2ADepth !== undefined && !validValues.has(maxA2ADepth)) {
     warn('room:update:invalid_depth', { roomId: id, maxA2ADepth });
@@ -531,12 +622,12 @@ roomsRouter.patch('/:id', (req, res) => {
     topicChanged: trimmedTopic !== undefined,
     topic: trimmedTopic ?? room.topic,
     maxA2ADepth: updated.maxA2ADepth,
-    effectiveMaxDepth: resolveEffectiveMaxDepth(updated.maxA2ADepth, updated.sceneId),
+    effectiveMaxDepth: resolveEffectiveMaxDepth(updated.maxA2ADepth, updated.teamVersionId),
   });
 
   res.json({
     ...updated,
-    effectiveMaxDepth: resolveEffectiveMaxDepth(updated.maxA2ADepth, updated.sceneId),
+    effectiveMaxDepth: resolveEffectiveMaxDepth(updated.maxA2ADepth, updated.teamVersionId),
   });
 });
 
@@ -588,18 +679,17 @@ roomsRouter.get('/:id/messages', (req, res) => {
       ...message,
       effectiveMentions: message.agentRole === 'USER'
         ? []
-        : computeEffectiveMessageMentions(message.content, room.sceneId, room.agents),
+        : computeEffectiveMessageMentions(message.content, room.teamId, room.agents),
     })),
     agents: room.agents,
     report: room.report,
-    sceneId: room.sceneId,
     teamId: room.teamId,
     teamVersionId: room.teamVersionId,
     teamName: room.teamName,
     teamVersionNumber: room.teamVersionNumber,
-    maxA2ADepth: room.maxA2ADepth, // F017: room override (null = inherit scene)
+    maxA2ADepth: room.maxA2ADepth,
     a2aDepth: room.a2aDepth ?? 0, // F017: current A2A depth
-    effectiveMaxDepth: resolveEffectiveMaxDepth(room.maxA2ADepth, room.sceneId), // F017: computed max depth
+    effectiveMaxDepth: resolveEffectiveMaxDepth(room.maxA2ADepth, room.teamVersionId),
     workspace: room.workspace, // F006: workspace path for file browser
     sessionTelemetryByAgent,
   });

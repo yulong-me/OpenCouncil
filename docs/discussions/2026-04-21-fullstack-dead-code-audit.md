@@ -84,7 +84,7 @@ created: 2026-04-21
    - `backend/tests/stateMachine.test.ts` 里 `handleUserMessage()` 相关用例
    - `backend/tests/rooms.test.ts` 里对 `handleUserMessage` / `generateReport` 的 mock
    - `backend/tests/rooms.http.test.ts` 里对 `handleUserMessage` / `generateReport` 的 mock
-   - `backend/tests/scenes.test.ts` 里对 `generateReport` 的 mock
+   - `backend/tests/teams.test.ts` 里对 `generateReport` 的 mock
 
 风险：
 
@@ -166,8 +166,8 @@ created: 2026-04-21
 这批项由 `tsc --noUnusedLocals --noUnusedParameters` 直接报出，删除风险最低：
 
 - `frontend/components/CreateRoomModal.tsx:25` `PROVIDER_COLORS`
-- `frontend/components/SettingsModal.tsx:549` `loadingScenes`
-- `frontend/components/SettingsModal.tsx:549` `setLoadingScenes`
+- `frontend/components/SettingsModal.tsx:549` `loadingTeams`
+- `frontend/components/SettingsModal.tsx:549` `setLoadingTeams`
 - `frontend/components/SettingsModal.tsx:563` `router`
 - `backend/src/routes/browse.ts:198` `created`
 - `backend/src/routes/providers.ts:10` `ProviderConfig` import
@@ -218,11 +218,11 @@ created: 2026-04-21
 | `backend/src/db/index.ts:182` | `agentsRepo` re-export | 无调用方 | 删除 re-export |
 | `backend/src/db/index.ts:183` | `providersRepo` re-export | 无调用方 | 删除 re-export |
 | `backend/src/db/repositories/audit.ts:4` | `AuditLog` export | 仅本文件使用 | 改为内部接口 |
-| `backend/src/prompts/builtinScenes.ts:1` | `BuiltinSceneDefinition` export | 仅本文件使用 | 改为内部接口 |
+| `backend/src/prompts/builtinTeams.ts:1` | `BuiltinTeamDefinition` export | 仅本文件使用 | 改为内部接口 |
 | `backend/src/routes/browse.ts:16` | `BrowseEntry` export | 仅本文件使用 | 改为内部接口 |
 | `backend/src/routes/browse.ts:22` | `BrowseResult` export | 仅本文件使用 | 改为内部接口 |
 | `backend/src/routes/browse.ts:30` | `FilePreviewResult` export | 仅本文件使用 | 改为内部接口 |
-| `backend/src/services/scenePromptBuilder.ts:15` | `RuntimeContext` export | 仅本文件使用 | 改为内部接口 |
+| `backend/src/services/teamPromptBuilder.ts:15` | `RuntimeContext` export | 仅本文件使用 | 改为内部接口 |
 | `backend/src/services/workspace.ts:22` | `WorkspaceSecurityError` export | 仅模块内部抛出/捕获 | 去掉 `export` |
 | `backend/src/services/workspace.ts:64` | `getWorkspacePath` export | 运行时内部用，测试直接 import | 去掉 `export`，测试改走 `ensureWorkspace()` 断言 |
 | `backend/src/services/providers/index.ts:18` | `StreamFn` export | 无外部类型引用 | 改为内部类型 |
@@ -294,7 +294,7 @@ created: 2026-04-21
 范围：
 
 - `CreateRoomModal.tsx` 未用 `PROVIDER_COLORS`
-- `SettingsModal.tsx` 未用 `loadingScenes` / `router`
+- `SettingsModal.tsx` 未用 `loadingTeams` / `router`
 - `browse.ts` 未用 `created`
 - `providers.ts` 未用 import
 - `claudeCode.ts` 未用 `info`
@@ -348,7 +348,7 @@ created: 2026-04-21
    - A2A @mention 继续工作
    - 停止专家输出
    - 添加专家入群
-   - 设置页 Agent / Provider / Scene 正常打开
+   - 设置页 Team / Provider / Skill 正常打开
    - Workspace 文件浏览 / Git 面板正常
 
 ## 附录：本次全量扫描覆盖范围
@@ -424,12 +424,12 @@ backend/src/db/repositories/agents.ts
 backend/src/db/repositories/audit.ts
 backend/src/db/repositories/providers.ts
 backend/src/db/repositories/rooms.ts
-backend/src/db/repositories/scenes.ts
+backend/src/db/repositories/teams.ts
 backend/src/db/repositories/sessions.ts
 backend/src/lib/logger.ts
 backend/src/log.ts
 backend/src/prompts/builtinAgents.ts
-backend/src/prompts/builtinScenes.ts
+backend/src/prompts/builtinTeams.ts
 backend/src/prompts/host.ts
 backend/src/routes/agents.ts
 backend/src/routes/browse.ts
@@ -437,14 +437,14 @@ backend/src/routes/git.ts
 backend/src/routes/logs.ts
 backend/src/routes/providers.ts
 backend/src/routes/rooms.ts
-backend/src/routes/scenes.ts
+backend/src/routes/teams.ts
 backend/src/server.ts
 backend/src/services/agentRuns.ts
 backend/src/services/providers/claudeCode.ts
 backend/src/services/providers/index.ts
 backend/src/services/providers/opencode.ts
 backend/src/services/routing/A2ARouter.ts
-backend/src/services/scenePromptBuilder.ts
+backend/src/services/teamPromptBuilder.ts
 backend/src/services/socketEmitter.ts
 backend/src/services/stateMachine.ts
 backend/src/services/workspace.ts
@@ -458,7 +458,7 @@ backend/src/types.ts
 backend/tests/agentModels.test.ts
 backend/tests/agents.http.test.ts
 backend/tests/browse.test.ts
-backend/tests/builtinScenes.test.ts
+backend/tests/builtinTeams.test.ts
 backend/tests/errorRecovery.test.ts
 backend/tests/git.test.ts
 backend/tests/mentions.test.ts
@@ -466,7 +466,7 @@ backend/tests/outgoingQueue.test.ts
 backend/tests/providerToolUse.test.ts
 backend/tests/rooms.http.test.ts
 backend/tests/rooms.test.ts
-backend/tests/scenes.test.ts
+backend/tests/teams.test.ts
 backend/tests/settingsTabs.test.ts
 backend/tests/stateMachine.test.ts
 backend/tests/workspace.test.ts

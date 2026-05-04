@@ -40,8 +40,8 @@ function parseSnapshotMap(value: unknown): Map<string, TeamVersionMemberSnapshot
 export const roomsRepo = {
   create(room: DiscussionRoom): DiscussionRoom {
     db.prepare(`
-      INSERT INTO rooms (id, topic, state, report, agent_ids, workspace, scene_id, team_id, team_version_id, created_at, updated_at, max_a2a_depth)
-      VALUES (@id, @topic, @state, @report, @agentIds, @workspace, @sceneId, @teamId, @teamVersionId, @createdAt, @updatedAt, @maxA2ADepth)
+      INSERT INTO rooms (id, topic, state, report, agent_ids, workspace, team_id, team_version_id, created_at, updated_at, max_a2a_depth)
+      VALUES (@id, @topic, @state, @report, @agentIds, @workspace, @teamId, @teamVersionId, @createdAt, @updatedAt, @maxA2ADepth)
     `).run({
       id: room.id,
       topic: room.topic,
@@ -49,7 +49,6 @@ export const roomsRepo = {
       report: room.report ?? null,
       agentIds: JSON.stringify(room.agents.map(a => a.configId)),
       workspace: room.workspace ?? null,
-      sceneId: room.sceneId,
       teamId: room.teamId ?? null,
       teamVersionId: room.teamVersionId ?? null,
       createdAt: room.createdAt,
@@ -63,12 +62,21 @@ export const roomsRepo = {
     const row = db.prepare('SELECT * FROM rooms WHERE id = ?').get(id) as Record<string, unknown> | undefined;
     if (!row) return undefined;
     const agentIds: string[] = JSON.parse((row.agent_ids as string) ?? '[]');
-    // F052: resolve team display hints from team_versions
-    const teamVersionId = (row.team_version_id as string | null) ?? undefined;
+    // Resolve team display hints from team_versions. Legacy rows with no TeamVersion
+    // are treated as roundtable rooms so they still open after the Team-only migration.
+    let teamVersionId = (row.team_version_id as string | null) ?? undefined;
     let teamId: string | undefined = (row.team_id as string | null) ?? undefined;
     let teamName: string | undefined;
     let teamVersionNumber: number | undefined;
     let memberSnapshotsById = new Map<string, TeamVersionMemberSnapshot>();
+    if (!teamVersionId) {
+      const fallbackTeamId = teamId ?? 'roundtable-forum';
+      const fallbackTeam = db.prepare('SELECT active_version_id FROM teams WHERE id = ?').get(fallbackTeamId) as { active_version_id: string } | undefined;
+      if (fallbackTeam) {
+        teamId = fallbackTeamId;
+        teamVersionId = fallbackTeam.active_version_id;
+      }
+    }
     if (teamVersionId) {
       try {
         const tv = db.prepare('SELECT * FROM team_versions WHERE id = ?').get(teamVersionId) as Record<string, unknown> | undefined;
@@ -106,7 +114,6 @@ export const roomsRepo = {
       state: row.state as DiscussionRoom['state'],
       report: row.report as string | undefined,
       workspace: (row.workspace as string) ?? undefined,
-      sceneId: (row.scene_id as string) ?? 'roundtable-forum',
       teamId,
       teamVersionId,
       teamName,

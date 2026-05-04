@@ -23,7 +23,7 @@ import {
   scanForInlineA2AMentions,
   updateA2AContext,
 } from '../routing/A2ARouter.js';
-import { buildAgentBasePrompt, buildRoomScopedSystemPrompt, resolvePinnedTeamMemberSnapshot } from '../scenePromptBuilder.js';
+import { buildAgentBasePrompt, buildRoomScopedSystemPrompt, resolvePinnedTeamMemberSnapshot } from '../teamPromptBuilder.js';
 import {
   emitStreamDelta,
   emitStreamEnd,
@@ -295,6 +295,9 @@ export async function streamingCallAgent(
       agentConfigId: configId,
       workspacePath: workspace,
       providerName,
+      teamSkillIds: memberSnapshot?.skillIds ?? [],
+      teamSkillRefs: memberSnapshot?.skillRefs ?? [],
+      includeDiscoveredSkills: memberSnapshot ? false : undefined,
     });
     const runtimeAssembly = await assembleProviderRuntime({
       roomId,
@@ -302,7 +305,7 @@ export async function streamingCallAgent(
       effectiveWorkspace: workspace,
       effectiveSkills: skillState.effective,
     });
-    const shouldTrackImplementerWorkspaceChanges = room?.sceneId === 'software-development'
+    const shouldTrackImplementerWorkspaceChanges = room?.teamId === 'software-development'
       && configId === SOFTWARE_DEVELOPMENT_CORE_AGENT_IDS.implementer;
     if (shouldTrackImplementerWorkspaceChanges) {
       implementerWorkspaceSnapshotBefore = await captureWorkspaceSnapshot(workspace);
@@ -561,7 +564,7 @@ export async function a2aOrchestrate(
   let mentions: string[] = [];
   let mentionSource = 'line_start';
 
-  if (room.sceneId === 'roundtable-forum') {
+  if (room.teamId === 'roundtable-forum') {
     const handoff = detectRoundtableHandoff(outputText, mentionTargets);
     if (handoff) {
       mentions = [handoff.mention];
@@ -587,7 +590,7 @@ export async function a2aOrchestrate(
           roomId,
           fromAgentName,
           mentions: inlineMentions,
-          sceneId: room.sceneId,
+          teamId: room.teamId,
         });
         addSystemMessage(
           roomId,
@@ -610,7 +613,7 @@ export async function a2aOrchestrate(
     }
   }
 
-  if (room.sceneId === 'software-development' && mentions.length > 1) {
+  if (room.teamId === 'software-development' && mentions.length > 1) {
     warn('a2a:software_development:multi_mention', {
       roomId,
       fromAgentName,
@@ -618,14 +621,14 @@ export async function a2aOrchestrate(
     });
     addSystemMessage(
       roomId,
-      `[系统提示] 软件开发场景每轮只允许 @ 1 位专家。${fromAgentName} 本轮仅保留第一个交接对象：@${mentions[0] ?? ''}。`,
+      `[系统提示] 软件开发团队每轮只允许 @ 1 位专家。${fromAgentName} 本轮仅保留第一个交接对象：@${mentions[0] ?? ''}。`,
     );
     mentions = mentions.slice(0, 1);
   }
 
-  debug('a2a:scan', { roomId, fromAgentName, mentions, mentionSource, sceneId: room.sceneId });
+  debug('a2a:scan', { roomId, fromAgentName, mentions, mentionSource, teamId: room.teamId });
   const fromAgent = room.agents.find(agent => agent.id === fromAgentId);
-  if (room.sceneId === 'software-development') {
+  if (room.teamId === 'software-development') {
     const implementerGate = evaluateImplementerCompletionGate({
       room,
       fromAgent,
@@ -654,7 +657,7 @@ export async function a2aOrchestrate(
     return;
   }
 
-  if (room.sceneId === 'software-development') {
+  if (room.teamId === 'software-development') {
     const targetAgent = resolveMentionTarget(room.agents, mentions[0] ?? '');
     if (!targetAgent) {
       telemetry('a2a:agent_not_found', { roomId, mention: mentions[0] });
@@ -689,7 +692,7 @@ export async function a2aOrchestrate(
       continue;
     }
 
-    if (room.sceneId !== 'software-development' && createsImmediatePingPong(newChain, targetAgent.name)) {
+    if (room.teamId !== 'software-development' && createsImmediatePingPong(newChain, targetAgent.name)) {
       telemetry('a2a:skip_cycle', { roomId, target: targetAgent.name, chain: newChain });
       skippedCycleTargets.push(targetAgent.name);
       continue;

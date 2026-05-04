@@ -12,7 +12,7 @@ created: 2026-05-01
 
 ## Why
 
-用户今天要改进团队表现，实际只能回到 Scene / Agent 设置里手动调 prompt。这要求用户理解 prompt、路由、成员职责和协作协议，门槛太高。
+用户今天要改进团队表现，实际只能回到 Team / Agent 设置里手动调 prompt。这要求用户理解 prompt、路由、成员职责和协作协议，门槛太高。
 
 F053 的目标是把“调 prompt”变成“审进化 PR”：
 
@@ -192,7 +192,7 @@ Header chip 状态：
 
 - **Blocked by**: F052（必须先有 Team 与 TeamVersion）
 - **Related**: F023（`add-team-memory` 与 Skill 绑定需要保持边界）
-- **Related**: F016（旧 Scene prompt 是 Team workflow 的迁移来源）
+- **Related**: F052（Team workflow 是进化提案的目标层）
 
 ## Risk
 

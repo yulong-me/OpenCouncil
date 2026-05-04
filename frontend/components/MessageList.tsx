@@ -6,10 +6,9 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { ChevronDown, BrainCircuit, Wrench, Copy, Maximize2, FileVideo, Music2 } from 'lucide-react'
 import {
-  AGENT_COLORS,
-  DEFAULT_AGENT_COLOR,
   TIME_FORMATTER,
   extractMentions,
+  getAgentColor,
   mdComponents,
   type Agent,
   type DiscussionState,
@@ -352,7 +351,7 @@ const MessageBubble = memo(function MessageBubble({
   const hasToolCalls = Boolean(msg.toolCalls?.length)
   const streamingStatusLabel = getStreamingStatusLabel(msg, hasToolCalls, state)
   const hasOutput = Boolean(msg.content.trim() || msg.thinking?.trim() || hasToolCalls)
-  const agentColor = AGENT_COLORS[msg.agentName]?.bg || DEFAULT_AGENT_COLOR.bg
+  const agentColor = getAgentColor(msg.agentName).bg
   const handoffOffsetClass = getHandoffOffsetClass(handoffInfo)
   const formattedTime = TIME_FORMATTER.format(new Date(msg.timestamp))
   const hasDurationStat = typeof msg.duration_ms === 'number' && msg.duration_ms > 0
@@ -386,7 +385,7 @@ const MessageBubble = memo(function MessageBubble({
 
   if (isUser) {
     const toRecipient = msg.toAgentId ? agentById.get(msg.toAgentId) : null
-    const toColors = toRecipient ? AGENT_COLORS[toRecipient.name] || DEFAULT_AGENT_COLOR : null
+    const toColors = toRecipient ? getAgentColor(toRecipient.name) : null
     return (
       <div className="message-enter flex justify-end gap-3 mb-6 items-start">
         <div className="w-full max-w-[85%] lg:max-w-[90%]">

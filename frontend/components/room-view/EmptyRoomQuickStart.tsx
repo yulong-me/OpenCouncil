@@ -9,7 +9,7 @@ export interface QuickStartTemplate {
   title: string
   description: string
   topic: string
-  sceneId: string
+  teamId: string
   agentIds: string[]
   icon: 'litigation' | 'competitor' | 'paper' | 'roundtable' | 'software'
 }
@@ -35,10 +35,10 @@ const READINESS_META = {
 export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
   {
     id: 'litigation-strategy',
-    title: '诉讼策略',
+    title: '诉讼策略 Team',
     description: '事实、证据、主张与对方打法一次铺开。',
-    topic: '制定诉讼策略：梳理事实、证据、主张、对方可能打法和下一步材料清单',
-    sceneId: 'litigation-strategy',
+    topic: '',
+    teamId: 'litigation-strategy',
     agentIds: [
       'litigation-case-mapper',
       'litigation-evidence-strategist',
@@ -49,10 +49,10 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
   },
   {
     id: 'competitor-analysis',
-    title: '竞品分析',
+    title: '竞品分析 Team',
     description: '定位、用户、渠道、价格和护城河对比。',
-    topic: '做一次竞品分析：明确目标用户、直接竞品、定位差异、威胁排序和最小验证动作',
-    sceneId: 'competitor-analysis',
+    topic: '',
+    teamId: 'competitor-analysis',
     agentIds: [
       'competitor-market-mapper',
       'competitor-positioning-strategist',
@@ -63,10 +63,10 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
   },
   {
     id: 'paper-revision',
-    title: '论文返修',
+    title: '论文返修 Team',
     description: '拆审稿意见，定修改清单和 rebuttal。',
-    topic: '处理论文返修：逐条拆解审稿意见，制定修改计划、补实验优先级和 rebuttal 草稿',
-    sceneId: 'paper-revision',
+    topic: '',
+    teamId: 'paper-revision',
     agentIds: [
       'paper-review-diagnoser',
       'paper-methods-editor',
@@ -77,19 +77,19 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
   },
   {
     id: 'roundtable-forum',
-    title: '圆桌论坛',
+    title: '圆桌讨论 Team',
     description: '让不同思维模型正面交锋后收敛。',
-    topic: '开一场圆桌论坛：围绕一个关键问题交锋、反驳、收敛分歧并给出结论',
-    sceneId: 'roundtable-forum',
+    topic: '',
+    teamId: 'roundtable-forum',
     agentIds: ['paul-graham', 'steve-jobs', 'zhang-yiming', 'munger', 'taleb'],
     icon: 'roundtable',
   },
   {
     id: 'software-development',
-    title: '软件开发',
+    title: '软件开发 Team',
     description: '双架构、实现、Reviewer 形成工程闭环。',
-    topic: '推进一次软件开发任务：澄清需求、收敛架构、安排实现、建立测试和 review 门禁',
-    sceneId: 'software-development',
+    topic: '',
+    teamId: 'software-development',
     agentIds: ['dev-architect', 'dev-challenge-architect', 'dev-implementer', 'dev-reviewer'],
     icon: 'software',
   },
@@ -162,10 +162,10 @@ export function EmptyRoomQuickStart({
           <div className="min-w-0">
             <p className="text-[12px] font-bold uppercase tracking-[0.18em] text-accent">OpenCouncil</p>
             <h2 className="mt-2 text-2xl font-bold leading-tight text-ink md:text-3xl">
-              开一场专家会议，而不是从空白聊天开始。
+              发起一个任务，交给 Team 协作。
             </h2>
             <p className="mt-3 max-w-2xl text-[14px] leading-6 text-ink-soft">
-              选择一个入口，确认场景和专家后进入讨论室；交接、质疑、结论都会留在同一条决策链里。
+              先选择一支 Team，进入协作现场后再告诉它这次要做什么。
             </p>
           </div>
         </div>
@@ -209,11 +209,11 @@ export function EmptyRoomQuickStart({
             onClick={onStartBlank}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-ink px-5 py-3 text-[14px] font-bold text-bg shadow-sm transition-opacity hover:opacity-90"
           >
-            发起新讨论
+            发起任务
             <ArrowRight className="h-4 w-4" aria-hidden />
           </button>
           <p className="text-[12px] text-ink-soft">
-            已有讨论仍在左侧；这里始终保留给下一场会议。
+            已有任务记录仍在左侧；这里始终保留给下一次协作。
           </p>
         </div>
       </div>

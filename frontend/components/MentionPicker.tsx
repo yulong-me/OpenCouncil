@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useEffect } from 'react'
-import { AGENT_COLORS, DEFAULT_AGENT_COLOR, type Agent } from '../lib/agents'
+import { getAgentColor, type Agent } from '../lib/agents'
 import { AgentAvatar } from './AgentAvatar'
 
 interface MentionPickerProps {
@@ -42,7 +42,7 @@ export default function MentionPicker({ agents, highlightIndex, onSelect, onHigh
           </div>
         )}
         {agents.map((agent, i) => {
-          const colors = AGENT_COLORS[agent.name] || DEFAULT_AGENT_COLOR
+          const colors = getAgentColor(agent.name)
           const isHighlighted = i === highlightIndex
           return (
             <button

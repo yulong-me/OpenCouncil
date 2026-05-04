@@ -5,10 +5,12 @@ import { CheckCircle2, Edit2, Loader2, Play, Save, X, XCircle } from 'lucide-rea
 
 import { API_URL } from '@/lib/api'
 import { debug, info, warn } from '@/lib/logger'
+import { CustomSelect } from '../ui/CustomSelect'
 
 import {
   PROVIDER_DOTS,
   PROVIDER_SWATCHES,
+  type ProviderName,
   type ProviderConfig,
   type ProviderReadiness,
 } from './types'
@@ -21,6 +23,84 @@ const READINESS_META = {
   untested: { label: '待测试', className: 'tone-warning-pill border' },
   test_failed: { label: '测试失败', className: 'tone-danger-panel border' },
 } as const
+
+function TeamArchitectProviderSetting({
+  providers,
+  teamArchitectProvider,
+  onTeamArchitectProviderChange,
+}: {
+  providers: Record<string, ProviderConfig>
+  teamArchitectProvider: ProviderName
+  onTeamArchitectProviderChange: (provider: ProviderName) => void
+}) {
+  const [draftProvider, setDraftProvider] = useState<ProviderName>(teamArchitectProvider)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+
+  useEffect(() => {
+    setDraftProvider(teamArchitectProvider)
+  }, [teamArchitectProvider])
+
+  const providerOptions = Object.values(providers)
+    .filter(provider => provider.name === 'claude-code' || provider.name === 'opencode' || provider.name === 'codex')
+    .map(provider => ({
+      value: provider.name as ProviderName,
+      label: provider.label,
+      description: provider.cliPath,
+    }))
+
+  async function saveTeamArchitectProvider() {
+    setSaving(true)
+    setSaveError('')
+    try {
+      const response = await fetch(`${API}/api/system-settings/team-architect`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: draftProvider }),
+      })
+      const data = await response.json() as { provider?: ProviderName; error?: string }
+      if (!response.ok || !data.provider) throw new Error(data.error || '保存失败')
+      onTeamArchitectProviderChange(data.provider)
+      info('ui:settings:team_architect_provider_saved', { provider: data.provider })
+    } catch (error) {
+      warn('ui:settings:team_architect_provider_save_failed', { error })
+      setSaveError((error as Error).message || '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="settings-surface rounded-xl p-5">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-bold text-ink">Team 方案生成</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-ink-soft">
+            生成 Team 方案时使用哪一个执行工具。这里会影响“生成 Team 方案”按钮，不影响已有 Team 成员。
+          </p>
+          <CustomSelect<ProviderName>
+            value={draftProvider}
+            options={providerOptions}
+            onChange={setDraftProvider}
+            ariaLabel="选择 Team 方案生成执行工具"
+            className="mt-3 max-w-md"
+            buttonClassName="py-2.5 text-[13px]"
+          />
+          {saveError && <p className="tone-danger-text mt-2 text-[11px]">{saveError}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={saveTeamArchitectProvider}
+          disabled={saving || draftProvider === teamArchitectProvider || providerOptions.length === 0}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-ink px-3 py-2 text-[12px] font-bold text-bg transition-all hover:opacity-90 disabled:opacity-50"
+        >
+          <Save className="h-3.5 w-3.5" aria-hidden />
+          {saving ? '保存中…' : '保存 Team 方案生成工具'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function ProviderDetail({
   provider,
@@ -270,59 +350,70 @@ export function ProviderSettingsTab({
   providers,
   readiness,
   selectedProvider,
+  teamArchitectProvider,
   onSelectProvider,
   onUpdateProvider,
+  onTeamArchitectProviderChange,
   onRefreshReadiness,
 }: {
   providers: Record<string, ProviderConfig>
   readiness: Record<string, ProviderReadiness>
   selectedProvider: string | null
+  teamArchitectProvider: ProviderName
   onSelectProvider: (providerName: string) => void
   onUpdateProvider: (provider: ProviderConfig) => void
+  onTeamArchitectProviderChange: (providerName: ProviderName) => void
   onRefreshReadiness: () => void
 }) {
   const currentProvider = selectedProvider ? providers[selectedProvider] : null
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <div className="flex flex-col gap-2">
-        {Object.values(providers).map(provider => (
-          <button
-            type="button"
-            key={provider.name}
-            onClick={() => onSelectProvider(provider.name)}
-            className={`w-full text-left px-4 py-3 rounded-xl transition-all flex items-center gap-3 ${selectedProvider === provider.name ? 'settings-surface border-2 border-accent shadow-sm' : 'settings-surface border-2 border-transparent hover:border-line'}`}
-          >
-            <span
-              className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${PROVIDER_DOTS[provider.name as keyof typeof PROVIDER_DOTS]}`}
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-bold text-ink truncate">{provider.label}</p>
-              <p className="text-[11px] text-ink-soft font-mono truncate">
-                {provider.name}
-                {readiness[provider.name] ? ` · ${READINESS_META[readiness[provider.name].status].label}` : ''}
-              </p>
-            </div>
-            {readiness[provider.name]?.status === 'cli_missing' ? (
-              <X className="tone-danger-text w-4 h-4 flex-shrink-0" aria-hidden />
-            ) : provider.lastTestResult && (provider.lastTestResult.success ? (
-              <CheckCircle2 className="tone-success-text w-4 h-4 flex-shrink-0" aria-hidden />
-            ) : (
-              <X className="tone-danger-text w-4 h-4 flex-shrink-0" aria-hidden />
-            ))}
-          </button>
-        ))}
-      </div>
-      {currentProvider && (
-        <div className="settings-surface rounded-xl p-5">
-          <ProviderDetail
-            provider={currentProvider}
-            readiness={readiness[currentProvider.name]}
-            onUpdate={onUpdateProvider}
-            onRefreshReadiness={onRefreshReadiness}
-          />
+    <div className="space-y-4">
+      <TeamArchitectProviderSetting
+        providers={providers}
+        teamArchitectProvider={teamArchitectProvider}
+        onTeamArchitectProviderChange={onTeamArchitectProviderChange}
+      />
+      <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="flex flex-col gap-2">
+          {Object.values(providers).map(provider => (
+            <button
+              type="button"
+              key={provider.name}
+              onClick={() => onSelectProvider(provider.name)}
+              className={`w-full text-left px-4 py-3 rounded-xl transition-all flex items-center gap-3 ${selectedProvider === provider.name ? 'settings-surface border-2 border-accent shadow-sm' : 'settings-surface border-2 border-transparent hover:border-line'}`}
+            >
+              <span
+                className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${PROVIDER_DOTS[provider.name as keyof typeof PROVIDER_DOTS]}`}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-bold text-ink truncate">{provider.label}</p>
+                <p className="text-[11px] text-ink-soft font-mono truncate">
+                  {provider.name}
+                  {readiness[provider.name] ? ` · ${READINESS_META[readiness[provider.name].status].label}` : ''}
+                </p>
+              </div>
+              {readiness[provider.name]?.status === 'cli_missing' ? (
+                <X className="tone-danger-text w-4 h-4 flex-shrink-0" aria-hidden />
+              ) : provider.lastTestResult && (provider.lastTestResult.success ? (
+                <CheckCircle2 className="tone-success-text w-4 h-4 flex-shrink-0" aria-hidden />
+              ) : (
+                <X className="tone-danger-text w-4 h-4 flex-shrink-0" aria-hidden />
+              ))}
+            </button>
+          ))}
         </div>
-      )}
+        {currentProvider && (
+          <div className="settings-surface rounded-xl p-5">
+            <ProviderDetail
+              provider={currentProvider}
+              readiness={readiness[currentProvider.name]}
+              onUpdate={onUpdateProvider}
+              onRefreshReadiness={onRefreshReadiness}
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Search } from 'lucide-react'
 import { AgentAvatar } from './AgentAvatar'
-import { AGENT_COLORS, DEFAULT_AGENT_COLOR } from '../lib/agents'
+import { getAgentColor } from '../lib/agents'
 import { API_URL } from '@/lib/api'
 import { debug, info, warn } from '@/lib/logger'
 
@@ -174,7 +174,7 @@ export function AgentInviteDrawer({ roomId, currentAgentIds, onClose, onInvited 
           )}
 
           {!loading && filtered.map(agent => {
-            const colors = AGENT_COLORS[agent.name] || DEFAULT_AGENT_COLOR
+            const colors = getAgentColor(agent.name)
             const isDone = done === agent.id
             const isInviting = invitingId === agent.id
             return (

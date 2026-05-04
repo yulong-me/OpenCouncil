@@ -503,12 +503,12 @@ const mergeTransaction = db.transaction((proposalId: string, options?: { confirm
 
   db.prepare(`
     INSERT INTO team_versions (
-      id, team_id, version_number, name, description, source_scene_id, member_ids_json,
+      id, team_id, version_number, name, description, member_ids_json,
       member_snapshots_json, workflow_prompt, routing_policy_json, team_memory_json,
       max_a2a_depth, created_at, created_from
     )
     VALUES (
-      @id, @teamId, @versionNumber, @name, @description, @sourceSceneId, @memberIdsJson,
+      @id, @teamId, @versionNumber, @name, @description, @memberIdsJson,
       @memberSnapshotsJson, @workflowPrompt, @routingPolicyJson, @teamMemoryJson,
       @maxA2ADepth, @createdAt, @createdFrom
     )
@@ -518,7 +518,6 @@ const mergeTransaction = db.transaction((proposalId: string, options?: { confirm
     versionNumber: nextVersion.versionNumber,
     name: nextVersion.name,
     description: nextVersion.description ?? null,
-    sourceSceneId: nextVersion.sourceSceneId,
     memberIdsJson: JSON.stringify(nextVersion.memberIds),
     memberSnapshotsJson: JSON.stringify(nextVersion.memberSnapshots),
     workflowPrompt: nextVersion.workflowPrompt,

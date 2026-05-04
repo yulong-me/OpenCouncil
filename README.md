@@ -10,7 +10,7 @@
 
 > Custom agent councils for real work.
 
-OpenCouncil 把“一个 AI 单独回答”升级成“一场可编排的专家会”。你可以为不同任务创建 Scene，例如功能评审、架构决策、市场调研或代码实现，再把不同角色的 Agent 放进同一个房间。
+OpenCouncil 把“一个 AI 单独回答”升级成“一场可编排的专家会”。你可以为不同任务创建 Team，例如功能评审、架构决策、市场调研或代码实现，再把不同角色的 Agent 放进同一个房间。
 
 每条消息都可以明确路由给某位 Agent；Agent 之间也能通过 `@mention` 互相追问、质疑和补充。讨论过程会保留在本地上下文里，并可结合 Workspace 与报告能力，把想法推进到方案、任务甚至代码。
 
@@ -24,14 +24,14 @@ https://github.com/user-attachments/assets/8ad8797a-482b-48b6-a13d-a17b2d858481
 
 ## 核心能力
 
-- **自定义场景与 Agent**：按项目配置不同 Scene、专家角色、Provider、模型和工作目录
+- **自定义 Team 与 Agent**：按项目配置不同 Team、专家角色、Provider、模型和工作目录
 - **多专家协作**：一个讨论室可包含 1 位或多位专家（`WORKER`）
 - **显式路由**：每条用户消息都明确发给某一位目标专家
 - **A2A 协作链**：专家回复过程中可以继续 `@mention` 其他专家参与讨论
-- **场景化工作流**：支持从问题讨论、方案质疑到任务拆解、报告生成的完整流程
-- **本地持久化**：房间、消息、Provider、Scene、Agent 配置都落在本地 SQLite
+- **Team 工作流**：支持从问题讨论、方案质疑到任务拆解、报告生成的完整流程
+- **本地持久化**：房间、消息、Provider、Team、Agent 配置都落在本地 SQLite
 
-## 适用场景
+## 适用任务
 
 - 让多个 AI 专家围绕一个问题进行讨论、挑战和收敛
 - 为代码方案、架构决策、需求拆解提供多视角意见
@@ -47,11 +47,11 @@ https://github.com/user-attachments/assets/8ad8797a-482b-48b6-a13d-a17b2d858481
 </p>
 
 - `Gateway :7000`：生产模式统一入口，按路径把 `/api/*` 和 `/socket.io/*` 转发给后端，其余请求交给前端
-- `Frontend :7002`：Next.js 房间列表、专家协作房间和 Agent / Provider / Scene 设置页
+- `Frontend :7002`：Next.js 房间列表、专家协作房间和 Team / Provider / Skill 设置页
 - `Backend :7001`：Express API + Socket.IO，负责消息、房间、报告、配置、Workspace 浏览和流式事件
-- `Council Engine`：构建 Scene Prompt，执行 A2A `@mention` 路由和 Agent run 状态机
+- `Council Engine`：构建 Team Prompt，执行 A2A `@mention` 路由和 Agent run 状态机
 - `Local AI CLI Providers`：通过 `child_process` 调用 Claude Code / OpenCode / Codex 等本地 CLI
-- `Local Data`：SQLite 保存房间、消息、Provider、Scene、Agent 配置；Workspace 文件留在本地
+- `Local Data`：SQLite 保存房间、消息、Provider、Team、Agent 配置；Workspace 文件留在本地
 
 ## 前置依赖
 
@@ -252,13 +252,13 @@ GATEWAY_PORT=7100 pnpm dev:gateway
 - 启用状态
 - 标签
 
-### Scene
+### Team
 
-在设置页的 Scene 标签中维护：
+在设置页的 Team 标签中维护：
 
-- 场景名称与说明
-- Prompt 模板
-- 内置场景与自定义场景
+- Team 名称与说明
+- Team 工作流 Prompt
+- 内置 Team 与自定义 Team
 
 ## 内置人物专家
 

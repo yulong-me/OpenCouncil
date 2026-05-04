@@ -62,7 +62,7 @@ Phase A 不改变最终 prompt 内容，只先把需要的状态收齐。
 
 - 新增 `assembleInvocationContext()`，统一拼接：
   - 当前任务
-  - scene / agent prompt
+  - team / agent prompt
   - 最新房间检查点
   - 检查点之后的少量原文尾巴
 - 新增按需查历史能力：agent 默认先使用 checkpoint；只有在信息不足时，才主动检索房间历史并拉取局部原文窗口。
@@ -270,7 +270,7 @@ estimatedPromptTokens
 统一替换现有“`slice(-10)` transcript”策略：
 
 ```text
-scene prompt
+team workflow prompt
 + agent prompt
 + 当前任务
 + 最新 room checkpoint
@@ -319,7 +319,7 @@ getMessageWindow(roomId, anchorMessageId, before, after)
 4. 单轮最多允许 1 到 3 次历史检索。
 5. 只检索当前 room，不跨房间串查。
 
-#### 典型场景
+#### 典型情况
 
 - “为什么方案 A 之前被否了？”
 - “这个迁移步骤是谁提出来的？”
@@ -490,7 +490,7 @@ function assembleInvocationContext(roomId: string, agentId: string, task: string
   })
 
   const prompt = [
-    buildScenePrompt(roomId),
+    buildTeamPrompt(roomId),
     buildAgentPrompt(agentId),
     `【当前任务】${task}`,
     checkpoint ? checkpoint.summary_md : null,
@@ -596,7 +596,7 @@ function evaluateBudget(roomId: string, agentId: string, event: ProviderEndEvent
 
 - **Evolved from**: F018（把“按 token 预算做 Context Assembly”的方向落成真实数据结构与运行策略）
 - **Blocked by**: 无
-- **Related**: F021（持久化基础）、F016（scene prompt 注入）、F014（长运行容错与恢复）
+- **Related**: F021（持久化基础）、F052（Team workflow 注入）、F014（长运行容错与恢复）
 
 ## Risk
 

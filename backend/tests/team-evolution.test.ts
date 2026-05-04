@@ -47,39 +47,34 @@ function columnExists(database: Database.Database, table: string, column: string
 
 function seedTeamV1(): void {
   db.prepare(`
-    INSERT INTO scenes (id, name, description, prompt, builtin, max_a2a_depth)
-    VALUES ('software-development', '软件开发', '场景', 'scene prompt', 1, 5)
-  `).run();
-  db.prepare(`
-    INSERT INTO teams (id, name, description, builtin, source_scene_id, active_version_id, created_at, updated_at)
-    VALUES ('software-development', '软件开发团队', '团队', 1, 'software-development', 'software-development-v1', 1000, 1000)
+    INSERT INTO teams (id, name, description, builtin, active_version_id, created_at, updated_at)
+    VALUES ('software-development', '软件开发团队', '团队', 1, 'software-development-v1', 1000, 1000)
   `).run();
   db.prepare(`
     INSERT INTO team_versions (
-      id, team_id, version_number, name, description, source_scene_id,
+      id, team_id, version_number, name, description,
       member_ids_json, member_snapshots_json, workflow_prompt, routing_policy_json,
       team_memory_json, max_a2a_depth, created_at, created_from
     )
     VALUES (
-      'software-development-v1', 'software-development', 1, '软件开发团队', '团队', 'software-development',
-      '["dev-architect"]',
+      'software-development-v1', 'software-development', 1, '软件开发团队', '团队', '["dev-architect"]',
       '[{"id":"dev-architect","name":"主架构师","roleLabel":"方案设计","provider":"claude-code","providerOpts":{"thinking":true},"systemPrompt":"旧架构 prompt"}]',
       '旧工作流',
       '{"handoff":"loose"}',
       '["已有团队记忆"]',
       5,
       1000,
-      'scene-seed'
+      'builtin-seed'
     )
   `).run();
   db.prepare(`
     INSERT INTO rooms (
-      id, topic, state, report, agent_ids, workspace, scene_id, team_id, team_version_id,
+      id, topic, state, report, agent_ids, workspace, team_id, team_version_id,
       created_at, updated_at, max_a2a_depth
     )
     VALUES (
       'room-1', '实现登录态', 'RUNNING', NULL, '["dev-architect"]', NULL,
-      'software-development', 'software-development', 'software-development-v1',
+      'software-development', 'software-development-v1',
       1100, 1100, NULL
     )
   `).run();
@@ -143,7 +138,6 @@ describe('F053: Team Architect proposal generation', () => {
         timestamp: 1200,
         type: 'user_action',
       }],
-      sceneId: 'software-development',
       teamId: 'software-development',
       teamVersionId: 'software-development-v1',
       sessionIds: {},
@@ -157,6 +151,8 @@ describe('F053: Team Architect proposal generation', () => {
     expect(agentClient.generateDraft).toHaveBeenCalledTimes(1);
     expect(agentClient.generateDraft.mock.calls[0]?.[0].schemaName).toBe('TeamEvolutionProposal');
     expect(agentClient.generateDraft.mock.calls[0]?.[0].prompt).toContain('只需要记住：交付前必须验证');
+    expect(agentClient.generateDraft.mock.calls[0]?.[0].prompt).toContain('TeamEvolutionProposal 输出 JSON Schema');
+    expect(agentClient.generateDraft.mock.calls[0]?.[0].prompt).toContain('"changes"');
     expect(agentClient.generateDraft.mock.calls[0]?.[0].runtime).toMatchObject({
       timeoutSeconds: null,
     });
@@ -166,6 +162,64 @@ describe('F053: Team Architect proposal generation', () => {
       kind: 'add-team-memory',
       evidenceMessageIds: ['msg-1'],
     });
+  });
+
+  it('streams Team Architect output while creating an evolution proposal', async () => {
+    seedTeamV1();
+    const { createEvolutionProposalFromRoom } = await import('../src/services/teamEvolution.js');
+    const deltas: string[] = [];
+    const agentClient = {
+      generateDraft: vi.fn().mockImplementation(async (_input, options) => {
+        options?.onDelta?.('{"summary":"根据用户意见，仅沉淀一条团队记忆"');
+        options?.onDelta?.(',"changes":[...');
+        return {
+          summary: '根据用户意见，仅沉淀一条团队记忆。',
+          changes: [
+            {
+              kind: 'add-team-memory',
+              title: '记住交付前必须验证',
+              why: '用户明确反馈 Reviewer 没有验证代码。',
+              targetLayer: 'team-memory',
+              before: ['已有团队记忆'],
+              after: ['交付前必须说明验证命令、结果和无法验证的缺口。'],
+              impact: '下一版 Team 会把验证证据作为默认交付要求。',
+            },
+          ],
+        };
+      }),
+    };
+
+    const proposal = await createEvolutionProposalFromRoom({
+      id: 'room-1',
+      topic: '实现登录态',
+      state: 'RUNNING',
+      agents: [],
+      messages: [{
+        id: 'msg-1',
+        agentRole: 'USER',
+        agentName: '你',
+        content: 'Reviewer 没有验证代码，我不满意',
+        timestamp: 1200,
+        type: 'user_action',
+      }],
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      maxA2ADepth: null,
+      createdAt: 1100,
+      updatedAt: 1100,
+    }, '只需要记住：交付前必须验证', {
+      agentClient,
+      onDelta: text => deltas.push(text),
+    });
+
+    expect(proposal.summary).toBe('根据用户意见，仅沉淀一条团队记忆。');
+    expect(agentClient.generateDraft.mock.calls[0]?.[1]).toMatchObject({
+      onDelta: expect.any(Function),
+    });
+    expect(deltas.join('')).toContain('根据用户意见');
   });
 
   it('rejects invalid Team Architect output without creating a fixed-rule fallback proposal', async () => {
@@ -191,7 +245,6 @@ describe('F053: Team Architect proposal generation', () => {
         timestamp: 1200,
         type: 'user_action',
       }],
-      sceneId: 'software-development',
       teamId: 'software-development',
       teamVersionId: 'software-development-v1',
       sessionIds: {},
