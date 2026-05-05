@@ -39,6 +39,10 @@ vi.mock('../src/config/agentConfig.js', () => ({
   }),
 }));
 
+vi.mock('../src/config/providerConfig.js', () => ({
+  getProvider: vi.fn().mockReturnValue({ defaultModel: 'test-model' }),
+}));
+
 // Mock provider as async generator
 vi.mock('../src/services/providers/index.js', () => ({
   getProvider: vi.fn().mockReturnValue(async function* () {
@@ -309,6 +313,101 @@ describe('F004: 直接路由', () => {
             }),
           }),
         }),
+      );
+    });
+
+    it('专家向用户提出澄清问题时，不应该把房间标记为 DONE', async () => {
+      const { routeToAgent } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { roomsRepo } = await import('../src/db/index.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      let roomState = {
+        id: 'room-waiting-user',
+        topic: '新任务记录',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'architect-1', role: 'WORKER' as const, name: '主架构师', domainLabel: '架构设计', configId: 'worker-config', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 0,
+        a2aCallChain: [],
+      };
+
+      vi.mocked(store.get).mockImplementation(() => roomState);
+      vi.mocked(store.update).mockImplementation((_id, partial) => {
+        roomState = { ...roomState, ...partial };
+        return roomState;
+      });
+      vi.mocked(getProvider).mockReturnValueOnce(async function* () {
+        yield {
+          type: 'delta',
+          agentId: 'architect-1',
+          text: '我需要澄清几个问题。\n\n@用户 请告诉我你的场景和痛点，我会给出可执行的优先级建议。',
+        };
+        yield { type: 'end', agentId: 'architect-1', duration_ms: 100, total_cost_usd: 0, input_tokens: 10, output_tokens: 10 };
+      });
+
+      await routeToAgent('room-waiting-user', '@主架构师 下一步我们的系统应该加什么特性？', 'architect-1');
+
+      expect(roomState.state).toBe('RUNNING');
+      expect(roomsRepo.update).not.toHaveBeenCalledWith(
+        'room-waiting-user',
+        expect.objectContaining({ state: 'DONE' }),
+      );
+    });
+
+    it('A2A 子链最后一位专家要求用户确认时，也不应该把房间标记为 DONE', async () => {
+      const { routeToAgent } = await import('../src/services/stateMachine.js');
+      const { store } = await import('../src/store.js');
+      const { roomsRepo } = await import('../src/db/index.js');
+      const { getProvider } = await import('../src/services/providers/index.js');
+
+      let roomState = {
+        id: 'room-child-waiting-user',
+        topic: '新任务记录',
+        state: 'RUNNING' as const,
+        agents: [
+          { id: 'architect-1', role: 'WORKER' as const, name: '主架构师', domainLabel: '架构设计', configId: 'worker-config', status: 'idle' as const },
+          { id: 'reviewer-1', role: 'WORKER' as const, name: 'Reviewer', domainLabel: '代码审查', configId: 'reviewer-config', status: 'idle' as const },
+        ],
+        messages: [],
+        sessionIds: {},
+        a2aDepth: 0,
+        a2aCallChain: [],
+        maxA2ADepth: 5,
+        teamId: 'custom-team',
+        teamVersionId: 'custom-team-v1',
+      };
+
+      vi.mocked(store.get).mockImplementation(() => roomState);
+      vi.mocked(store.update).mockImplementation((_id, partial) => {
+        roomState = { ...roomState, ...partial };
+        return roomState;
+      });
+
+      const outputs = [
+        '我先把风险交给 Reviewer 复核。\n\n@Reviewer please check the uncertainty.',
+        '这里不能直接收口。\n\n@用户 请确认：你希望优先补齐稳定性，还是优先做 UX 演示？',
+      ];
+      let providerCall = 0;
+      const provider = async function* () {
+        const text = outputs[providerCall++] ?? 'Done';
+        yield { type: 'delta', agentId: 'agent', text };
+        yield { type: 'end', agentId: 'agent', duration_ms: 100, total_cost_usd: 0, input_tokens: 10, output_tokens: 10 };
+      };
+      vi.mocked(getProvider)
+        .mockReturnValueOnce(provider)
+        .mockReturnValueOnce(provider);
+
+      await routeToAgent('room-child-waiting-user', '@主架构师 下一步我们的系统应该加什么特性？', 'architect-1');
+
+      expect(providerCall).toBe(2);
+      expect(roomState.state).toBe('RUNNING');
+      expect(roomsRepo.update).not.toHaveBeenCalledWith(
+        'room-child-waiting-user',
+        expect.objectContaining({ state: 'DONE' }),
       );
     });
 
@@ -713,7 +812,7 @@ describe('F004: 直接路由', () => {
       }));
     });
 
-    it('顶层任务的 A2A 接力全部结束后，只标记房间完成，不生成 report', async () => {
+    it('顶层任务的 A2A 接力全部结束后，也不应该自动标记房间完成', async () => {
       const { routeToAgent } = await import('../src/services/stateMachine.js');
       const { store } = await import('../src/store.js');
       const { roomsRepo } = await import('../src/db/index.js');
@@ -763,14 +862,14 @@ describe('F004: 直接路由', () => {
       );
 
       expect(providerCall).toBe(3);
-      expect(roomState.state).toBe('DONE');
+      expect(roomState.state).toBe('RUNNING');
       expect(roomState.report).toBeUndefined();
       expect(roomState.messages).toHaveLength(4);
       expect(roomState.messages.at(-1)).toMatchObject({
         agentName: 'Homepage Copy Reviewer',
         type: 'statement',
       });
-      expect(roomsRepo.update).toHaveBeenCalledWith(
+      expect(roomsRepo.update).not.toHaveBeenCalledWith(
         roomState.id,
         expect.objectContaining({
           state: 'DONE',
