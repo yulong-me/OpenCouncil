@@ -24,6 +24,7 @@ import {
 import { BUILTIN_PROVIDER_DEFINITIONS } from '../config/builtinProviders.js';
 import { runtimePaths } from '../config/runtimePaths.js';
 import { matchesResolvedBuiltinAgent, shouldRunBuiltinAgentCatalogV5Migrations } from './builtinAgentCatalog.js';
+import { BUILTIN_PROVIDER_CATALOG_VERSION, backfillMissingBuiltinProviders } from './builtinProviderCatalog.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -38,6 +39,20 @@ function seedBuiltinProviders(): number {
     providersSeeded++;
   }
   return providersSeeded;
+}
+
+function ensureBuiltinProviderCatalogV1(): void {
+  const row = db.prepare("SELECT value FROM app_meta WHERE key = 'builtin_provider_catalog_version'").get() as { value: string } | undefined;
+  const currentVersion = Number.parseInt(row?.value ?? '0', 10);
+  if (currentVersion >= BUILTIN_PROVIDER_CATALOG_VERSION) return;
+
+  const inserted = backfillMissingBuiltinProviders({
+    getProvider: name => providersRepo.get(name),
+    insertProviderIfNotExists: (name, data) => providersRepo.insertIfNotExists(name, data),
+  }, BUILTIN_PROVIDER_DEFINITIONS);
+
+  db.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('builtin_provider_catalog_version', ?)").run(String(BUILTIN_PROVIDER_CATALOG_VERSION));
+  log('INFO', 'db:seed:providers:catalog_v1', { inserted });
 }
 
 function resolveBuiltinAgentPrompt(agent: BuiltinAgentDefinition): string | null {
@@ -242,6 +257,7 @@ export function initDB(): void {
   }
 
   ensureBuiltinAgentCatalogV6();
+  ensureBuiltinProviderCatalogV1();
   const teamSeedResult = teamsRepo.ensureBuiltinTeams();
   if (teamSeedResult.teamsInserted > 0 || teamSeedResult.versionsInserted > 0) {
     log('INFO', 'db:seed:teams', teamSeedResult);
