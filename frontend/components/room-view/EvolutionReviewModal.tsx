@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Ban, Check, Loader2, RefreshCcw, X } from 'lucide-react'
 
 import type { EvolutionChangeDecision, EvolutionProposal, EvolutionProposalChange } from './types'
@@ -132,6 +132,16 @@ function friendlyErrorText(error?: string | null): string | null {
   return '刚才的操作没有完成，请稍后重试。'
 }
 
+function selectNextPendingChangeId(changes: EvolutionProposalChange[], currentChangeId?: string): string | undefined {
+  const pendingChanges = changes.filter(change => !change.decision)
+  if (pendingChanges.length === 0) return undefined
+  const currentIndex = changes.findIndex(change => change.id === currentChangeId)
+  const orderedChanges = currentIndex >= 0
+    ? [...changes.slice(currentIndex + 1), ...changes.slice(0, currentIndex + 1)]
+    : changes
+  return orderedChanges.find(change => !change.decision)?.id ?? pendingChanges[0]?.id
+}
+
 interface EvolutionReviewModalProps {
   proposal: EvolutionProposal
   teamName?: string
@@ -163,6 +173,7 @@ export function EvolutionReviewModal({
   onReject,
   onRegenerate,
 }: EvolutionReviewModalProps) {
+  const focusTrapRef = useRef<HTMLDivElement>(null)
   const [activeChangeId, setActiveChangeId] = useState(proposal.changes[0]?.id)
   const [regenerationFeedback, setRegenerationFeedback] = useState('')
   const [regenerationOpen, setRegenerationOpen] = useState(false)
@@ -171,7 +182,11 @@ export function EvolutionReviewModal({
     setActiveChangeId(proposal.changes[0]?.id)
     setRegenerationFeedback('')
     setRegenerationOpen(false)
-  }, [proposal.id, proposal.changes])
+  }, [proposal.id])
+
+  useEffect(() => {
+    focusTrapRef.current?.focus()
+  }, [proposal.id])
 
   const activeChange = useMemo(
     () => proposal.changes.find(change => change.id === activeChangeId) ?? proposal.changes[0],
@@ -180,6 +195,7 @@ export function EvolutionReviewModal({
   const reviewedCount = proposal.changes.filter(change => change.decision).length
   const allReviewed = reviewedCount === proposal.changes.length && proposal.changes.length > 0
   const acceptedCount = proposal.changes.filter(change => change.decision === 'accepted').length
+  const pendingChanges = proposal.changes.filter(change => !change.decision)
   const canMerge = allReviewed && acceptedCount > 0 && proposal.status !== 'applied' && proposal.status !== 'rejected' && proposal.status !== 'expired'
   const actionInProgress = merging || rejecting || regenerating || Boolean(decidingChangeId)
   const displayError = friendlyErrorText(error)
@@ -192,19 +208,91 @@ export function EvolutionReviewModal({
       ? `已处理全部建议，采纳 ${acceptedCount} 条。`
       : '已处理全部建议，但没有采纳任何建议。'
     : `已处理 ${reviewedCount}/${proposal.changes.length} 条，还有 ${remainingCount} 条。`
+  const progressPercent = proposal.changes.length > 0
+    ? Math.round((reviewedCount / proposal.changes.length) * 100)
+    : 0
+  const activeChangeIndex = activeChange
+    ? proposal.changes.findIndex(change => change.id === activeChange.id)
+    : -1
+  const nextPendingChangeId = proposal.changes.find(change => !change.decision && change.id !== activeChange?.id)?.id
   const mergeHelpText = allReviewed
     ? acceptedCount > 0
       ? `可以确认升级到 ${targetVersionLabel}，后续新任务会使用新版 Team。`
       : '没有采纳任何建议，不能升级。请先采纳至少一条建议，或放弃本次升级。'
     : `处理完所有建议后，才能确认升级到 ${targetVersionLabel}。`
 
+  useEffect(() => {
+    if (!activeChange?.decision) return
+    const nextPendingChangeId = selectNextPendingChangeId(proposal.changes, activeChange.id)
+    if (nextPendingChangeId) {
+      setActiveChangeId(nextPendingChangeId)
+    }
+  }, [activeChange?.decision, activeChange?.id, proposal.changes])
+
+  function handleDialogKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      onClose()
+      return
+    }
+    if (event.key !== 'Tab') return
+
+    const root = focusTrapRef.current
+    if (!root) return
+    const focusable = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter(element => !element.hasAttribute('disabled') && element.offsetParent !== null)
+
+    if (focusable.length === 0) {
+      event.preventDefault()
+      root.focus()
+      return
+    }
+
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  async function handleCurrentDecision(decision: EvolutionChangeDecision) {
+    if (!activeChange) return
+    await onDecide(activeChange.id, decision)
+  }
+
+  async function handleBulkDecision(decision: EvolutionChangeDecision) {
+    for (const change of pendingChanges) {
+      await onDecide(change.id, decision)
+    }
+  }
+
+  function handleContinueNext() {
+    if (!nextPendingChangeId) return
+    setActiveChangeId(nextPendingChangeId)
+  }
+
   return (
-    <div className="fixed inset-0 layer-modal overflow-auto bg-nav-bg text-ink">
+    <div
+      ref={focusTrapRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="evolution-review-title"
+      data-testid="evolution-review-modal"
+      tabIndex={-1}
+      onKeyDown={handleDialogKeyDown}
+      className="fixed inset-0 layer-modal overflow-auto bg-nav-bg text-ink"
+    >
       <div className="flex min-h-full flex-col">
         <div className="grid shrink-0 gap-4 border-b border-line bg-nav-bg/95 px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
           <div className="min-w-0">
             <p className="text-[12px] font-semibold text-accent">改进建议</p>
-            <h2 className="mt-1 text-xl font-semibold leading-tight text-ink">
+            <h2 id="evolution-review-title" className="mt-1 text-xl font-semibold leading-tight text-ink">
               确认后，这支 Team 会升级到 {targetVersionLabel}
             </h2>
             <p className="mt-2 text-[13px] leading-5 text-ink-soft">
@@ -226,14 +314,141 @@ export function EvolutionReviewModal({
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)_340px]">
-          <aside className="min-h-0 border-b border-line bg-surface/50 xl:border-b-0 xl:border-r">
-            <div className="border-b border-line p-4">
-              <p className="text-[12px] font-semibold text-ink-soft">本次要做什么</p>
-              <p className="mt-2 text-[13px] leading-6 text-ink">
-                你正在确认是否把当前 Team 升级到 {targetVersionLabel}。确认升级后，后续新任务会使用新版 Team。
-              </p>
-              <div className="mt-3 grid gap-2">
+        <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <main data-testid="evolution-review-queue" className="min-h-0 overflow-auto p-5">
+            <div className="mx-auto max-w-5xl">
+              <div className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold text-accent">逐条处理</p>
+                  <h3 className="mt-1 text-lg font-semibold text-ink">一条建议处理完，再看下一条</h3>
+                  <p className="mt-1 text-[13px] leading-5 text-ink-soft">
+                    当前展开第 {activeChangeIndex >= 0 ? activeChangeIndex + 1 : 0} 条，先看影响，再决定采纳或不采纳。
+                  </p>
+                </div>
+                <div className="rounded-lg border border-line bg-surface px-3 py-2 text-right">
+                  <p className="text-[11px] font-semibold uppercase text-ink-muted">Queue</p>
+                  <p className="mt-1 text-[13px] font-semibold text-ink">{reviewedCount}/{proposal.changes.length} 已处理</p>
+                </div>
+              </div>
+
+              <div data-testid="evolution-change-list" className="space-y-3">
+                {proposal.changes.map((change, index) => {
+                  const active = change.id === activeChange?.id
+                  if (!active) {
+                    return (
+                      <button
+                        key={change.id}
+                        type="button"
+                        onClick={() => setActiveChangeId(change.id)}
+                        className="grid w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-left transition-colors hover:border-accent/40 hover:bg-surface-muted"
+                      >
+                        <span className={`flex h-8 w-8 items-center justify-center rounded-md border text-[12px] font-semibold ${
+                          change.decision === 'accepted'
+                            ? 'border-accent bg-accent text-white'
+                            : change.decision === 'rejected'
+                              ? 'border-line bg-surface-muted text-ink-soft'
+                              : 'border-line text-ink-soft'
+                        }`}>
+                          {change.decision === 'accepted' ? <Check className="h-4 w-4" /> : index + 1}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[13px] font-semibold text-ink">{change.title}</span>
+                          <span className="mt-0.5 block truncate text-[12px] text-ink-soft">
+                            {CHANGE_KIND_LABELS[change.kind]} · {change.impact}
+                          </span>
+                        </span>
+                        <span className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
+                          change.decision === 'accepted'
+                            ? 'bg-accent/10 text-accent'
+                            : change.decision === 'rejected'
+                              ? 'bg-surface-muted text-ink-soft'
+                              : 'bg-surface-muted text-ink-muted'
+                        }`}>
+                          {decisionText(change.decision)}
+                        </span>
+                      </button>
+                    )
+                  }
+
+                  return (
+                    <article key={change.id} className="rounded-lg border border-accent/40 bg-surface shadow-sm">
+                      <div className="grid gap-4 border-b border-line px-4 py-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent text-[12px] font-bold text-white">
+                              {index + 1}
+                            </span>
+                            <span className="rounded-md bg-accent/10 px-2 py-1 text-[11px] font-semibold text-accent">
+                              {CHANGE_KIND_LABELS[change.kind]}
+                            </span>
+                            <span className="rounded-md bg-surface-muted px-2 py-1 text-[11px] font-semibold text-ink-soft">
+                              {decisionText(change.decision)}
+                            </span>
+                          </div>
+                          <h3 className="mt-3 text-xl font-semibold leading-tight text-ink">{change.title}</h3>
+                          <p className="mt-2 text-[13px] leading-6 text-ink-soft">{change.impact}</p>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2 lg:w-72">
+                          <button
+                            type="button"
+                            data-testid="evolution-accept-current"
+                            onClick={() => { void handleCurrentDecision('accepted') }}
+                            disabled={actionInProgress || change.decision === 'accepted'}
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            {decidingChangeId === change.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                            {change.decision === 'accepted' ? '已采纳' : change.decision === 'rejected' ? '改为采纳' : '采纳这条建议'}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="evolution-reject-current"
+                            onClick={() => { void handleCurrentDecision('rejected') }}
+                            disabled={actionInProgress || change.decision === 'rejected'}
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted disabled:cursor-wait disabled:opacity-60"
+                          >
+                            {decidingChangeId === change.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                            {change.decision === 'rejected' ? '已不采纳' : '不采纳'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 p-4">
+                        <section className="rounded-lg border border-line bg-nav-bg/60 p-4">
+                          <p className="text-[12px] font-semibold text-ink-soft">建议理由</p>
+                          <p className="mt-2 text-[14px] leading-6 text-ink">{change.why}</p>
+                        </section>
+                        <section className="grid gap-4 lg:grid-cols-2">
+                          <div className="rounded-lg border border-line bg-nav-bg/60 p-4">
+                            <p className="text-[12px] font-semibold text-ink-soft">当前状态</p>
+                            <div className="mt-2">{renderBeforeValue(change)}</div>
+                          </div>
+                          <div className="rounded-lg border border-line bg-nav-bg/60 p-4">
+                            <p className="text-[12px] font-semibold text-ink-soft">调整后</p>
+                            <div className="mt-2">{renderAfterValue(change)}</div>
+                          </div>
+                        </section>
+                        <section className="rounded-lg border border-line bg-nav-bg/60 p-4">
+                          <p className="text-[12px] font-semibold text-ink-soft">参考依据</p>
+                          <p className="mt-2 break-words text-[12px] leading-5 text-ink-soft">
+                            来自本次讨论中的 {change.evidenceMessageIds.length} 条消息。这里不展示消息编号，避免干扰判断。
+                          </p>
+                        </section>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            </div>
+          </main>
+
+          <aside className="min-h-0 border-t border-line bg-surface/50 p-4 xl:overflow-auto xl:border-l xl:border-t-0" aria-label="升级确认台">
+            <section className="rounded-lg border border-line bg-surface p-4">
+              <p className="text-[12px] font-semibold text-ink-soft">处理进度</p>
+              <p className="mt-2 text-[15px] font-semibold text-ink" aria-live="polite">{progressText}</p>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-muted">
+                <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${progressPercent}%` }} />
+              </div>
+              <div className="mt-4 grid gap-2">
                 <div className="flex items-center justify-between gap-3 text-[12px] text-ink-soft">
                   <span>当前团队</span>
                   <strong className="text-ink">{currentVersionLabel}</strong>
@@ -247,8 +462,9 @@ export function EvolutionReviewModal({
                   <strong className="text-ink">新任务</strong>
                 </div>
               </div>
-            </div>
-            <div className="border-b border-line p-4">
+            </section>
+
+            <section className="mt-4 rounded-lg border border-line bg-surface p-4">
               <p className="text-[12px] font-semibold text-ink-soft">为什么建议改进</p>
               <p className="mt-2 text-[13px] leading-6 text-ink">{proposal.summary}</p>
               {proposal.feedback && (
@@ -256,195 +472,45 @@ export function EvolutionReviewModal({
                   你的意见：{proposal.feedback}
                 </p>
               )}
-            </div>
-            <div className="border-b border-line px-4 py-3">
-              <p className="text-[12px] font-semibold text-ink-soft">{proposal.changes.length} 条升级建议</p>
-            </div>
-            <div className="max-h-[34vh] overflow-auto p-2 xl:max-h-none">
-              {proposal.changes.map(change => {
-                const active = change.id === activeChange?.id
-                return (
-                  <button
-                    key={change.id}
-                    type="button"
-                    onClick={() => setActiveChangeId(change.id)}
-                    className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
-                      active ? 'bg-accent/10 text-accent' : 'text-ink hover:bg-surface-muted'
-                    }`}
-                  >
-                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] ${
-                      change.decision === 'accepted'
-                        ? 'border-accent bg-accent text-white'
-                        : change.decision === 'rejected'
-                          ? 'border-line bg-surface-muted text-ink-soft'
-                          : 'border-line text-ink-soft'
-                    }`}>
-                      {change.decision === 'accepted' ? <Check className="h-3 w-3" /> : change.decision === 'rejected' ? '×' : ''}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium">{change.title}</span>
-                      <span className="block truncate text-[11px] text-ink-soft">{CHANGE_KIND_LABELS[change.kind]}</span>
-                    </span>
-                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                      change.decision === 'accepted'
-                        ? 'bg-accent/10 text-accent'
-                        : change.decision === 'rejected'
-                          ? 'bg-surface-muted text-ink-soft'
-                          : 'bg-surface-muted text-ink-muted'
-                    }`}>
-                      {decisionText(change.decision)}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </aside>
+            </section>
 
-          <main className="min-h-0 overflow-auto p-5">
             {activeChange && (
-              <div className="mx-auto max-w-4xl">
-                <ol className="mb-4 grid gap-2 md:grid-cols-3" aria-label="升级确认流程">
-                  <li className="grid min-h-[68px] grid-cols-[26px_minmax(0,1fr)] gap-2 rounded-lg border border-accent/40 bg-accent/10 p-3">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent text-[12px] font-bold text-white">1</span>
-                    <span>
-                      <strong className="block text-[13px] text-ink">看建议</strong>
-                      <small className="mt-1 block text-[11px] leading-4 text-ink-soft">先确认团队要改哪里</small>
-                    </span>
-                  </li>
-                  <li className={`grid min-h-[68px] grid-cols-[26px_minmax(0,1fr)] gap-2 rounded-lg border p-3 ${
-                    activeChange.decision ? 'border-accent/40 bg-accent/10' : 'border-line bg-surface/60'
-                  }`}>
-                    <span className={`flex h-6 w-6 items-center justify-center rounded-md text-[12px] font-bold ${
-                      activeChange.decision ? 'bg-accent text-white' : 'bg-surface-muted text-ink-soft'
-                    }`}>2</span>
-                    <span>
-                      <strong className="block text-[13px] text-ink">{activeChange.decision ? decisionText(activeChange.decision) : '决定建议'}</strong>
-                      <small className="mt-1 block text-[11px] leading-4 text-ink-soft">可在右侧更改当前建议状态</small>
-                    </span>
-                  </li>
-                  <li className={`grid min-h-[68px] grid-cols-[26px_minmax(0,1fr)] gap-2 rounded-lg border p-3 ${
-                    canMerge ? 'border-accent/40 bg-accent/10' : 'border-line bg-surface/60'
-                  }`}>
-                    <span className={`flex h-6 w-6 items-center justify-center rounded-md text-[12px] font-bold ${
-                      canMerge ? 'bg-accent text-white' : 'bg-surface-muted text-ink-soft'
-                    }`}>3</span>
-                    <span>
-                      <strong className="block text-[13px] text-ink">确认升级</strong>
-                      <small className="mt-1 block text-[11px] leading-4 text-ink-soft">确认后，新任务使用 {targetVersionLabel}</small>
-                    </span>
-                  </li>
-                </ol>
-                <div className="mb-4 rounded-lg border border-line bg-surface p-4">
-                  <div className="min-w-0">
-                    <span className="inline-flex rounded-md bg-accent/10 px-2 py-1 text-[11px] font-semibold text-accent">
-                      {CHANGE_KIND_LABELS[activeChange.kind]}
-                    </span>
-                    <h3 className="mt-3 text-xl font-semibold leading-tight text-ink">{activeChange.title}</h3>
-                    <p className="mt-2 text-[13px] leading-6 text-ink-soft">{activeChange.impact}</p>
-                  </div>
-                </div>
-
-                <div className="grid gap-4">
-                  <section className="rounded-lg border border-line bg-surface p-4">
-                    <p className="text-[12px] font-semibold text-ink-soft">建议理由</p>
-                    <p className="mt-2 text-[14px] leading-6">{activeChange.why}</p>
-                  </section>
-                  <section className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-lg border border-line bg-surface p-4">
-                      <p className="text-[12px] font-semibold text-ink-soft">当前状态</p>
-                      <div className="mt-2">{renderBeforeValue(activeChange)}</div>
-                    </div>
-                    <div className="rounded-lg border border-line bg-surface p-4">
-                      <p className="text-[12px] font-semibold text-ink-soft">调整后</p>
-                      <div className="mt-2">{renderAfterValue(activeChange)}</div>
-                    </div>
-                  </section>
-                  <section className="rounded-lg border border-line bg-surface p-4">
-                    <p className="text-[12px] font-semibold text-ink-soft">参考依据</p>
-                    <p className="mt-2 break-words text-[12px] leading-5 text-ink-soft">
-                      来自本次讨论中的 {activeChange.evidenceMessageIds.length} 条消息。这里不展示消息编号，避免干扰判断。
-                    </p>
-                  </section>
-                </div>
-              </div>
-            )}
-          </main>
-
-          <aside className="min-h-0 border-t border-line bg-surface/50 p-4 xl:overflow-auto xl:border-l xl:border-t-0" aria-label="升级确认台">
-            {activeChange && (
-              <section className="rounded-lg border border-line bg-surface p-4">
+              <section className="mt-4 rounded-lg border border-line bg-surface p-4">
                 <p className="text-[12px] font-semibold text-ink-soft">当前这条建议</p>
-                <p className="mt-2 text-[15px] font-semibold text-ink">
-                  {activeChange.decision === 'accepted'
-                    ? '已采纳这条建议'
-                    : activeChange.decision === 'rejected'
-                      ? '已标记为不采纳'
-                      : '这条建议还未决定'}
-                </p>
                 <p className="mt-2 text-[12px] leading-5 text-ink-soft">{decisionHelpText(activeChange)}</p>
-                <div className="mt-4 grid gap-2">
-                  {activeChange.decision === 'accepted' ? (
-                    <button
-                      type="button"
-                      onClick={() => { void onDecide(activeChange.id, 'rejected') }}
-                      disabled={actionInProgress}
-                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted disabled:cursor-wait disabled:opacity-60"
-                    >
-                      {decidingChangeId === activeChange.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
-                      改为不采纳
-                    </button>
-                  ) : (
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                      <button
-                        type="button"
-                        onClick={() => { void onDecide(activeChange.id, 'accepted') }}
-                        disabled={actionInProgress}
-                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {decidingChangeId === activeChange.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                        {activeChange.decision === 'rejected' ? '改为采纳' : '采纳这条建议'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { void onDecide(activeChange.id, 'rejected') }}
-                        disabled={actionInProgress}
-                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {decidingChangeId === activeChange.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
-                        不采纳
-                      </button>
-                    </div>
-                  )}
-                </div>
               </section>
             )}
 
-            <section className={`mt-4 rounded-lg border p-4 ${
-              canMerge ? 'border-accent/40 bg-accent/10' : 'border-line bg-surface'
-            }`}>
-              <p className="text-[12px] font-semibold text-ink-soft">整个团队升级</p>
-              <p className="mt-2 text-[15px] font-semibold text-ink">{progressText}</p>
-              <p className="mt-2 text-[12px] leading-5 text-ink-soft">{mergeHelpText}</p>
-              {(!allReviewed || acceptedCount === 0) && (
-                <p className="mt-3 rounded-lg border border-line bg-nav-bg/60 px-3 py-2 text-[12px] leading-5 text-ink-soft">
-                  {acceptedCount === 0 && allReviewed ? '没有采纳任何建议，不能升级。' : '左侧还有建议未处理。'}
+            {pendingChanges.length > 1 && (
+              <section className="mt-4 rounded-lg border border-line bg-surface p-4">
+                <p className="text-[12px] font-semibold text-ink-soft">批量处理剩余建议</p>
+                <p className="mt-2 text-[12px] leading-5 text-ink-soft">
+                  还剩 {pendingChanges.length} 条待决定，可以一次性采纳或不采纳。
                 </p>
-              )}
-              {displayError && (
-                <p className="mt-3 rounded-lg border border-line bg-surface-muted px-3 py-2 text-[12px] leading-5 text-[color:var(--danger)]" aria-live="polite">
-                  {displayError}
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={() => { void onMerge() }}
-                disabled={!canMerge || actionInProgress}
-                className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {merging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                确认升级 Team
-              </button>
-            </section>
+                <div className="mt-4 grid gap-2">
+                  <button
+                    type="button"
+                    data-testid="evolution-accept-all-pending"
+                    onClick={() => { void handleBulkDecision('accepted') }}
+                    disabled={actionInProgress}
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    <Check className="h-4 w-4" />
+                    采纳剩余
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="evolution-reject-all-pending"
+                    onClick={() => { void handleBulkDecision('rejected') }}
+                    disabled={actionInProgress}
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted disabled:cursor-wait disabled:opacity-60"
+                  >
+                    <X className="h-4 w-4" />
+                    不采纳剩余
+                  </button>
+                </div>
+              </section>
+            )}
 
             <section className="mt-4 rounded-lg border border-line bg-surface p-4">
               <p className="text-[12px] font-semibold text-ink-soft">其他选择</p>
@@ -472,7 +538,7 @@ export function EvolutionReviewModal({
                     className="mt-2 w-full resize-none rounded-lg border border-line bg-nav-bg px-3 py-2 text-[13px] leading-5 text-ink outline-none transition-colors placeholder:text-ink-muted focus:border-accent"
                     placeholder="例如：视觉设计师还要负责封面图，重新生成一版。"
                   />
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                  <div className="mt-2 grid gap-2">
                     <button
                       type="button"
                       onClick={() => setRegenerationOpen(false)}
@@ -504,6 +570,44 @@ export function EvolutionReviewModal({
               </button>
             </section>
           </aside>
+        </div>
+
+        <div className="sticky bottom-0 grid gap-3 border-t border-line bg-nav-bg/95 px-5 py-4 shadow-[0_-12px_24px_rgba(0,0,0,0.08)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold text-ink" aria-live="polite">{mergeHelpText}</p>
+            {displayError && (
+              <p className="mt-1 text-[12px] leading-5 text-[color:var(--danger)]" aria-live="polite">
+                {displayError}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-line px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted"
+            >
+              保存并稍后处理
+            </button>
+            <button
+              type="button"
+              onClick={handleContinueNext}
+              disabled={!nextPendingChangeId || actionInProgress}
+              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-line px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              继续下一条
+            </button>
+            <button
+              type="button"
+              data-testid="evolution-confirm-upgrade"
+              onClick={() => { void onMerge() }}
+              disabled={!canMerge || actionInProgress}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {merging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              确认升级 Team
+            </button>
+          </div>
         </div>
       </div>
     </div>

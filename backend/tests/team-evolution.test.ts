@@ -222,7 +222,72 @@ describe('F053: Team Architect proposal generation', () => {
     expect(deltas.join('')).toContain('根据用户意见');
   });
 
-  it('rejects invalid Team Architect output without creating a fixed-rule fallback proposal', async () => {
+  it('retries invalid Team Architect output and creates a proposal from the repaired output', async () => {
+    seedTeamV1();
+    const { createEvolutionProposalFromRoom } = await import('../src/services/teamEvolution.js');
+    const deltas: string[] = [];
+    const agentClient = {
+      generateDraft: vi.fn()
+        .mockResolvedValueOnce({
+          summary: '格式不完整',
+          changes: [],
+        })
+        .mockResolvedValueOnce({
+          summary: '自动修正后，仅沉淀一条团队记忆。',
+          changes: [
+            {
+              kind: 'add-team-memory',
+              title: '记住交付前必须验证',
+              why: '用户明确反馈 Reviewer 没有验证代码。',
+              targetLayer: 'team-memory',
+              before: ['已有团队记忆'],
+              after: ['交付前必须说明验证命令、结果和无法验证的缺口。'],
+              impact: '下一版 Team 会把验证证据作为默认交付要求。',
+            },
+          ],
+        }),
+    };
+
+    const proposal = await createEvolutionProposalFromRoom({
+      id: 'room-1',
+      topic: '实现登录态',
+      state: 'RUNNING',
+      agents: [],
+      messages: [{
+        id: 'msg-1',
+        agentRole: 'USER',
+        agentName: '你',
+        content: 'Reviewer 没有验证代码，我不满意',
+        timestamp: 1200,
+        type: 'user_action',
+      }],
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v1',
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      maxA2ADepth: null,
+      createdAt: 1100,
+      updatedAt: 1100,
+    }, '请基于这个问题提改进', {
+      agentClient,
+      onDelta: text => deltas.push(text),
+    });
+
+    expect(agentClient.generateDraft).toHaveBeenCalledTimes(2);
+    expect(agentClient.generateDraft.mock.calls[1]?.[0].prompt).toContain('上一次输出没有通过 TeamEvolutionProposal 合约校验');
+    expect(agentClient.generateDraft.mock.calls[1]?.[0].prompt).toContain('格式不完整');
+    expect(deltas.join('')).toContain('正在自动修正');
+    expect(proposal.summary).toBe('自动修正后，仅沉淀一条团队记忆。');
+    expect(proposal.changes).toHaveLength(1);
+    expect(proposal.changes[0]).toMatchObject({
+      kind: 'add-team-memory',
+      title: '记住交付前必须验证',
+      evidenceMessageIds: ['msg-1'],
+    });
+  });
+
+  it('rejects invalid Team Architect output after retry without creating a fixed-rule fallback proposal', async () => {
     seedTeamV1();
     const { createEvolutionProposalFromRoom } = await import('../src/services/teamEvolution.js');
     const agentClient = {
@@ -257,6 +322,7 @@ describe('F053: Team Architect proposal generation', () => {
       code: 'EVOLUTION_PROPOSAL_AGENT_FAILED',
     });
 
+    expect(agentClient.generateDraft).toHaveBeenCalledTimes(2);
     expect(db.prepare('SELECT COUNT(*) as cnt FROM evolution_proposals').get()).toEqual({ cnt: 0 });
   });
 });
