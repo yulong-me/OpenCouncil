@@ -155,10 +155,10 @@ export function RoomHeader({
     <div
       className="h-[60px] md:h-16 layer-sticky-header bg-nav-bg border-b border-line px-4 md:px-6 flex items-center justify-between sticky top-0"
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         <button
           type="button"
-          className="md:hidden p-2 -ml-2 text-ink-soft hover:text-ink"
+          className="md:hidden -ml-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft hover:bg-surface-muted hover:text-ink"
           onClick={onToggleMobileMenu}
           aria-label="打开任务记录"
         >
@@ -275,9 +275,9 @@ export function RoomHeader({
           </span>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2">
         {roomId && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button
               type="button"
               onClick={() => {
@@ -329,7 +329,7 @@ export function RoomHeader({
           <button
             type="button"
             onClick={onOpenAgentDrawer}
-            className="md:hidden p-2 text-ink-soft hover:text-accent transition-colors"
+            className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent"
             aria-label="查看 Team 成员"
           >
             <Users className="w-5 h-5" />
@@ -339,7 +339,7 @@ export function RoomHeader({
           <button
             type="button"
             onClick={onOpenInviteDrawer}
-            className="p-2 text-ink-soft hover:text-accent transition-colors"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent"
             aria-label="邀请 Agent 参与任务"
           >
             <UserPlus className="w-5 h-5" />
@@ -348,7 +348,7 @@ export function RoomHeader({
           <button
             type="button"
             onClick={onOpenSystemSettings}
-            className="p-2 text-ink-soft hover:text-accent transition-colors"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent"
             aria-label="打开设置"
             title="打开设置"
           >

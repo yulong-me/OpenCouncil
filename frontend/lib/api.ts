@@ -3,8 +3,9 @@
  *
  * Resolution order (first match wins):
  *   1. Non-empty `process.env.NEXT_PUBLIC_API_URL` — explicit override (production / docker)
- *   2. If current page runs on a localhost frontend port, talk to localhost:7001 (split dev mode)
- *   3. `window.location.protocol + '//' + window.location.host` — same origin (gateway / proxy deployments)
+ *   2. If current page runs on official localhost frontend port 7002, talk to localhost:7001
+ *   3. In development bundles only, fallback localhost frontend ports also talk to localhost:7001
+ *   4. `window.location.protocol + '//' + window.location.host` — same origin (gateway / proxy deployments)
  *
  * This supports:
  *   - dev: frontend `7002` or a fallback port -> backend `7001`
@@ -17,9 +18,16 @@ export function resolveDefaultApiUrl(): string {
   if (typeof window === 'undefined') return 'http://localhost:7001';
 
   const { protocol, hostname, host, port } = window.location;
+  const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
+  const isDevelopmentBundle = process.env.NODE_ENV !== 'production';
 
-  // Split dev default: localhost frontend ports talk to the backend on 7001.
-  if ((hostname === 'localhost' || hostname === '127.0.0.1') && port !== '7000' && port !== '7001') {
+  // Official split frontend port always talks to the backend port.
+  if (isLocalHost && port === '7002') {
+    return `${protocol}//${hostname}:7001`;
+  }
+
+  // Local ad-hoc Next dev ports, e.g. 7013 during visual QA, should also use the backend.
+  if (isLocalHost && isDevelopmentBundle && port !== '7000' && port !== '7001') {
     return `${protocol}//${hostname}:7001`;
   }
 

@@ -25,7 +25,10 @@ export function DepthSwitcher({ value, onChange, currentDepth, maxDepth }: {
       <button
         type="button"
         onClick={() => setOpen(current => !current)}
-        className="flex items-center gap-1 px-2 py-0.5 bg-surface-muted rounded-lg text-[11px] font-semibold hover:bg-surface-muted/80 transition-colors"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`A2A 协作深度：剩余 ${remaining}，上限 ${maxDepth === 0 ? '无限' : maxDepth}`}
+        className="inline-flex h-9 items-center gap-1 rounded-lg bg-surface-muted px-2 text-[11px] font-semibold transition-colors hover:bg-surface-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
       >
         <span className="text-ink-soft">A2A</span>
         <span className="text-accent font-bold">{remaining}</span>
@@ -34,17 +37,19 @@ export function DepthSwitcher({ value, onChange, currentDepth, maxDepth }: {
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 layer-dropdown bg-surface rounded-lg shadow-lg border border-border overflow-hidden min-w-[120px]">
+        <div className="absolute top-full left-0 mt-1 layer-dropdown min-w-[120px] overflow-hidden rounded-lg border border-border bg-surface shadow-lg" role="menu">
           {options.map(option => (
             <button
               key={String(option.value)}
               type="button"
+              role="menuitemradio"
+              aria-checked={value === option.value}
               title={option.title}
               onClick={() => {
                 onChange(option.value)
                 setOpen(false)
               }}
-              className={`w-full text-left px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+              className={`min-h-9 w-full px-3 text-left text-[11px] font-semibold transition-colors ${
                 value === option.value
                   ? 'bg-accent text-white'
                   : 'text-ink hover:bg-surface-muted'

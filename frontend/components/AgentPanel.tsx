@@ -595,9 +595,72 @@ export function AgentPanel({
   onDesktopWidthChange,
 }: AgentPanelProps) {
   const dragStartRef = useRef<{ x: number; width: number } | null>(null)
+  const mobileDrawerRef = useRef<HTMLDivElement>(null)
+  const mobileCloseButtonRef = useRef<HTMLButtonElement>(null)
   const mobileSubtitle = teamName
     ? `${teamName}${teamVersionNumber ? ` · v${teamVersionNumber}` : ''} · ${agents.length} 人`
     : `${agents.length} 位成员`
+
+  useEffect(() => {
+    if (!isMobileOpen) return
+
+    const frameId = window.requestAnimationFrame(() => {
+      mobileCloseButtonRef.current?.focus()
+    })
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onMobileClose?.()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+
+      const root = mobileDrawerRef.current
+      if (!root) return
+
+      const focusable = Array.from(root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      )).filter(element => element.offsetParent !== null || element === document.activeElement)
+
+      if (focusable.length === 0) {
+        event.preventDefault()
+        root.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const activeElement = document.activeElement
+
+      if (!activeElement || !root.contains(activeElement)) {
+        event.preventDefault()
+        first.focus()
+        return
+      }
+
+      if (activeElement === root) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+        return
+      }
+
+      if (event.shiftKey && activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isMobileOpen, onMobileClose])
 
   const handleResizeStart = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
     if (!onDesktopWidthChange) return
@@ -661,18 +724,26 @@ export function AgentPanel({
 
       {/* Mobile: fixed right drawer */}
       {isMobileOpen && (
-        <div className="lg:hidden fixed inset-0 layer-drawer flex" role="dialog" aria-modal="true" aria-label="Team 成员">
+        <div className="lg:hidden fixed inset-0 layer-drawer flex">
           <div className="absolute inset-0 layer-modal-scrim bg-[color:var(--overlay-scrim)]" onClick={onMobileClose} />
-          <div className="layer-overlay-content ml-auto flex h-full w-[min(320px,calc(100vw-3rem))] flex-col border-l border-line bg-nav-bg shadow-2xl">
+          <div
+            ref={mobileDrawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-agent-panel-title"
+            tabIndex={-1}
+            className="layer-overlay-content ml-auto flex h-full w-[min(320px,calc(100vw-3rem))] flex-col border-l border-line bg-nav-bg shadow-2xl"
+          >
             <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
               <div className="min-w-0">
-                <h2 className="truncate font-display text-[16px] font-normal leading-5 text-ink">Team 成员</h2>
+                <h2 id="mobile-agent-panel-title" className="truncate font-display text-[16px] font-normal leading-5 text-ink">Team 成员</h2>
                 <p className="mt-1 truncate font-mono text-[10.5px] text-ink-faint">{mobileSubtitle}</p>
               </div>
               <button
+                ref={mobileCloseButtonRef}
                 type="button"
                 onClick={onMobileClose}
-                className="shrink-0 rounded-lg p-1.5 text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
                 aria-label="关闭 Team 成员"
                 title="关闭"
               >

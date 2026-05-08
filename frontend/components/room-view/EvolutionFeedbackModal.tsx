@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { AlertTriangle, Loader2, X } from 'lucide-react'
 
 import { getAgentColor, type Agent } from '@/lib/agents'
@@ -32,21 +33,85 @@ export function EvolutionFeedbackModal({
   onSubmit,
   onStopBusyAgentsAndSubmit,
 }: EvolutionFeedbackModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
   const roomBusy = busyAgents.length > 0
   const actionInProgress = creating || stoppingAndSubmitting
   const currentVersionLabel = `v${currentVersionNumber ?? '?'}`
   const nextVersionLabel = typeof currentVersionNumber === 'number' ? `v${currentVersionNumber + 1}` : 'v?'
 
+  useEffect(() => {
+    dialogRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+
+      const root = dialogRef.current
+      if (!root) return
+
+      const focusable = Array.from(root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      )).filter(element => element.offsetParent !== null || element === document.activeElement)
+
+      if (focusable.length === 0) {
+        event.preventDefault()
+        root.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const activeElement = document.activeElement
+
+      if (!activeElement || !root.contains(activeElement)) {
+        event.preventDefault()
+        first.focus()
+        return
+      }
+
+      if (activeElement === root) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+        return
+      }
+
+      if (event.shiftKey && activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   return (
     <div className="fixed inset-0 layer-modal flex items-end sm:items-start justify-center bg-[color:var(--overlay-scrim)] px-0 pt-0 sm:px-4 sm:pt-20">
-      <div className="flex max-h-[80dvh] w-full max-w-[580px] flex-col overflow-hidden rounded-t-[16px] rounded-b-none sm:rounded-[14px] border border-line bg-surface shadow-[0_30px_80px_-10px_rgba(20,15,8,0.35)]">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="evolution-feedback-title"
+        tabIndex={-1}
+        className="flex max-h-[80dvh] w-full max-w-[580px] flex-col overflow-hidden rounded-t-[16px] rounded-b-none sm:rounded-[14px] border border-line bg-surface shadow-[0_30px_80px_-10px_rgba(20,15,8,0.35)] outline-none"
+      >
         <div className="flex h-6 shrink-0 items-center justify-center sm:hidden">
           <span className="h-1 w-9 rounded-full bg-line" aria-hidden />
         </div>
 
         <div className="shrink-0 border-b border-line px-4 pb-4 pt-1 sm:px-6 sm:pb-3 sm:pt-5">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="font-display text-[20px] font-medium leading-tight text-ink sm:text-[22px]">改进这支 Team</h2>
+            <h2 id="evolution-feedback-title" className="font-display text-[20px] font-medium leading-tight text-ink sm:text-[22px]">改进这支 Team</h2>
             <button
               type="button"
               onClick={onClose}

@@ -6,6 +6,12 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const feedbackModal = readFileSync(resolve(root, 'components/room-view/EvolutionFeedbackModal.tsx'), 'utf8')
 
+assert.match(feedbackModal, /role="dialog"/)
+assert.match(feedbackModal, /aria-modal="true"/)
+assert.match(feedbackModal, /aria-labelledby="evolution-feedback-title"/)
+assert.match(feedbackModal, /dialogRef\.current\?\.focus\(\)/)
+assert.match(feedbackModal, /event\.key === 'Escape'[\s\S]*onClose\(\)/)
+assert.match(feedbackModal, /event\.key !== 'Tab'/)
 assert.match(feedbackModal, /items-end sm:items-start/)
 assert.match(feedbackModal, /max-h-\[80dvh\]/)
 assert.match(feedbackModal, /rounded-t-\[16px\] rounded-b-none sm:rounded-\[14px\]/)
