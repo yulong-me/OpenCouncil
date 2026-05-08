@@ -685,7 +685,7 @@ export default function CreateRoomModal({
         onClick={onClose}
         onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') onClose() }}
       />
-      <div className="layer-overlay-content app-window-shell w-full max-w-[720px] max-h-[calc(100dvh-2rem)] rounded-[14px] flex flex-col custom-scrollbar pointer-events-auto overflow-hidden">
+      <div className={`layer-overlay-content app-window-shell w-full ${teamDraftOpen ? 'max-w-[760px]' : 'max-w-[720px]'} max-h-[calc(100dvh-2rem)] rounded-[14px] flex flex-col custom-scrollbar pointer-events-auto overflow-hidden`}>
 
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto">
@@ -694,7 +694,11 @@ export default function CreateRoomModal({
             <div className="flex items-start justify-between px-6 pt-5 pb-3.5 border-b border-line shrink-0">
               <div>
                 <h1 className="font-display text-[24px] font-medium leading-tight text-ink">发起任务</h1>
-                <p className="text-ink-soft mt-1 text-[14px]">选择一支 Team，进入协作现场后再输入这次要做的事。</p>
+                <p className="text-ink-soft mt-1 text-[14px]">
+                  {teamDraftOpen
+                    ? '描述你想让这支 Team 长期擅长什么，下面会给出一份可审阅的方案。'
+                    : '选择一支 Team，进入协作现场后再输入这次要做的事。'}
+                </p>
               </div>
               <button onClick={onClose} aria-label="关闭" className="p-2 text-ink-soft hover:text-ink hover:bg-surface-muted rounded-full transition-colors">
                 <X className="w-5 h-5" aria-hidden/>
@@ -855,22 +859,44 @@ export default function CreateRoomModal({
                   )}
 
                   {teamDraft && (
-                    <div className="mt-4 space-y-4">
-                    <div>
-                      <div className="mb-1 flex items-center justify-between gap-3">
-                        <label className="text-[11px] font-bold text-ink-soft">Team 名称</label>
+                    <div className="mt-4 rounded-[10px] border border-line bg-surface p-4 [background-image:linear-gradient(var(--surface-muted),var(--surface))]">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">
+                            <BrainCircuit className="h-3 w-3" aria-hidden />
+                            Team 方案
+                          </span>
+                          <span className="text-[12px] text-ink-soft">
+                            由 Team Architect · {teamDraft.generationSource === 'fallback' ? '本地兜底' : '执行工具'} 生成
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleGenerateTeamDraft}
+                          disabled={teamDraftLoading || teamGoal.trim().length === 0}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent disabled:opacity-50"
+                        >
+                          <Wand2 className="h-3 w-3" aria-hidden />
+                          重新生成
+                        </button>
                       </div>
-                      <input
-                        value={teamDraft.name}
-                        onChange={e => setTeamDraft(prev => prev ? { ...prev, name: e.target.value } : prev)}
-                        className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-[13px] font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-accent/50"
-                      />
-                      <p className="mt-2 text-[12px] leading-relaxed text-ink-soft">{teamDraft.mission}</p>
-                    </div>
 
-                    <div>
-                      <p className="text-[11px] font-bold text-ink-soft">成员</p>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <div className="mt-3">
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={teamDraft.name}
+                            onChange={e => setTeamDraft(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                            className="w-full border-0 bg-transparent p-0 font-display text-[22px] font-medium leading-tight text-ink outline-none focus:ring-0"
+                            aria-label="Team 名称"
+                          />
+                        </div>
+                        <p className="mt-2 text-[12.5px] leading-relaxed text-ink-soft">
+                          <span className="text-ink-faint">使命：</span>
+                          {teamDraft.mission}
+                        </p>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
                         {teamDraft.members.map((member, index) => (
                           <div key={`${member.displayName}-${index}`} className="rounded-xl border border-line bg-surface p-3">
                             <div className="flex items-start justify-between gap-2">
@@ -896,57 +922,40 @@ export default function CreateRoomModal({
                           </div>
                         ))}
                       </div>
-                    </div>
 
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div>
-                        <p className="text-[11px] font-bold text-ink-soft">协作方式</p>
-                        <p className="mt-1 whitespace-pre-line rounded-xl border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-soft">{teamDraft.workflow}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-bold text-ink-soft">分工规则</p>
-                        <ul className="mt-1 space-y-1.5 rounded-xl border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-soft">
-                          {draftRoutingRules.length > 0 ? draftRoutingRules.map((rule, index) => (
-                            <li key={`${rule}-${index}`} className="flex gap-2">
-                              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent/70" />
-                              <span>{rule}</span>
-                            </li>
-                          )) : (
-                            <li>按成员职责自动分配任务。</li>
-                          )}
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-[11px] font-bold text-ink-soft">检查方式</p>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                        {teamDraft.validationCases.map((validationCase, index) => (
-                          <div key={`${validationCase.title}-${index}`} className="rounded-xl border border-line bg-surface px-3 py-2">
-                            <p className="text-[12px] font-semibold text-ink">{validationCase.title}</p>
-                            <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-ink-soft">{validationCase.expectedBehavior}</p>
+                      <details className="mt-3 rounded-lg border border-line bg-surface-muted/60 px-3 py-2">
+                        <summary className="cursor-pointer text-[12.5px] font-semibold text-ink-soft">协作方式 · 分工规则 · 检查方式</summary>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div>
+                            <p className="text-[11px] font-bold text-ink-soft">协作方式</p>
+                            <p className="mt-1 whitespace-pre-line rounded-xl border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-soft">{teamDraft.workflow}</p>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => { handleOpenTeamSelect(); setTeamDraft(null); setTeamDraftError('') }}
-                        className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] font-bold text-ink"
-                      >
-                        取消
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCreateTeamFromDraft}
-                        disabled={teamDraftCreating || teamDraft.members.length < 1 || teamDraft.name.trim().length === 0}
-                        className="rounded-lg bg-ink px-3 py-2 text-[12px] font-bold text-bg disabled:opacity-50"
-                      >
-                        {teamDraftCreating ? '创建中…' : '创建 Team 并进入协作现场'}
-                      </button>
-                    </div>
+                          <div>
+                            <p className="text-[11px] font-bold text-ink-soft">分工规则</p>
+                            <ul className="mt-1 space-y-1.5 rounded-xl border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-soft">
+                              {draftRoutingRules.length > 0 ? draftRoutingRules.map((rule, index) => (
+                                <li key={`${rule}-${index}`} className="flex gap-2">
+                                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent/70" />
+                                  <span>{rule}</span>
+                                </li>
+                              )) : (
+                                <li>按成员职责自动分配任务。</li>
+                              )}
+                            </ul>
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <p className="text-[11px] font-bold text-ink-soft">检查方式</p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {teamDraft.validationCases.map((validationCase, index) => (
+                              <div key={`${validationCase.title}-${index}`} className="rounded-xl border border-line bg-surface px-3 py-2">
+                                <p className="text-[12px] font-semibold text-ink">{validationCase.title}</p>
+                                <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-ink-soft">{validationCase.expectedBehavior}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </details>
                     </div>
                   )}
                 </div>
@@ -1008,23 +1017,48 @@ export default function CreateRoomModal({
 
           {/* Sticky Footer: CTA */}
           <div className="shrink-0 border-t border-line px-6 py-3.5 bg-surface-muted">
-            {!teamDraftOpen && !errors.agents && selectedWorkers.length >= minimumWorkerCount && selectedCliBlockers.length === 0 && (
-              <div className="mb-3 text-[12px] text-ink-soft">
-                <span className="rounded-full bg-[color:var(--success)]/12 px-2 py-0.5 font-semibold text-[color:var(--success)]">通过</span>
-                <span className="ml-2">room preflight · 没有阻塞</span>
+            {teamDraftOpen ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-[11.5px] text-ink-soft">方案确认后会创建 Team v1，并立即进入协作现场</span>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { handleOpenTeamSelect(); setTeamDraft(null); setTeamDraftError('') }}
+                    className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] font-semibold text-ink-soft transition-colors hover:text-ink"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateTeamFromDraft}
+                    disabled={!teamDraft || teamDraftCreating || teamDraft.members.length < 1 || teamDraft.name.trim().length === 0}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {teamDraftCreating ? '创建中…' : '创建 Team 并进入现场'}
+                  </button>
+                </div>
               </div>
-            )}
+            ) : (
+              <>
+                {!errors.agents && selectedWorkers.length >= minimumWorkerCount && selectedCliBlockers.length === 0 && (
+                  <div className="mb-3 text-[12px] text-ink-soft">
+                    <span className="rounded-full bg-[color:var(--success)]/12 px-2 py-0.5 font-semibold text-[color:var(--success)]">通过</span>
+                    <span className="ml-2">room preflight · 没有阻塞</span>
+                  </div>
+                )}
 
-            {/* CTA */}
-            <button
-              type="button"
-              className="w-full rounded-lg bg-accent py-3 text-white font-semibold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md active:scale-[0.99] disabled:active:scale-100"
-              onClick={handleSubmit}
-              disabled={teamDraftOpen || submitting || selectedWorkers.length < minimumWorkerCount || selectedCliBlockers.length > 0}
-            >
-              <Play className="w-4 h-4 fill-current" aria-hidden/>
-              {teamDraftOpen ? '先创建 Team' : submitting ? '创建中…' : '进入协作现场'}
-            </button>
+                {/* CTA */}
+                <button
+                  type="button"
+                  className="w-full rounded-lg bg-accent py-3 text-white font-semibold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md active:scale-[0.99] disabled:active:scale-100"
+                  onClick={handleSubmit}
+                  disabled={submitting || selectedWorkers.length < minimumWorkerCount || selectedCliBlockers.length > 0}
+                >
+                  <Play className="w-4 h-4 fill-current" aria-hidden/>
+                  {submitting ? '创建中…' : '进入协作现场'}
+                </button>
+              </>
+            )}
 
           </div>
         </div>

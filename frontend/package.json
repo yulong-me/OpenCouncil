@@ -17,6 +17,7 @@
     "test:layering": "node tests/layering-regression.mjs",
     "test:create-room-density": "node tests/create-room-agent-card-density-regression.mjs",
     "test:create-room-overall-ux": "node tests/create-room-overall-ux-regression.mjs",
+    "test:create-team-generate": "node tests/create-team-generate-regression.mjs",
     "test:command-palette": "node tests/command-palette-regression.mjs",
     "test:design-refresh": "node tests/design-refresh-regression.mjs",
     "test:message-stats-zero": "rm -rf .tmp-tests/message-stats-zero && ./node_modules/.bin/tsc --target es2017 --lib dom,dom.iterable,esnext --skipLibCheck --module commonjs --moduleResolution node --jsx react-jsx --esModuleInterop --outDir .tmp-tests/message-stats-zero tests/message-stats-zero-regression.tsx && node .tmp-tests/message-stats-zero/tests/message-stats-zero-regression.js",
