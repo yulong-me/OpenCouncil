@@ -20,6 +20,7 @@
     "test:create-team-generate": "node tests/create-team-generate-regression.mjs",
     "test:command-palette": "node tests/command-palette-regression.mjs",
     "test:room-active-a2a": "node tests/room-active-a2a-regression.mjs",
+    "test:room-done-state": "node tests/room-done-state-regression.mjs",
     "test:design-refresh": "node tests/design-refresh-regression.mjs",
     "test:message-stats-zero": "rm -rf .tmp-tests/message-stats-zero && ./node_modules/.bin/tsc --target es2017 --lib dom,dom.iterable,esnext --skipLibCheck --module commonjs --moduleResolution node --jsx react-jsx --esModuleInterop --outDir .tmp-tests/message-stats-zero tests/message-stats-zero-regression.tsx && node .tmp-tests/message-stats-zero/tests/message-stats-zero-regression.js",
     "test:message-media": "rm -rf .tmp-tests/message-media && ./node_modules/.bin/tsc --target es2017 --lib dom,dom.iterable,esnext --skipLibCheck --module commonjs --moduleResolution node --jsx react-jsx --esModuleInterop --outDir .tmp-tests/message-media tests/message-media-attachment-regression.tsx && node .tmp-tests/message-media/tests/message-media-attachment-regression.js",

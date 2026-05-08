@@ -66,10 +66,10 @@ assert.doesNotMatch(messageList, /messages\.length === 0 && roomId && \(/)
 
 assert.doesNotMatch(actionArea, /if \(state === 'DONE'\) return null/)
 assert.match(actionArea, /任务已结束/)
-assert.match(actionArea, /共 \{messageCount\} 条消息/)
+assert.match(actionArea, /共 <b>\{messageCount\}<\/b> 条消息/)
 assert.match(actionArea, /让 Team 总结一份结论/)
 assert.match(actionArea, /提一条改进意见/)
-assert.match(actionArea, /以这次为起点，开新任务/)
+assert.match(actionArea, /以这次为起点开新任务/)
 assert.match(actionArea, /onCreateEvolutionProposal/)
 assert.match(actionArea, /onStartNewRoom/)
 
