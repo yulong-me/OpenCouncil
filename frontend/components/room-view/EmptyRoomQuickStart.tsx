@@ -201,8 +201,8 @@ export function EmptyRoomQuickStart({
   )
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-5 py-8 md:px-10 lg:px-14 lg:py-12">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-5 pt-5 pb-24 md:pb-0 md:px-10 md:pt-8 lg:px-14 lg:py-12">
         <div className="w-full max-w-6xl">
           <div className="max-w-3xl">
             <p className="sr-only">OpenCouncil</p>
@@ -210,7 +210,7 @@ export function EmptyRoomQuickStart({
             <p className="font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-ink-faint">
               主线 · 任务 → Team → 现场 → 记录 → 改进
             </p>
-            <h2 className="mt-4 font-display text-[38px] font-normal leading-[1.06] text-ink md:text-[52px]">
+            <h2 className="mt-3 font-display text-[30px] font-normal leading-[1.08] text-ink md:text-[52px] md:leading-[1.06]">
               发起一个任务，<br />
               <span className="italic text-accent">交给 Team</span> 协作。
             </h2>
@@ -254,7 +254,7 @@ export function EmptyRoomQuickStart({
             <p className="text-[12px] font-semibold text-ink">快速 Team 模板</p>
             <p className="text-[11px] text-ink-faint">点选直接进入协作现场</p>
           </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-2 xl:grid-cols-3">
           {QUICK_START_TEMPLATES.map(template => {
             const Icon = TEMPLATE_ICONS[template.icon]
             const readiness = getTemplateReadiness(template)
@@ -265,7 +265,7 @@ export function EmptyRoomQuickStart({
                 type="button"
                 onClick={() => onStartTemplate(template)}
                 disabled={Boolean(creatingTemplateId)}
-                className="group flex min-h-36 flex-col justify-between rounded-[10px] border border-line bg-surface px-4 py-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:cursor-wait disabled:opacity-70"
+                className="group flex min-h-[118px] flex-col justify-between rounded-[10px] border border-line bg-surface px-3 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:cursor-wait disabled:opacity-70 sm:min-h-36 sm:px-4 sm:py-4"
               >
                 <span className="flex items-center justify-between gap-3">
                   <span className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-muted text-accent">
@@ -305,7 +305,7 @@ export function EmptyRoomQuickStart({
           <button
             type="button"
             onClick={onStartBlank}
-            className="flex min-h-36 flex-col items-center justify-center gap-2 rounded-[10px] border border-dashed border-line bg-transparent px-4 py-4 text-center text-ink-soft transition-colors hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45"
+            className="flex min-h-[118px] flex-col items-center justify-center gap-2 rounded-[10px] border border-dashed border-line bg-transparent px-3 py-3 text-center text-ink-soft transition-colors hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 sm:min-h-36 sm:px-4 sm:py-4"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-muted text-accent">
               <Wand2 className="h-4 w-4" aria-hidden />
@@ -322,7 +322,7 @@ export function EmptyRoomQuickStart({
           </div>
         )}
 
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="mt-8 hidden flex-col gap-3 md:flex md:flex-row md:items-center">
           <button
             type="button"
             onClick={onStartBlank}
@@ -336,6 +336,16 @@ export function EmptyRoomQuickStart({
           </p>
         </div>
       </div>
+      </div>
+      <div className="shrink-0 border-t border-line bg-surface-muted px-4 py-3 md:hidden">
+        <button
+          type="button"
+          onClick={onStartBlank}
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-accent px-5 text-[14px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+        >
+          发起任务
+          <ArrowRight className="h-4 w-4" aria-hidden />
+        </button>
       </div>
     </div>
   )

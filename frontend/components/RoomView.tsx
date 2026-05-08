@@ -643,6 +643,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
             onToggleMobileMenu={toggleMobileMenu}
             onOpenAgentDrawer={openAgentDrawer}
             onOpenInviteDrawer={openInviteDrawer}
+            onOpenSystemSettings={openSystemSettings}
             agentPanelCollapsed={agentPanelCollapsed}
             onToggleAgentPanel={toggleAgentPanel}
             onGenerateTitleSuggestions={handleGenerateTitleSuggestions}

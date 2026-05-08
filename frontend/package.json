@@ -13,6 +13,7 @@
     "test:settings-team-uiux": "node tests/settings-team-uiux-regression.mjs",
     "test:settings-provider-uiux": "node tests/settings-provider-uiux-regression.mjs",
     "test:settings-skill-uiux": "node tests/settings-skill-uiux-regression.mjs",
+    "test:mobile-home-uiux": "node tests/mobile-home-uiux-regression.mjs",
     "test:evolution-review-actions": "node tests/evolution-review-actions-regression.mjs",
     "test:evolution-review-uiux": "node tests/evolution-review-modal-uiux-regression.mjs",
     "test:evolution-feedback-modal": "node tests/evolution-feedback-modal-regression.mjs",

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, GitPullRequest, Loader2, Menu, Sparkles, UserPlus, Users } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, GitPullRequest, Loader2, Menu, Settings, Sparkles, UserPlus, Users } from 'lucide-react'
 
 import { DepthSwitcher } from './DepthSwitcher'
 
@@ -18,6 +18,7 @@ interface RoomHeaderProps {
   onToggleMobileMenu: () => void
   onOpenAgentDrawer: () => void
   onOpenInviteDrawer: () => void
+  onOpenSystemSettings: () => void
   agentPanelCollapsed: boolean
   onToggleAgentPanel: () => void
   onGenerateTitleSuggestions?: () => Promise<string[]>
@@ -41,6 +42,7 @@ export function RoomHeader({
   onToggleMobileMenu,
   onOpenAgentDrawer,
   onOpenInviteDrawer,
+  onOpenSystemSettings,
   agentPanelCollapsed,
   onToggleAgentPanel,
   onGenerateTitleSuggestions,
@@ -147,6 +149,8 @@ export function RoomHeader({
     }
   }
 
+  const headerTitle = !roomId ? 'OpenCouncil' : (currentRoomTopic || '新任务记录')
+
   return (
     <div
       className="h-[60px] md:h-16 layer-sticky-header bg-nav-bg border-b border-line px-4 md:px-6 flex items-center justify-between sticky top-0"
@@ -213,7 +217,7 @@ export function RoomHeader({
               className="min-w-0 truncate text-left text-title text-ink underline-offset-4 transition-colors hover:text-accent hover:underline md:text-base"
               title="重命名任务记录"
             >
-              {currentRoomTopic || '新任务记录'}
+              {headerTitle}
             </button>
           )}
           {renaming && roomId && suggestionsOpen && (
@@ -323,14 +327,26 @@ export function RoomHeader({
             <Users className="w-5 h-5" />
           </button>
         )}
-        <button
-          type="button"
-          onClick={onOpenInviteDrawer}
-          className="p-2 text-ink-soft hover:text-accent transition-colors"
-          aria-label="邀请 Agent 参与任务"
-        >
-          <UserPlus className="w-5 h-5" />
-        </button>
+        {roomId ? (
+          <button
+            type="button"
+            onClick={onOpenInviteDrawer}
+            className="p-2 text-ink-soft hover:text-accent transition-colors"
+            aria-label="邀请 Agent 参与任务"
+          >
+            <UserPlus className="w-5 h-5" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpenSystemSettings}
+            className="p-2 text-ink-soft hover:text-accent transition-colors"
+            aria-label="打开设置"
+            title="打开设置"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onToggleAgentPanel}
