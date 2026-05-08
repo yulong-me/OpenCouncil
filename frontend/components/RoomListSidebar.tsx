@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, Command, GripVertical, Moon, Plus, Search, Settings, Sun, Trash2, UserCircle, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileText, GripVertical, Moon, Plus, Search, Settings, Sun, Trash2, UserCircle, X } from 'lucide-react'
 import {
   formatRelativeTime,
   type DiscussionState,
@@ -41,6 +41,24 @@ function getTaskStatusLabel(room: SidebarRoom): string {
   if (room.activityState === 'busy') return '协作中'
   if (room.state === 'DONE' || room.activityState === 'done') return '已完成'
   return '未开始'
+}
+
+function highlightCommandMatch(text: string, query: string): ReactNode {
+  const trimmedQuery = query.trim()
+  if (!trimmedQuery) return text
+
+  const matchIndex = text.toLowerCase().indexOf(trimmedQuery.toLowerCase())
+  if (matchIndex < 0) return text
+
+  return (
+    <>
+      {text.slice(0, matchIndex)}
+      <mark className="rounded-sm bg-accent/15 px-0.5 text-accent">
+        {text.slice(matchIndex, matchIndex + trimmedQuery.length)}
+      </mark>
+      {text.slice(matchIndex + trimmedQuery.length)}
+    </>
+  )
 }
 
 interface RoomListSidebarProps {
@@ -128,6 +146,7 @@ function CommandPalette({
   onAfterSelect?: () => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [activeIndex, setActiveIndex] = useState(0)
   const normalizedQuery = query.trim().toLowerCase()
 
   useEffect(() => {
@@ -136,26 +155,12 @@ function CommandPalette({
     return () => window.cancelAnimationFrame(id)
   }, [open])
 
-  useEffect(() => {
-    if (!open) return
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onClose()
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose, open])
-
   const roomResults = useMemo(() => {
     const matchesQuery = (room: SidebarRoom) => {
       if (!normalizedQuery) return true
       return `${getTaskTitle(room)} ${getTaskTeamLabel(room)} ${room.preview ?? ''} ${room.workspace ?? ''}`.toLowerCase().includes(normalizedQuery)
     }
-    return rooms.filter(matchesQuery).slice(0, 8)
+    return rooms.filter(matchesQuery).slice(0, 6)
   }, [normalizedQuery, rooms])
 
   const actionResults = useMemo(() => {
@@ -175,7 +180,7 @@ function CommandPalette({
       {
         id: 'settings',
         label: '打开设置',
-        hint: '执行工具和本机工作区',
+        hint: '管理 Team / Provider / Skill',
         keywords: 'settings providers workspace',
         icon: Settings,
         onSelect: () => {
@@ -192,11 +197,88 @@ function CommandPalette({
     })
   }, [normalizedQuery, onAfterSelect, onClose, onNewRoom, onOpenSystemSettings])
 
+  const messageResults = useMemo(() => {
+    return rooms
+      .filter(room => {
+        const preview = room.preview?.trim()
+        if (!preview) return false
+        if (!normalizedQuery) return true
+        return `${preview} ${getTaskTitle(room)} ${getTaskTeamLabel(room)}`.toLowerCase().includes(normalizedQuery)
+      })
+      .slice(0, 3)
+  }, [normalizedQuery, rooms])
+
+  const selectableItems = useMemo(() => {
+    return [
+      ...actionResults.map(action => ({
+        id: `action:${action.id}`,
+        onSelect: action.onSelect,
+      })),
+      ...roomResults.map(room => ({
+        id: `room:${room.id}`,
+        onSelect: () => {
+          onSelectRoom(room.id)
+          onClose()
+          onAfterSelect?.()
+        },
+      })),
+      ...messageResults.map(room => ({
+        id: `message:${room.id}`,
+        onSelect: () => {
+          onSelectRoom(room.id)
+          onClose()
+          onAfterSelect?.()
+        },
+      })),
+    ]
+  }, [actionResults, messageResults, onAfterSelect, onClose, onSelectRoom, roomResults])
+
+  const itemCount = actionResults.length + roomResults.length + messageResults.length
+  const activeItemId = selectableItems[Math.min(activeIndex, Math.max(selectableItems.length - 1, 0))]?.id
+
+  useEffect(() => {
+    setActiveIndex(0)
+  }, [query, open])
+
+  useEffect(() => {
+    if (activeIndex <= selectableItems.length - 1) return
+    setActiveIndex(Math.max(selectableItems.length - 1, 0))
+  }, [activeIndex, selectableItems.length])
+
+  useEffect(() => {
+    if (!open) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setActiveIndex(index => selectableItems.length ? (index + 1) % selectableItems.length : 0)
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setActiveIndex(index => selectableItems.length ? (index - 1 + selectableItems.length) % selectableItems.length : 0)
+        return
+      }
+      if (event.key === 'Enter' && selectableItems[activeIndex]) {
+        event.preventDefault()
+        selectableItems[activeIndex].onSelect()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeIndex, onClose, open, selectableItems])
+
   if (!open) return null
 
   return createPortal((
     <div
-      className="fixed inset-0 layer-modal flex items-start justify-center bg-[color:var(--overlay-scrim)] px-4 pt-[12vh]"
+      className="fixed inset-0 layer-modal flex items-start justify-center bg-[color:var(--overlay-scrim)] px-4 pt-[11vh] backdrop-blur-[2px]"
       data-command-palette="true"
       role="dialog"
       aria-modal="true"
@@ -204,45 +286,52 @@ function CommandPalette({
       onMouseDown={onClose}
     >
       <div
-        className="w-full max-w-xl overflow-hidden rounded-xl border border-line bg-surface shadow-2xl"
+        className="w-full max-w-[640px] overflow-hidden rounded-[14px] border border-line bg-surface shadow-2xl"
         onMouseDown={event => event.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
-          <Command className="h-4 w-4 shrink-0 text-ink-faint" />
+        <div className="flex items-center gap-2 border-b border-line px-4 py-3.5">
+          <Search className="h-4 w-4 shrink-0 text-ink-faint" />
           <input
             ref={inputRef}
             value={query}
             onChange={event => onQueryChange(event.target.value)}
             placeholder="搜索任务记录、最近消息或操作"
-            className="h-8 min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-ink outline-none placeholder:text-ink-faint"
+            className="h-8 min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-ink outline-none placeholder:text-ink-faint"
             aria-label="搜索命令"
           />
           <span className="rounded border border-line bg-surface-muted px-1.5 py-0.5 font-mono text-[10px] text-ink-faint">
-            ESC
+            ESC 关闭
           </span>
         </div>
 
-        <div className="custom-scrollbar max-h-[60vh] overflow-y-auto p-2">
+        <div className="custom-scrollbar max-h-[460px] overflow-y-auto py-2">
           {actionResults.length > 0 && (
-            <div className="mb-2">
-              <p className="px-2 py-1 text-label uppercase text-ink-faint">操作</p>
-              <div className="space-y-1">
+            <div className="py-2">
+              <p className="px-4 py-1 font-mono text-[10.5px] uppercase tracking-[0.1em] text-ink-faint">操作</p>
+              <div>
                 {actionResults.map(action => {
                   const Icon = action.icon
+                  const itemId = `action:${action.id}`
+                  const isActive = activeItemId === itemId
                   return (
                     <button
                       key={action.id}
                       type="button"
                       onClick={action.onSelect}
-                      className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/[0.35]"
+                      data-command-palette-active={isActive ? 'true' : undefined}
+                      className={`flex w-full items-center gap-3 border-l-2 px-4 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/[0.35] ${
+                        isActive ? 'border-accent bg-surface-muted' : 'border-transparent hover:bg-surface-muted'
+                      }`}
                     >
-                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-line bg-surface">
-                        <Icon className="h-4 w-4 text-ink-soft" />
+                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-ink-soft">
+                        <Icon className="h-3.5 w-3.5" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-secondary font-medium text-ink">{action.label}</span>
+                        <span className="block truncate text-[13px] font-medium text-ink">{highlightCommandMatch(action.label, query)}</span>
                         <span className="block truncate text-[11px] text-ink-faint">{action.hint}</span>
                       </span>
+                      {action.id === 'new-room' && <span className="font-mono text-[10px] text-ink-faint">N</span>}
+                      {action.id === 'settings' && <span className="font-mono text-[10px] text-ink-faint">,</span>}
                     </button>
                   )
                 })}
@@ -250,11 +339,15 @@ function CommandPalette({
             </div>
           )}
 
-          <div>
-            <p className="px-2 py-1 text-label uppercase text-ink-faint">任务记录 / 最近消息</p>
+          <div className="py-2">
+            <p className="px-4 py-1 font-mono text-[10.5px] uppercase tracking-[0.1em] text-ink-faint">
+              任务记录 · {roomResults.length} 条匹配
+            </p>
             {roomResults.length > 0 ? (
-              <div className="space-y-1">
+              <div>
                 {roomResults.map(room => {
+                  const itemId = `room:${room.id}`
+                  const isActive = activeItemId === itemId
                   const isCurrent = room.id === currentRoomId
                   return (
                     <button
@@ -265,15 +358,16 @@ function CommandPalette({
                         onClose()
                         onAfterSelect?.()
                       }}
-                      className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/[0.35] ${
-                        isCurrent ? 'bg-accent/[0.10]' : 'hover:bg-surface-muted'
+                      data-command-palette-active={isActive ? 'true' : undefined}
+                      className={`flex w-full items-center gap-3 border-l-2 px-4 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/[0.35] ${
+                        isActive ? 'border-accent bg-surface-muted' : isCurrent ? 'border-transparent bg-accent/[0.10]' : 'border-transparent hover:bg-surface-muted'
                       }`}
                     >
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-[11px] font-bold text-ink-soft">
-                        {room.agentCount}
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center text-ink-soft">
+                        <FileText className="h-3.5 w-3.5" aria-hidden />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-secondary font-medium text-ink">{getTaskTitle(room)}</span>
+                        <span className="block truncate text-[13px] font-medium text-ink">{highlightCommandMatch(getTaskTitle(room), query)}</span>
                         <span className="block truncate text-[11px] text-ink-faint">
                           {getTaskTeamLabel(room)} · {getTaskStatusLabel(room)}
                         </span>
@@ -289,6 +383,50 @@ function CommandPalette({
               </p>
             )}
           </div>
+
+          {messageResults.length > 0 && (
+            <div className="py-2">
+              <p className="px-4 py-1 font-mono text-[10.5px] uppercase tracking-[0.1em] text-ink-faint">消息预览</p>
+              <div>
+                {messageResults.map(room => {
+                  const itemId = `message:${room.id}`
+                  const isActive = activeItemId === itemId
+                  return (
+                    <button
+                      key={`message-${room.id}`}
+                      type="button"
+                      onClick={() => {
+                        onSelectRoom(room.id)
+                        onClose()
+                        onAfterSelect?.()
+                      }}
+                      data-command-palette-active={isActive ? 'true' : undefined}
+                      className={`flex w-full items-center gap-3 border-l-2 px-4 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/[0.35] ${
+                        isActive ? 'border-accent bg-surface-muted' : 'border-transparent hover:bg-surface-muted'
+                      }`}
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[11px] font-semibold text-accent">
+                        @
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium text-ink">{highlightCommandMatch(room.preview ?? '', query)}</span>
+                        <span className="block truncate text-[11px] text-ink-faint">{getTaskTeamLabel(room)} · {getTaskTitle(room)}</span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-line px-4 py-2.5 text-[11px] text-ink-faint">
+          <span className="flex flex-wrap items-center gap-3">
+            <span><kbd className="font-mono">↑↓</kbd> 浏览</span>
+            <span><kbd className="font-mono">↵</kbd> 打开</span>
+            <span><kbd className="font-mono">⌘↵</kbd> 在新窗口打开</span>
+          </span>
+          <span className="font-mono">{itemCount} 项</span>
         </div>
       </div>
     </div>
