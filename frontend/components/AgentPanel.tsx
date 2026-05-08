@@ -21,11 +21,14 @@ interface RoomSkillSummary {
 interface AgentPanelProps {
   roomId?: string
   agents: Agent[]
+  teamName?: string
+  teamVersionNumber?: number
   workspace?: string
   skillSummary?: RoomSkillSummary
   sessionTelemetryByAgent?: Record<string, SessionTelemetry>
   stoppingAgentIds?: Set<string>
   onStopAgent?: (agent: Agent) => Promise<void> | void
+  onOpenInviteDrawer?: () => void
   isMobileOpen?: boolean
   onMobileClose?: () => void
   desktopWidth?: number
@@ -577,11 +580,14 @@ function TelemetryInfoCard({
 export function AgentPanel({
   roomId,
   agents,
+  teamName,
+  teamVersionNumber,
   workspace,
   skillSummary,
   sessionTelemetryByAgent,
   stoppingAgentIds,
   onStopAgent,
+  onOpenInviteDrawer,
   isMobileOpen,
   onMobileClose,
   desktopWidth = 240,
@@ -589,6 +595,9 @@ export function AgentPanel({
   onDesktopWidthChange,
 }: AgentPanelProps) {
   const dragStartRef = useRef<{ x: number; width: number } | null>(null)
+  const mobileSubtitle = teamName
+    ? `${teamName}${teamVersionNumber ? ` · v${teamVersionNumber}` : ''} · ${agents.length} 人`
+    : `${agents.length} 位成员`
 
   const handleResizeStart = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
     if (!onDesktopWidthChange) return
@@ -652,17 +661,22 @@ export function AgentPanel({
 
       {/* Mobile: fixed right drawer */}
       {isMobileOpen && (
-        <div className="lg:hidden fixed inset-0 layer-drawer flex">
+        <div className="lg:hidden fixed inset-0 layer-drawer flex" role="dialog" aria-modal="true" aria-label="Team 成员">
           <div className="absolute inset-0 layer-modal-scrim bg-[color:var(--overlay-scrim)]" onClick={onMobileClose} />
-          <div className="layer-overlay-content ml-auto flex h-full w-[280px] flex-col border-l border-line bg-surface shadow-2xl">
-            <div className="flex items-center justify-end border-b border-line px-3 py-3">
+          <div className="layer-overlay-content ml-auto flex h-full w-[min(320px,calc(100vw-3rem))] flex-col border-l border-line bg-nav-bg shadow-2xl">
+            <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
+              <div className="min-w-0">
+                <h2 className="truncate font-display text-[16px] font-normal leading-5 text-ink">Team 成员</h2>
+                <p className="mt-1 truncate font-mono text-[10.5px] text-ink-faint">{mobileSubtitle}</p>
+              </div>
               <button
                 type="button"
                 onClick={onMobileClose}
-                className="p-1.5 text-ink-soft hover:text-ink hover:bg-surface-muted rounded-lg transition-colors"
-                aria-label="关闭"
+                className="shrink-0 rounded-lg p-1.5 text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+                aria-label="关闭 Team 成员"
+                title="关闭"
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </button>
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
@@ -674,8 +688,25 @@ export function AgentPanel({
                 sessionTelemetryByAgent={sessionTelemetryByAgent}
                 stoppingAgentIds={stoppingAgentIds}
                 onStopAgent={onStopAgent}
+                showHeader={false}
+                showExtras={false}
               />
             </div>
+            {roomId && onOpenInviteDrawer && (
+              <div className="shrink-0 border-t border-line bg-nav-bg px-3.5 py-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onMobileClose?.()
+                    onOpenInviteDrawer()
+                  }}
+                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3 text-[12px] font-semibold text-ink transition-colors hover:border-accent/45 hover:bg-surface-muted hover:text-accent"
+                >
+                  <Users className="h-3.5 w-3.5" aria-hidden />
+                  邀请 Agent 参与任务
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -691,6 +722,8 @@ function PanelContent({
   sessionTelemetryByAgent,
   stoppingAgentIds,
   onStopAgent,
+  showHeader = true,
+  showExtras = true,
 }: {
   roomId?: string
   agents: Agent[]
@@ -699,6 +732,8 @@ function PanelContent({
   sessionTelemetryByAgent?: Record<string, SessionTelemetry>
   stoppingAgentIds?: Set<string>
   onStopAgent?: (agent: Agent) => Promise<void> | void
+  showHeader?: boolean
+  showExtras?: boolean
 }) {
   const [skillsCollapsed, setSkillsCollapsed] = useState(true)
   const hasSkills = Boolean(
@@ -712,21 +747,23 @@ function PanelContent({
 
   return (
     <>
-      <div className="border-b border-line px-3 py-3 space-y-1.5">
-        {roomId && (
-          <button
-            type="button"
-            onClick={() => navigator.clipboard.writeText(roomId)}
-            title="点击复制对话 ID"
-            className="flex items-center gap-1.5 rounded-lg border border-line bg-surface-muted px-2 py-1.5 text-[11px] text-ink-soft transition-colors cursor-pointer group w-full hover:border-accent/30 hover:text-accent"
-          >
-            <span className="opacity-60 group-hover:opacity-100 shrink-0">ID:</span>
-            <span className="font-mono truncate group-hover:text-accent">{roomId.slice(0, 8)}…</span>
-            <Copy className="ml-auto h-3 w-3 opacity-40 transition-opacity group-hover:opacity-80" aria-hidden />
-          </button>
-        )}
-        <h2 className="pt-0.5 text-title text-ink">Team 成员</h2>
-      </div>
+      {showHeader && (
+        <div className="border-b border-line px-3 py-3 space-y-1.5">
+          {roomId && (
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(roomId)}
+              title="点击复制对话 ID"
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-surface-muted px-2 py-1.5 text-[11px] text-ink-soft transition-colors cursor-pointer group w-full hover:border-accent/30 hover:text-accent"
+            >
+              <span className="opacity-60 group-hover:opacity-100 shrink-0">ID:</span>
+              <span className="font-mono truncate group-hover:text-accent">{roomId.slice(0, 8)}…</span>
+              <Copy className="ml-auto h-3 w-3 opacity-40 transition-opacity group-hover:opacity-80" aria-hidden />
+            </button>
+          )}
+          <h2 className="pt-0.5 text-title text-ink">Team 成员</h2>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-2.5 py-2.5 space-y-2.5 custom-scrollbar">
         {agents.length === 0 ? (
@@ -764,7 +801,7 @@ function PanelContent({
           </div>
         )}
 
-        {hasSkills && skillSummary && (
+        {showExtras && hasSkills && skillSummary && (
           <section className="rounded-2xl border border-line bg-surface-muted px-2.5 py-2.5 space-y-2">
             <button
               type="button"
@@ -814,7 +851,7 @@ function PanelContent({
           </section>
         )}
 
-        {workspace && (
+        {showExtras && workspace && (
           <WorkspaceSidebar workspacePath={workspace} />
         )}
       </div>

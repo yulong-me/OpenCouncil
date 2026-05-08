@@ -730,6 +730,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         <AgentPanel
           roomId={activeRoomId}
           agents={agents}
+          teamName={teamName}
+          teamVersionNumber={teamVersionNumber}
           workspace={workspace}
           skillSummary={{
             effectiveSkills,
@@ -739,6 +741,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           sessionTelemetryByAgent={sessionTelemetryByAgent}
           stoppingAgentIds={stoppingAgentIds}
           onStopAgent={handleStopAgent}
+          onOpenInviteDrawer={openInviteDrawer}
           isMobileOpen={agentDrawerOpen}
           onMobileClose={() => setAgentDrawerOpen(false)}
           desktopWidth={agentPanelWidth}
