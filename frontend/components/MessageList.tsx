@@ -4,7 +4,7 @@ import { memo, useMemo, useRef, useState, type MutableRefObject, type RefObject 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
-import { ChevronDown, BrainCircuit, Wrench, Copy, Maximize2, FileVideo, Music2, Loader2 } from 'lucide-react'
+import { ChevronDown, Wrench, Copy, Maximize2, FileVideo, Music2, Loader2 } from 'lucide-react'
 import {
   TIME_FORMATTER,
   extractMentions,
@@ -318,30 +318,65 @@ export const MessageList = memo(function MessageList({
       )}
 
       {!loading && sortedMessages.length === 0 && roomId && (
-        <div className="flex flex-col items-center justify-center min-h-44 text-center text-ink-soft gap-3 px-4">
-          <BrainCircuit className="w-8 h-8 opacity-70" />
-          <div className="space-y-1">
-            <p className="text-sm font-semibold text-ink">从 @一位专家 开始</p>
-            <p className="text-xs max-w-md leading-relaxed">
+        <div className="flex min-h-[24rem] items-center justify-center px-4 py-8 text-center text-ink-soft">
+          <div className="w-full max-w-[560px]">
+            <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-faint">· 现场已就绪 ·</p>
+            <h2 className="font-display text-[36px] font-normal leading-[1.15] text-ink">
+              从 <span className="italic text-accent">@一位专家</span> 开始
+            </h2>
+            <p className="mx-auto mt-3 max-w-[480px] text-[13px] leading-6 text-ink-soft">
               {teamId === 'software-development'
-                ? '每条消息都需要明确收件人。软件开发任务建议先找主架构师出方案，再让挑战架构师找茬收敛；达成一致后交给实现工程师，最后由 Reviewer 做质量门禁。'
+                ? (
+                    <>
+                      每条消息都需要明确收件人。软件开发任务建议先找
+                      <strong className="font-medium text-ink">主架构师</strong>
+                      出方案，再让
+                      <strong className="font-medium text-ink">挑战架构师</strong>
+                      找茬收敛；达成一致后交给
+                      <strong className="font-medium text-ink">实现工程师</strong>
+                      ，最后由
+                      <strong className="font-medium text-ink">Reviewer</strong>
+                      做质量门禁。
+                    </>
+                  )
                 : `${teamName ?? '当前 Team'} 会按成员职责协作。先 @ 最适合启动任务的成员，说清目标、交付物和边界；后续接力会在房间里可见。`}
             </p>
+            {agents.length > 0 && (
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                {agents.slice(0, 5).map(agent => {
+                  const agentColors = getAgentColor(agent.name)
+                  return (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      data-empty-room-agent-pill="true"
+                      onClick={() => onPrefillMention(agent)}
+                      className="inline-flex items-center gap-2 rounded-full border border-line bg-surface py-1.5 pl-1.5 pr-3 text-[12px] font-medium text-ink shadow-sm transition-colors hover:border-accent/45 hover:bg-surface-muted hover:text-accent"
+                    >
+                      <AgentAvatar
+                        name={agent.name}
+                        color={agentColors.bg}
+                        textColor={agentColors.text}
+                        size={20}
+                        className="rounded-full"
+                      />
+                      <span className="font-mono text-ink-faint">@</span>
+                      <span>{agent.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {teamId === 'software-development' && (
+              <div className="mx-auto mt-7 rounded-[10px] border border-dashed border-line bg-surface-muted/70 px-4 py-3 text-left text-[12px] leading-6 text-ink-soft">
+                <p className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-faint">建议这样开场</p>
+                <p className="mt-1.5">
+                  <span className="font-semibold text-accent">@主架构师</span> 我们要把 thermal_curve.py 重构成可注入的策略类，
+                  目标：减少散热 if/else 嵌套；交付：方案文档 + 关键接口；边界：保持现有热阈值不变。
+                </p>
+              </div>
+            )}
           </div>
-          {agents.length > 0 && (
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-              {agents.slice(0, 4).map(agent => (
-                <button
-                  key={agent.id}
-                  type="button"
-                  onClick={() => onPrefillMention(agent)}
-                  className="px-3 py-1.5 rounded-lg border border-line bg-surface text-xs font-medium text-ink hover:border-accent hover:text-accent transition-colors"
-                >
-                  @{agent.name}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       )}
       {showScrollBtn && (
