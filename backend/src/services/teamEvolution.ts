@@ -51,6 +51,8 @@ const SAFETY_CONSTRAINTS = [
   'return strict JSON only',
 ];
 
+const MAX_EVOLUTION_PROPOSAL_ATTEMPTS = 2;
+
 interface EvolutionArchitectChange {
   kind: EvolutionChangeKind;
   title: string;
@@ -64,6 +66,11 @@ interface EvolutionArchitectChange {
 interface EvolutionArchitectOutput {
   summary: string;
   changes: EvolutionArchitectChange[];
+}
+
+interface ValidatedEvolutionArchitectOutput {
+  summary: string;
+  changes: CreateEvolutionChangeInput[];
 }
 
 interface EvolutionArchitectOptions {
@@ -185,6 +192,35 @@ function buildArchitectPrompt(room: DiscussionRoom, version: TeamVersionConfig, 
   ].join('\n');
 }
 
+function rawOutputForPrompt(output: unknown): string {
+  if (typeof output === 'string') return truncate(output, 5000);
+  try {
+    return truncate(JSON.stringify(output, null, 2), 5000);
+  } catch {
+    return '[unserializable output]';
+  }
+}
+
+function buildRepairArchitectPrompt(
+  room: DiscussionRoom,
+  version: TeamVersionConfig,
+  feedbackText: string,
+  rawOutput: unknown,
+  error: EvolutionProposalGenerationError,
+): string {
+  return [
+    '上一次输出没有通过 TeamEvolutionProposal 合约校验。',
+    '请只修正格式和字段，使它满足 schema 和 change kind 的 after 形状；不要改变用户意图，不要新增无证据支撑的 change。',
+    '必须返回严格 JSON，不要 Markdown，不要解释，不要代码块。',
+    '上一次校验错误：',
+    error.message,
+    '上一次输出：',
+    rawOutputForPrompt(rawOutput),
+    '原始任务如下：',
+    buildArchitectPrompt(room, version, feedbackText),
+  ].join('\n');
+}
+
 function assertArchitectOutput(output: unknown): asserts output is EvolutionArchitectOutput {
   if (!isRecord(output) || !requireText(output.summary) || !Array.isArray(output.changes) || output.changes.length < 1) {
     throw new EvolutionProposalGenerationError();
@@ -280,6 +316,23 @@ function normalizeChange(change: EvolutionArchitectChange, evidenceMessageIds: s
   };
 }
 
+function validateArchitectOutput(
+  rawOutput: unknown,
+  version: TeamVersionConfig,
+  evidenceMessageIds: string[],
+): ValidatedEvolutionArchitectOutput {
+  const output = parseAgentOutput(rawOutput);
+  assertArchitectOutput(output);
+  return {
+    summary: truncate(output.summary.trim(), 240),
+    changes: output.changes.map(change => {
+      assertChangeShape(change);
+      assertChangeContract(change, version);
+      return normalizeChange(change, evidenceMessageIds);
+    }),
+  };
+}
+
 export async function createEvolutionProposalFromRoom(
   room: DiscussionRoom,
   feedback?: string,
@@ -305,36 +358,46 @@ export async function createEvolutionProposalFromRoom(
   }
 
   const agentClient = options.agentClient ?? defaultTeamDraftAgentClient;
-  let summary: string;
-  let changes: CreateEvolutionChangeInput[];
-  try {
-    const runtime = getTeamArchitectRuntimeFromEnv();
-    const rawOutput = await agentClient.generateDraft(
-      {
-        goal: `${baseVersion.name} v${baseVersion.versionNumber} evolution proposal`,
-        schemaName: 'TeamEvolutionProposal',
-        schema: EVOLUTION_PROPOSAL_SCHEMA,
-        safetyConstraints: SAFETY_CONSTRAINTS,
-        prompt: buildArchitectPrompt(room, baseVersion, feedbackText),
-        runtime: {
-          ...runtime,
-          timeoutSeconds: runtime.timeoutSeconds ?? null,
+  const runtime = getTeamArchitectRuntimeFromEnv();
+  let validatedOutput: ValidatedEvolutionArchitectOutput | null = null;
+  let prompt = buildArchitectPrompt(room, baseVersion, feedbackText);
+
+  for (let attempt = 1; attempt <= MAX_EVOLUTION_PROPOSAL_ATTEMPTS; attempt += 1) {
+    let rawOutput: unknown;
+    try {
+      rawOutput = await agentClient.generateDraft(
+        {
+          goal: `${baseVersion.name} v${baseVersion.versionNumber} evolution proposal`,
+          schemaName: 'TeamEvolutionProposal',
+          schema: EVOLUTION_PROPOSAL_SCHEMA,
+          safetyConstraints: SAFETY_CONSTRAINTS,
+          prompt,
+          runtime: {
+            ...runtime,
+            timeoutSeconds: runtime.timeoutSeconds ?? null,
+          },
         },
-      },
-      { onDelta: options.onDelta },
-    );
-    const output = parseAgentOutput(rawOutput);
-    assertArchitectOutput(output);
-    summary = truncate(output.summary.trim(), 240);
-    changes = output.changes.map(change => {
-      assertChangeShape(change);
-      assertChangeContract(change, baseVersion);
-      return normalizeChange(change, evidenceMessageIds);
-    });
-  } catch (err) {
-    if (err instanceof EvolutionProposalGenerationError) throw err;
+        { onDelta: options.onDelta },
+      );
+      validatedOutput = validateArchitectOutput(rawOutput, baseVersion, evidenceMessageIds);
+      break;
+    } catch (err) {
+      if (!(err instanceof EvolutionProposalGenerationError)) {
+        throw new EvolutionProposalGenerationError();
+      }
+      if (attempt >= MAX_EVOLUTION_PROPOSAL_ATTEMPTS) {
+        throw err;
+      }
+      options.onDelta?.('\n\n格式没有通过，正在自动修正...\n');
+      prompt = buildRepairArchitectPrompt(room, baseVersion, feedbackText, rawOutput, err);
+    }
+  }
+
+  if (!validatedOutput) {
     throw new EvolutionProposalGenerationError();
   }
+
+  const { summary, changes } = validatedOutput;
 
   const proposalInput = {
     roomId: room.id,

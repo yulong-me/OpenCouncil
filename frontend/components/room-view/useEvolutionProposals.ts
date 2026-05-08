@@ -11,6 +11,17 @@ interface UseEvolutionProposalsOptions {
   roomId?: string
 }
 
+function friendlyEvolutionCreateError(message: string): string {
+  const normalized = message.toLowerCase()
+  if (
+    normalized.includes('room has an agent currently executing') ||
+    normalized.includes('room_busy')
+  ) {
+    return '当前 Team 还在执行，先停止当前执行，或等它结束后再生成改进。'
+  }
+  return message
+}
+
 export function useEvolutionProposals({ roomId }: UseEvolutionProposalsOptions) {
   const [evolutionProposals, setEvolutionProposals] = useState<EvolutionProposal[]>([])
   const [selectedEvolutionId, setSelectedEvolutionId] = useState<string | null>(null)
@@ -103,7 +114,7 @@ export function useEvolutionProposals({ roomId }: UseEvolutionProposalsOptions) 
       setEvolutionFeedbackOpen(false)
       setEvolutionFeedbackDraft('')
     } catch (error) {
-      const message = error instanceof Error ? error.message : '生成改进建议失败'
+      const message = friendlyEvolutionCreateError(error instanceof Error ? error.message : '生成改进建议失败')
       setEvolutionError(message)
       warn('ui:evolution:create_failed', { roomId, error })
     } finally {
@@ -194,7 +205,7 @@ export function useEvolutionProposals({ roomId }: UseEvolutionProposalsOptions) 
       ])
       setSelectedEvolutionId(proposal.id)
     } catch (error) {
-      const message = error instanceof Error ? error.message : '重新生成改进建议失败'
+      const message = friendlyEvolutionCreateError(error instanceof Error ? error.message : '重新生成改进建议失败')
       setEvolutionError(message)
       try {
         await refreshEvolutionProposals()

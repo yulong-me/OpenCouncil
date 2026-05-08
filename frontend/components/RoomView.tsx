@@ -103,6 +103,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [agentPanelCollapsed, setAgentPanelCollapsed] = useState(false)
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null)
   const [quickStartError, setQuickStartError] = useState<string | null>(null)
+  const [stoppingForEvolution, setStoppingForEvolution] = useState(false)
 
   const { theme, resolvedTheme, setTheme } = useTheme()
   const currentTheme = resolvedTheme ?? theme
@@ -506,6 +507,28 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     return titles
   }, [activeRoomId])
 
+  const handleStopBusyAgentsAndCreateEvolution = useCallback(async (feedback: string) => {
+    if (busyAgents.length === 0) {
+      await handleCreateEvolutionProposal(feedback)
+      return
+    }
+
+    const trimmedFeedback = feedback.trim()
+    if (!trimmedFeedback) {
+      await handleCreateEvolutionProposal(feedback)
+      return
+    }
+
+    setStoppingForEvolution(true)
+    try {
+      await Promise.all(busyAgents.map(agent => handleStopAgent(agent)))
+      await new Promise(resolve => setTimeout(resolve, 900))
+      await handleCreateEvolutionProposal(trimmedFeedback)
+    } finally {
+      setStoppingForEvolution(false)
+    }
+  }, [busyAgents, handleCreateEvolutionProposal, handleStopAgent])
+
   const handleRenameRoom = useCallback(async (nextTopic: string) => {
     if (!activeRoomId) return
 
@@ -744,9 +767,12 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           output={evolutionOutput}
           error={evolutionError}
           creating={creatingEvolutionProposal}
+          busyAgents={busyAgents}
+          stoppingAndSubmitting={stoppingForEvolution}
           onDraftChange={setEvolutionFeedbackDraft}
           onClose={() => setEvolutionFeedbackOpen(false)}
           onSubmit={handleCreateEvolutionProposal}
+          onStopBusyAgentsAndSubmit={handleStopBusyAgentsAndCreateEvolution}
         />
       )}
 

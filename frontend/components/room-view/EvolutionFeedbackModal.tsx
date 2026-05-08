@@ -1,13 +1,18 @@
-import { Loader2, X } from 'lucide-react'
+import { AlertTriangle, Loader2, X } from 'lucide-react'
+
+import type { Agent } from '@/lib/agents'
 
 interface EvolutionFeedbackModalProps {
   draft: string
   output: string
   error: string | null
   creating: boolean
+  busyAgents?: Agent[]
+  stoppingAndSubmitting?: boolean
   onDraftChange: (draft: string) => void
   onClose: () => void
   onSubmit: (feedback: string) => void | Promise<void>
+  onStopBusyAgentsAndSubmit?: (feedback: string) => void | Promise<void>
 }
 
 export function EvolutionFeedbackModal({
@@ -15,10 +20,16 @@ export function EvolutionFeedbackModal({
   output,
   error,
   creating,
+  busyAgents = [],
+  stoppingAndSubmitting = false,
   onDraftChange,
   onClose,
   onSubmit,
+  onStopBusyAgentsAndSubmit,
 }: EvolutionFeedbackModalProps) {
+  const roomBusy = busyAgents.length > 0
+  const actionInProgress = creating || stoppingAndSubmitting
+
   return (
     <div className="fixed inset-0 layer-modal flex items-center justify-center bg-black/35 px-4">
       <div className="w-full max-w-xl rounded-lg border border-line bg-nav-bg shadow-xl">
@@ -48,6 +59,34 @@ export function EvolutionFeedbackModal({
             className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-5 text-ink outline-none transition-colors placeholder:text-ink-muted focus:border-accent"
             placeholder="例如：下次先问清楚限制条件，再开始给方案。"
           />
+          {roomBusy && (
+            <div
+              data-testid="evolution-room-busy-warning"
+              className="rounded-lg border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/10 px-3 py-3"
+            >
+              <div className="flex gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--warning)]" />
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-ink">
+                    当前还有 {busyAgents.length} 位成员在执行
+                  </p>
+                  <p className="mt-1 text-[12px] leading-5 text-ink-soft">
+                    先停止当前执行，再基于已经产生的记录生成改进建议。
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {busyAgents.map(agent => (
+                      <span
+                        key={agent.id}
+                        className="rounded-md border border-line bg-nav-bg px-2 py-0.5 text-[11px] font-medium text-ink-soft"
+                      >
+                        {agent.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {error && (
             <p className="rounded-lg bg-[color:var(--danger)]/8 px-3 py-2 text-[12px] text-[color:var(--danger)]">
               {error}
@@ -79,12 +118,23 @@ export function EvolutionFeedbackModal({
             <button
               type="button"
               onClick={() => { void onSubmit(draft) }}
-              disabled={creating || !draft.trim()}
+              disabled={actionInProgress || !draft.trim() || roomBusy}
               className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {creating && <Loader2 className="h-4 w-4 animate-spin" />}
               生成改进建议
             </button>
+            {roomBusy && onStopBusyAgentsAndSubmit && (
+              <button
+                type="button"
+                onClick={() => { void onStopBusyAgentsAndSubmit(draft) }}
+                disabled={actionInProgress || !draft.trim()}
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {stoppingAndSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                停止当前执行并生成改进
+              </button>
+            )}
           </div>
         </div>
       </div>
