@@ -62,7 +62,7 @@ assert.match(header, /任务记录/)
 assert.doesNotMatch(header, /EVO PR|让 Team 复盘|进化提案|开始新讨论|讨论标题|讨论成员|参与讨论/)
 
 assert.match(evolutionFeedbackModal, /改进这支 Team/)
-assert.match(evolutionFeedbackModal, /这支 Team 下次怎么做会更好/)
+assert.match(evolutionFeedbackModal, /这支 Team <em>下次怎么做<\/em> 会更好/)
 assert.match(evolutionFeedbackModal, /生成改进建议/)
 assert.match(roomView, /evolutionOutput/)
 assert.match(evolutionHook, /\/api\/rooms\/\$\{roomId\}\/evolution-proposals\/stream/)
