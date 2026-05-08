@@ -38,7 +38,7 @@ const config: Config = {
       fontFamily: {
         sans: ['Inter', '"Noto Sans SC"', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
-        display: ['Inter', '"Noto Sans SC"', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+        display: ['Georgia', '"Noto Sans SC"', 'serif'],
       },
       fontSize: {
         display: ['22px', { lineHeight: '1.2', letterSpacing: '-0.02em', fontWeight: '700' }],

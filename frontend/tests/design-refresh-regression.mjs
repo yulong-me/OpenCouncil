@@ -12,8 +12,8 @@ const actionArea = readFileSync(resolve(root, 'components/room-view/RoomActionAr
 const roomHeader = readFileSync(resolve(root, 'components/room-view/RoomHeader.tsx'), 'utf8')
 const agentPanel = readFileSync(resolve(root, 'components/AgentPanel.tsx'), 'utf8')
 
-assert.match(globalsCss, /family=Inter/)
-assert.match(globalsCss, /family=JetBrains\+Mono/)
+assert.match(globalsCss, /font-family: 'Inter', 'Noto Sans SC'/)
+assert.match(globalsCss, /'JetBrains Mono'/)
 assert.doesNotMatch(globalsCss, /Bricolage Grotesque/)
 assert.doesNotMatch(globalsCss, /ambient-glow-float/)
 assert.doesNotMatch(globalsCss, /ambient-ring-drift/)

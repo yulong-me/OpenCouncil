@@ -685,17 +685,15 @@ export default function CreateRoomModal({
         onClick={onClose}
         onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') onClose() }}
       />
-      <div className="layer-overlay-content app-window-shell rounded-3xl w-full max-w-4xl flex flex-col custom-scrollbar pointer-events-auto overflow-hidden">
+      <div className="layer-overlay-content app-window-shell w-full max-w-[720px] max-h-[calc(100dvh-2rem)] rounded-[14px] flex flex-col custom-scrollbar pointer-events-auto overflow-hidden">
 
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto">
 
             {/* Header */}
-            <div className="flex items-start justify-between px-6 md:px-8 pt-6 md:pt-8 pb-5 border-b border-line shrink-0">
+            <div className="flex items-start justify-between px-6 pt-5 pb-3.5 border-b border-line shrink-0">
               <div>
-                <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
-                  <BrainCircuit className="w-6 h-6 text-accent" aria-hidden/> 发起任务
-                </h1>
+                <h1 className="font-display text-[24px] font-medium leading-tight text-ink">发起任务</h1>
                 <p className="text-ink-soft mt-1 text-[14px]">选择一支 Team，进入协作现场后再输入这次要做的事。</p>
               </div>
               <button onClick={onClose} aria-label="关闭" className="p-2 text-ink-soft hover:text-ink hover:bg-surface-muted rounded-full transition-colors">
@@ -704,14 +702,14 @@ export default function CreateRoomModal({
             </div>
 
             {/* F052: Team Selection Mode */}
-            <div className="px-6 md:px-8 pt-6 mb-1">
-              <div className="mb-3 grid grid-cols-2 rounded-xl border border-line bg-surface-muted p-1">
+            <div className="px-6 pt-5 mb-1">
+              <div className="flex gap-1 border-b border-line">
                 <button
                   type="button"
                   onClick={handleOpenTeamSelect}
                   aria-pressed={!teamDraftOpen}
-                  className={`rounded-lg px-3 py-2 text-[13px] font-bold transition-colors ${
-                    !teamDraftOpen ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:text-ink'
+                  className={`rounded-t-lg border px-3.5 py-2 text-[12.5px] font-semibold transition-colors ${
+                    !teamDraftOpen ? 'border-line border-b-surface-muted bg-surface-muted text-ink' : 'border-transparent text-ink-soft hover:text-ink'
                   }`}
                 >
                   选择已有 Team
@@ -720,8 +718,8 @@ export default function CreateRoomModal({
                   type="button"
                   onClick={handleOpenTeamDraft}
                   aria-pressed={teamDraftOpen}
-                  className={`inline-flex items-center justify-center gap-1 rounded-lg px-3 py-2 text-[13px] font-bold transition-colors ${
-                    teamDraftOpen ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:text-ink'
+                  className={`inline-flex items-center justify-center gap-1 rounded-t-lg border px-3.5 py-2 text-[12.5px] font-semibold transition-colors ${
+                    teamDraftOpen ? 'border-line border-b-surface-muted bg-surface-muted text-ink' : 'border-transparent text-ink-soft hover:text-ink'
                   }`}
                 >
                   <Plus className="h-3.5 w-3.5" aria-hidden />
@@ -729,8 +727,9 @@ export default function CreateRoomModal({
                 </button>
               </div>
               {!teamDraftOpen ? (
-                <div className="rounded-2xl border border-line bg-surface-muted/60 p-4">
+                <div className="rounded-b-[10px] rounded-tr-[10px] border border-line border-t-0 bg-surface-muted/70 p-4">
                   <div>
+                    <p className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-faint">Team</p>
                     {teams.length > 0 ? (
                       <CustomSelect
                         value={teamId}
@@ -757,10 +756,13 @@ export default function CreateRoomModal({
                     )}
                   </div>
                   {!loadingTeams && selectedTeam && (
-                    <div className="mt-3 rounded-xl border border-line bg-surface p-3">
-                      <p className="text-[12px] font-bold text-ink">
-                        当前版本 v{selectedTeam.activeVersion.versionNumber} · {selectedTeam.members.length} 位成员
-                      </p>
+                    <div className="mt-3 rounded-[10px] border border-line bg-surface p-3.5">
+                      <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-soft">
+                        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">当前版本</span>
+                        <span className="font-mono text-ink">v{selectedTeam.activeVersion.versionNumber}</span>
+                        <span>·</span>
+                        <span>{selectedTeam.members.length} 位成员</span>
+                      </div>
                       {selectedTeam.description && (
                         <p className="mt-2 line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
                           适合：{selectedTeam.description}
@@ -785,6 +787,22 @@ export default function CreateRoomModal({
                       )}
                     </div>
                   )}
+                  {!teamDraftOpen && selectedProviderReadiness.length > 0 && (
+                    <div className="mt-3">
+                      <p className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-faint">执行工具</p>
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        {selectedProviderReadiness.map(readiness => {
+                          const meta = PROVIDER_READINESS_META[readiness.status]
+                          return (
+                            <span key={readiness.provider} className={`rounded-[9px] px-2.5 py-2 text-[11px] font-semibold ${meta.className}`}>
+                              {readiness.label} · {meta.label}
+                            </span>
+                          )
+                        })}
+                        {loadingProviderReadiness && <span className="text-[11px] text-ink-soft">检查执行工具中…</span>}
+                      </div>
+                    </div>
+                  )}
                   {!loadingTeams && teamSelectionHint && (
                     <p className="text-[11px] text-ink-soft mt-1">
                       {teamSelectionHint}
@@ -792,8 +810,9 @@ export default function CreateRoomModal({
                   )}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-line bg-surface-muted/60 p-4">
+                <div className="rounded-b-[10px] rounded-tr-[10px] border border-line border-t-0 bg-surface-muted/70 p-4">
                   <div>
+                    <p className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-faint">这支 Team 擅长哪类事</p>
                     <textarea
                       value={teamGoal}
                       onChange={e => { setTeamGoal(e.target.value); setTeamDraftError('') }}
@@ -805,7 +824,7 @@ export default function CreateRoomModal({
                         type="button"
                         onClick={handleGenerateTeamDraft}
                         disabled={teamDraftLoading || teamGoal.trim().length === 0}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-3 py-2 text-[12px] font-bold text-bg disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-50"
                       >
                         <Wand2 className="h-3.5 w-3.5" aria-hidden />
                         {teamDraftLoading ? '正在生成 Team 方案…' : teamDraft ? '重新生成' : '生成 Team 方案'}
@@ -988,25 +1007,18 @@ export default function CreateRoomModal({
           </div>
 
           {/* Sticky Footer: CTA */}
-          <div className="shrink-0 border-t border-line px-6 md:px-8 py-4 bg-surface">
-            {!teamDraftOpen && selectedProviderReadiness.length > 0 && (
-              <div className="mb-3 flex flex-wrap gap-2">
-                {selectedProviderReadiness.map(readiness => {
-                  const meta = PROVIDER_READINESS_META[readiness.status]
-                  return (
-                    <span key={readiness.provider} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${meta.className}`}>
-                      {readiness.label} · {meta.label}
-                    </span>
-                  )
-                })}
-                {loadingProviderReadiness && <span className="text-[11px] text-ink-soft">检查执行工具中…</span>}
+          <div className="shrink-0 border-t border-line px-6 py-3.5 bg-surface-muted">
+            {!teamDraftOpen && !errors.agents && selectedWorkers.length >= minimumWorkerCount && selectedCliBlockers.length === 0 && (
+              <div className="mb-3 text-[12px] text-ink-soft">
+                <span className="rounded-full bg-[color:var(--success)]/12 px-2 py-0.5 font-semibold text-[color:var(--success)]">通过</span>
+                <span className="ml-2">room preflight · 没有阻塞</span>
               </div>
             )}
 
             {/* CTA */}
             <button
               type="button"
-              className="w-full bg-ink text-bg font-bold py-4 rounded-xl hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md active:scale-[0.99] disabled:active:scale-100"
+              className="w-full rounded-lg bg-accent py-3 text-white font-semibold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md active:scale-[0.99] disabled:active:scale-100"
               onClick={handleSubmit}
               disabled={teamDraftOpen || submitting || selectedWorkers.length < minimumWorkerCount || selectedCliBlockers.length > 0}
             >

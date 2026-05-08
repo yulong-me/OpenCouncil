@@ -29,11 +29,14 @@ const markup = renderToStaticMarkup(
 )
 
 assert.match(markup, /OpenCouncil/)
+assert.match(markup, /主线 · 任务 → Team → 现场 → 记录 → 改进/)
 assert.match(markup, /发起一个任务，交给 Team 协作/)
-assert.match(markup, /让 4-5 位专家 Agent 在同一间房里讨论、质疑、收敛/)
-assert.match(markup, /比单 Agent 多一层把关/)
+assert.match(markup, /先选择一支 Team，进入协作现场后再告诉它这次要做什么/)
 assert.match(markup, /继续上次的协作/)
+assert.match(markup, /1 条进行中/)
 assert.match(markup, /登录系统设计/)
+assert.match(markup, /快速 Team 模板/)
+assert.match(markup, /点选直接进入协作现场/)
 assert.match(markup, /发起任务/)
 assert.equal(QUICK_START_TEMPLATES.length, 5)
 assert.deepEqual(QUICK_START_TEMPLATES.map(template => template.title), [
