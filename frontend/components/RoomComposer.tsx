@@ -325,8 +325,8 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
           onHighlight={setMentionHighlightIdx}
         />
       )}
-      <div className="app-islands-input rounded-xl border border-line bg-surface px-3 py-2.5 shadow-sm transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/[0.22]">
-        <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="app-islands-input rounded-[18px] border border-line bg-surface px-2.5 py-2 shadow-sm transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/[0.22] md:rounded-xl md:px-3 md:py-2.5">
+        <div className="mb-1 flex items-center justify-between gap-2 md:mb-2">
           {selectedRecipient && selectedRecipientColors ? (
             <div
               className="inline-flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-caption font-medium"
@@ -358,7 +358,7 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
         </div>
         <textarea
           ref={textareaRef}
-          className="min-h-16 max-h-48 w-full resize-none border-0 bg-transparent px-1 py-1 text-body text-ink placeholder:text-ink-faint focus:outline-none"
+          className="min-h-10 md:min-h-16 max-h-48 w-full resize-none border-0 bg-transparent px-1 py-1 text-body text-ink placeholder:text-ink-faint focus:outline-none"
           placeholder={selectedRecipient ? `告诉 ${selectedRecipient.name} 这次要做什么` : '告诉 Team 这次要做什么，或先 @ 选择成员'}
           value={userInput}
           onChange={handleInputChange}
@@ -397,11 +397,11 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
             >
               <Zap className="h-3.5 w-3.5" aria-hidden />
             </button>
-            <span className="ml-1 font-mono text-[10px] text-ink-faint">{shortcutHint}</span>
+            <span className="ml-1 hidden font-mono text-[10px] text-ink-faint md:inline">{shortcutHint}</span>
           </div>
           <button
             type="button"
-            className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold transition-colors ${
+            className={`inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-full md:rounded-lg px-0 text-[12px] font-semibold transition-colors md:w-auto md:px-3 ${
               canSend
                 ? 'bg-accent text-white hover:bg-accent-deep'
                 : 'cursor-not-allowed border border-line bg-surface-muted text-ink-soft'
@@ -412,7 +412,7 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
             title={queueMode ? '加入队列' : '发送'}
           >
             {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            发送
+            <span className="hidden md:inline">发送</span>
           </button>
         </div>
       </div>

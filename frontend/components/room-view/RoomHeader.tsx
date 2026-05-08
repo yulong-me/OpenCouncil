@@ -211,14 +211,22 @@ export function RoomHeader({
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => roomId && onRenameRoom ? setRenaming(true) : undefined}
-              className="min-w-0 truncate text-left text-title text-ink underline-offset-4 transition-colors hover:text-accent hover:underline md:text-base"
-              title="重命名任务记录"
-            >
-              {headerTitle}
-            </button>
+            <div className="min-w-0">
+              <button
+                type="button"
+                onClick={() => roomId && onRenameRoom ? setRenaming(true) : undefined}
+                className="block min-w-0 truncate text-left text-title text-ink underline-offset-4 transition-colors hover:text-accent hover:underline md:text-base"
+                title="重命名任务记录"
+              >
+                {headerTitle}
+              </button>
+              {roomId && teamName && teamVersionNumber && (
+                <span className="mt-0.5 flex items-center gap-1.5 truncate text-[10.5px] text-ink-faint sm:hidden">
+                  {teamName}
+                  <span className="rounded-full border border-line bg-surface-muted px-1.5 py-0.5 font-mono text-[10px]">v{teamVersionNumber}</span>
+                </span>
+              )}
+            </div>
           )}
           {renaming && roomId && suggestionsOpen && (
             <div className="absolute left-0 top-full layer-popover mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-line bg-nav-bg p-3 shadow-xl">

@@ -112,7 +112,7 @@ export function RoomActionArea({
   }
 
   return (
-    <div className="bg-nav-bg border-t border-line px-4 md:px-8 py-4 flex flex-col gap-3">
+    <div className="bg-nav-bg border-t border-line px-3 py-2 md:px-8 md:py-4 flex flex-col gap-3">
       {roomId ? (
         <>
           <OutgoingMessageQueue

@@ -142,9 +142,9 @@ function getMentionTargets(msg: Message, agentNames: string[], agentNameSet: Set
 function getHandoffOffsetClass(handoffInfo?: A2AHandoffInfo) {
   if (!handoffInfo) return ''
   const depth = Math.min(Math.max(handoffInfo.depth, 1), 3)
-  if (depth === 1) return 'ml-6'
-  if (depth === 2) return 'ml-10'
-  return 'ml-14'
+  if (depth === 1) return 'ml-4 md:ml-6'
+  if (depth === 2) return 'ml-7 md:ml-10'
+  return 'ml-10 md:ml-14'
 }
 
 function getStreamingStatusLabel(msg: Message, hasToolCalls: boolean, state: DiscussionState) {
@@ -280,7 +280,7 @@ export const MessageList = memo(function MessageList({
   }, [agentNameSet, agentNames, sortedMessages])
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-6 custom-scrollbar" ref={containerRef} onScroll={onScroll}>
+    <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 md:px-8 md:py-6 md:space-y-6 custom-scrollbar" ref={containerRef} onScroll={onScroll}>
       {sortedMessages.map(msg => (
         <MessageBubble
           key={msg.id}
@@ -460,8 +460,8 @@ const MessageBubble = memo(function MessageBubble({
     const toRecipient = msg.toAgentId ? agentById.get(msg.toAgentId) : null
     const toColors = toRecipient ? getAgentColor(toRecipient.name) : null
     return (
-      <div className="message-enter mb-6 flex justify-end gap-3 items-start">
-        <div className="w-full max-w-[720px]">
+      <div className="message-enter mb-4 flex justify-end gap-3 items-start md:mb-6">
+        <div className="w-full max-w-[82%] md:max-w-[720px]">
           <div className="mb-1.5 flex items-center justify-end gap-2 text-[11.5px] text-ink-soft">
             <span className="font-medium text-ink-soft">你</span>
             {toRecipient && toColors && (
@@ -510,18 +510,18 @@ const MessageBubble = memo(function MessageBubble({
 
   if (runError && !hasOutput) {
     return (
-      <div className={`message-enter group relative flex gap-3 mb-6 items-start ${handoffOffsetClass}`}>
+      <div className={`message-enter group relative flex gap-2 pr-2 mb-4 items-start md:mb-6 md:gap-3 md:pr-0 ${handoffOffsetClass}`}>
         {handoffInfo && (
           <span
             data-a2a-handoff-rail="true"
-            className="pointer-events-none absolute -left-5 top-0 h-10 w-5 rounded-bl-lg border-b border-l border-line"
+            className="pointer-events-none absolute -left-4 top-0 h-8 w-4 rounded-bl-lg border-b border-l border-line md:-left-5 md:h-10 md:w-5"
             aria-hidden
           />
         )}
-        <div className="w-8 h-8 rounded-full flex-shrink-0 shadow-sm mt-1 overflow-hidden">
-          <AgentAvatar name={msg.agentName} color={agentColor} size={32} className="w-full h-full" />
+        <div className="h-7 w-7 rounded-full flex-shrink-0 shadow-sm mt-1 overflow-hidden md:h-8 md:w-8">
+          <AgentAvatar name={msg.agentName} color={agentColor} size={28} className="h-full w-full" />
         </div>
-        <div className="w-full max-w-[760px]">
+        <div className="min-w-0 flex-1 md:max-w-[760px]">
           {handoffInfo && (
             <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
               <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-muted px-2 py-0.5">
@@ -554,18 +554,18 @@ const MessageBubble = memo(function MessageBubble({
   }
 
   return (
-    <div className={`message-enter group relative flex gap-3 mb-6 items-start ${handoffOffsetClass}`}>
+    <div className={`message-enter group relative flex gap-2 pr-2 mb-4 items-start md:mb-6 md:gap-3 md:pr-0 ${handoffOffsetClass}`}>
       {handoffInfo && (
         <span
           data-a2a-handoff-rail="true"
-          className="pointer-events-none absolute -left-5 top-0 h-10 w-5 rounded-bl-lg border-b border-l border-line"
+          className="pointer-events-none absolute -left-4 top-0 h-8 w-4 rounded-bl-lg border-b border-l border-line md:-left-5 md:h-10 md:w-5"
           aria-hidden
         />
       )}
-      <div className="w-8 h-8 rounded-full flex-shrink-0 shadow-sm mt-1 overflow-hidden">
-        <AgentAvatar name={msg.agentName} color={agentColor} size={32} className="w-full h-full" />
+      <div className="h-7 w-7 rounded-full flex-shrink-0 shadow-sm mt-1 overflow-hidden md:h-8 md:w-8">
+        <AgentAvatar name={msg.agentName} color={agentColor} size={28} className="h-full w-full" />
       </div>
-      <div className="w-full max-w-[760px]">
+      <div className="min-w-0 flex-1 md:max-w-[760px]">
         {handoffInfo && (
           <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
             <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-muted px-2 py-0.5">
