@@ -26,7 +26,7 @@ export function OutgoingMessageQueue({
   if (items.length === 0) return null
 
   return (
-    <div className="app-islands-item rounded-2xl border border-line bg-surface/85 px-4 py-3 shadow-sm">
+    <div className="app-islands-item rounded-[10px] border border-line bg-surface/85 px-4 py-3 shadow-sm">
       <div className="mb-2 flex items-center gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-soft">
           待发队列
@@ -42,7 +42,7 @@ export function OutgoingMessageQueue({
           return (
             <div
               key={item.id}
-              className="flex items-start gap-3 rounded-xl border border-line/80 bg-bg/60 px-3 py-2"
+              className="flex items-start gap-3 rounded-lg border border-dashed border-line bg-surface-muted/55 px-3 py-2"
             >
               <div className="mt-0.5 w-5 shrink-0 text-right text-[11px] font-semibold text-ink-soft/70">
                 {index + 1}
@@ -52,12 +52,10 @@ export function OutgoingMessageQueue({
                   <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-ink">
                     @{item.toAgentName}
                   </span>
-                  {isDispatching && (
-                    <span className="tone-warning-text inline-flex items-center gap-1 text-[10px] font-medium">
-                      <Clock3 className="h-3 w-3 animate-pulse" />
-                      发送中…
-                    </span>
-                  )}
+                  <span className="tone-warning-text inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium">
+                    <Clock3 className={`h-3 w-3 ${isDispatching ? 'animate-pulse' : ''}`} />
+                    {isDispatching ? '发送中…' : '排队中'}
+                  </span>
                 </div>
                 <p className="break-all text-[12px] leading-relaxed text-ink">
                   {truncateContent(item.content)}

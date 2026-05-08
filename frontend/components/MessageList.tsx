@@ -25,10 +25,18 @@ import { getWorkspaceMediaUrl } from '../lib/workspace'
 
 const userMarkdownComponents = {
   ...mdComponents,
-  p: ({ children }: { children?: React.ReactNode }) => <p className="mb-2 last:mb-0 text-ink">{children}</p>,
+  p: ({ children }: { children?: React.ReactNode }) => <p className="mb-2 last:mb-0 break-words text-bg">{children}</p>,
+  h1: ({ children }: { children?: React.ReactNode }) => <h1 className="mb-2 mt-3 text-base font-bold text-bg first:mt-0">{children}</h1>,
+  h2: ({ children }: { children?: React.ReactNode }) => <h2 className="mb-2 mt-3 text-sm font-bold text-bg first:mt-0">{children}</h2>,
+  h3: ({ children }: { children?: React.ReactNode }) => <h3 className="mb-1 mt-2 text-sm font-semibold text-bg first:mt-0">{children}</h3>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="mb-2 list-disc space-y-0.5 pl-5 text-bg">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="mb-2 list-decimal space-y-0.5 pl-5 text-bg">{children}</ol>,
+  blockquote: ({ children }: { children?: React.ReactNode }) => <blockquote className="my-2 border-l-2 border-bg/35 pl-3 italic text-bg/80">{children}</blockquote>,
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 opacity-90 hover:opacity-100 text-accent">{children}</a>
+    <a href={href} target="_blank" rel="noopener noreferrer" className="break-all text-bg underline underline-offset-2 opacity-90 hover:opacity-100">{children}</a>
   ),
+  pre: ({ children }: { children?: React.ReactNode }) => <pre className="my-2 overflow-x-auto rounded-lg bg-bg/10 p-3 font-mono text-xs text-bg">{children}</pre>,
+  code: ({ children }: { children?: React.ReactNode }) => <code className="rounded bg-bg/10 px-1.5 py-0.5 font-mono text-[0.85em] text-bg">{children}</code>,
 }
 
 type MediaAttachmentKind = 'video' | 'audio'
@@ -141,9 +149,9 @@ function getHandoffOffsetClass(handoffInfo?: A2AHandoffInfo) {
 
 function getStreamingStatusLabel(msg: Message, hasToolCalls: boolean, state: DiscussionState) {
   if (state === 'DONE') return '已结束'
-  if (msg.thinking?.trim() && !msg.content.trim()) return '思考中'
-  if (msg.content.trim()) return '输出中'
-  if (hasToolCalls) return '处理中'
+  if (msg.thinking?.trim() && !msg.content.trim()) return '思考中…'
+  if (msg.content.trim()) return '输出中…'
+  if (hasToolCalls) return '处理中…'
   return '等待响应'
 }
 
@@ -452,28 +460,29 @@ const MessageBubble = memo(function MessageBubble({
     const toRecipient = msg.toAgentId ? agentById.get(msg.toAgentId) : null
     const toColors = toRecipient ? getAgentColor(toRecipient.name) : null
     return (
-      <div className="message-enter flex justify-end gap-3 mb-6 items-start">
-        <div className="w-full max-w-[85%] lg:max-w-[90%]">
-          <div className="flex justify-end items-center gap-2 mb-1.5">
-            <span className="text-[11px] text-ink-soft">
-              {formattedTime}
-            </span>
-            {isStreaming && (
-              <span className="flex items-center gap-1 text-[11px] font-medium text-accent">
-                <span className="tone-focus-dot inline-block h-1.5 w-1.5 rounded-full animate-focus-pulse" aria-hidden />
-                回答中
-              </span>
-            )}
-            <span className="text-[12px] font-bold px-2 py-0.5 rounded-md bg-accent/[0.12] text-accent">你</span>
+      <div className="message-enter mb-6 flex justify-end gap-3 items-start">
+        <div className="w-full max-w-[720px]">
+          <div className="mb-1.5 flex items-center justify-end gap-2 text-[11.5px] text-ink-soft">
+            <span className="font-medium text-ink-soft">你</span>
             {toRecipient && toColors && (
-              <span className="text-[11px] px-1.5 py-0.5 rounded-full flex items-center gap-1" style={{ backgroundColor: `${toColors.bg}15`, color: toColors.bg }}>
-                <span>→</span>
+              <>
+                <span className="text-ink-faint">→</span>
+                <span className="flex items-center gap-1 font-medium" style={{ color: toColors.bg }}>
                 <AgentAvatar name={toRecipient.name} color={toColors.bg} textColor={toColors.text} size={12} className="w-3 h-3 rounded-full" />
-                {toRecipient.name}
+                  @{toRecipient.name}
+                </span>
+              </>
+            )}
+            <span className="h-1 w-1 rounded-full bg-ink-faint/45" aria-hidden />
+            <span className="font-mono text-[11px]">{formattedTime}</span>
+            {isStreaming && (
+              <span className="flex items-center gap-1 font-medium text-accent">
+                <span className="tone-focus-dot inline-block h-1.5 w-1.5 rounded-full animate-focus-pulse" aria-hidden />
+                发送中…
               </span>
             )}
           </div>
-          <div className="rounded-xl border border-line bg-surface px-4 py-3.5 shadow-sm">
+          <div className="rounded-[12px_12px_4px_12px] bg-ink px-4 py-3.5 text-bg shadow-sm">
             <BubbleErrorBoundary agentName={msg.agentName}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkBreaks]}
@@ -503,16 +512,21 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <div className={`message-enter group relative flex gap-3 mb-6 items-start ${handoffOffsetClass}`}>
         {handoffInfo && (
-          <span className="pointer-events-none absolute -left-3 top-5 h-[calc(100%-1rem)] w-px bg-line" aria-hidden />
+          <span
+            data-a2a-handoff-rail="true"
+            className="pointer-events-none absolute -left-5 top-0 h-10 w-5 rounded-bl-lg border-b border-l border-line"
+            aria-hidden
+          />
         )}
         <div className="w-8 h-8 rounded-full flex-shrink-0 shadow-sm mt-1 overflow-hidden">
           <AgentAvatar name={msg.agentName} color={agentColor} size={32} className="w-full h-full" />
         </div>
-        <div className="w-full max-w-[85%] lg:max-w-[90%]">
+        <div className="w-full max-w-[760px]">
           {handoffInfo && (
-            <div className="mb-1 flex items-center gap-1.5 text-[11px] text-ink-faint">
-              <span className="h-px w-4 bg-line" aria-hidden />
-              <span>由 @{handoffInfo.fromAgentName} 召唤</span>
+            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
+              <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-muted px-2 py-0.5">
+                由 @{handoffInfo.fromAgentName} 召唤
+              </span>
             </div>
           )}
           <div className="mb-1.5 flex items-center gap-2">
@@ -542,16 +556,21 @@ const MessageBubble = memo(function MessageBubble({
   return (
     <div className={`message-enter group relative flex gap-3 mb-6 items-start ${handoffOffsetClass}`}>
       {handoffInfo && (
-        <span className="pointer-events-none absolute -left-3 top-5 h-[calc(100%-1rem)] w-px bg-line" aria-hidden />
+        <span
+          data-a2a-handoff-rail="true"
+          className="pointer-events-none absolute -left-5 top-0 h-10 w-5 rounded-bl-lg border-b border-l border-line"
+          aria-hidden
+        />
       )}
       <div className="w-8 h-8 rounded-full flex-shrink-0 shadow-sm mt-1 overflow-hidden">
         <AgentAvatar name={msg.agentName} color={agentColor} size={32} className="w-full h-full" />
       </div>
-      <div className="w-full max-w-[85%] lg:max-w-[90%]">
+      <div className="w-full max-w-[760px]">
         {handoffInfo && (
-          <div className="mb-1 flex items-center gap-1.5 text-[11px] text-ink-faint">
-            <span className="h-px w-4 bg-line" aria-hidden />
-            <span>由 @{handoffInfo.fromAgentName} 召唤</span>
+          <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
+            <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-muted px-2 py-0.5">
+              由 @{handoffInfo.fromAgentName} 召唤
+            </span>
           </div>
         )}
         <div className="mb-1.5 flex items-center gap-2">
@@ -569,7 +588,7 @@ const MessageBubble = memo(function MessageBubble({
           )}
         </div>
         <div
-          className="rounded-xl border border-l-2 border-line bg-surface px-4 py-3.5 shadow-sm"
+          className="rounded-[4px_12px_12px_12px] border border-l-2 border-line bg-surface px-4 py-3.5 shadow-sm"
           style={{ borderLeftColor: agentColor, backgroundColor: `${agentColor}08` }}
         >
           <BubbleErrorBoundary agentName={msg.agentName}>
@@ -588,16 +607,6 @@ const MessageBubble = memo(function MessageBubble({
             )}
             <BubbleSection label="回复" icon="output" content={msg.content} isStreaming={isStreaming} agentColor={agentColor} />
             <MediaAttachments attachments={mediaAttachments} />
-            {validMentions.length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs font-medium flex-wrap" style={{ color: agentColor }}>
-                <span className="opacity-50 mr-0.5">@点名</span>
-                {validMentions.map(name => (
-                  <span key={name} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: `${agentColor}20`, color: agentColor }}>
-                    {name}
-                  </span>
-                ))}
-              </div>
-            )}
           </BubbleErrorBoundary>
           {runError && (
             <div className="mt-3">
@@ -620,6 +629,20 @@ const MessageBubble = memo(function MessageBubble({
             </div>
           )}
         </div>
+        {validMentions.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11.5px] text-ink-soft">
+            <span>接力 →</span>
+            {validMentions.map(name => (
+              <span
+                key={name}
+                className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                style={{ backgroundColor: `${agentColor}18`, color: agentColor }}
+              >
+                @{name}
+              </span>
+            ))}
+          </div>
+        )}
         {!isStreaming && invocationUsage && (
           <MetadataBadge usage={invocationUsage} />
         )}
