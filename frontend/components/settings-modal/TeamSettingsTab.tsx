@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, CircleHelp, GitBranch, Loader2, Plus, RefreshCw, UsersRound, X } from 'lucide-react'
+import { CheckCircle2, CircleHelp, Copy, GitBranch, Loader2, Plus, RefreshCw, UsersRound, X } from 'lucide-react'
 
 import { API_URL } from '@/lib/api'
 import type { TeamListItem } from '@/lib/agents'
@@ -469,11 +469,22 @@ export function TeamSettingsTab({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(14rem,18rem)_1fr]">
-      <aside className="rounded-2xl border border-line bg-surface-muted p-3">
-        <div className="mb-3 flex items-center gap-2 px-2">
-          <UsersRound className="h-4 w-4 text-accent" aria-hidden />
-          <h2 className="text-[14px] font-bold text-ink">Team 设置</h2>
+    <div className="grid min-h-[calc(100vh-12rem)] overflow-hidden rounded-xl border border-line bg-surface lg:grid-cols-[250px_minmax(0,1fr)]">
+      <aside className="border-b border-line bg-bg p-3 lg:border-b-0 lg:border-r">
+        <div className="mb-3 flex items-center justify-between gap-2 px-1">
+          <div className="min-w-0">
+            <h2 className="sr-only">Team 设置</h2>
+            <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">Team · {localTeams.length}</p>
+          </div>
+          <button
+            type="button"
+            disabled
+            title="新建 Team 即将开放"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft opacity-60"
+            aria-label="新建 Team"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+          </button>
         </div>
         <div className="space-y-1">
           {localTeams.map(team => {
@@ -483,13 +494,19 @@ export function TeamSettingsTab({
                 key={team.id}
                 type="button"
                 onClick={() => setSelectedTeamId(team.id)}
-                className={`w-full rounded-xl px-3 py-2 text-left transition-colors ${
-                  selected ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:bg-surface hover:text-ink'
+                className={`w-full rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                  selected ? 'border-accent/25 bg-surface text-ink shadow-sm' : 'border-transparent text-ink-soft hover:border-line hover:bg-surface hover:text-ink'
                 }`}
               >
-                <span className="block truncate text-[13px] font-bold">{team.name}</span>
-                <span className="mt-1 block truncate text-[11px] text-ink-faint">
-                  v{team.activeVersion.versionNumber} · {team.members.length} 位成员
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-[13px] font-bold">{team.name}</span>
+                  <span className="ml-auto shrink-0 rounded-md border border-line bg-surface-muted px-1.5 py-0.5 font-mono text-[10px] font-bold text-ink-faint">
+                    v{team.activeVersion.versionNumber}
+                  </span>
+                </span>
+                <span className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
+                  <UsersRound className="h-3.5 w-3.5" aria-hidden />
+                  {team.members.length} 成员 · 最近更新
                 </span>
               </button>
             )
@@ -498,68 +515,156 @@ export function TeamSettingsTab({
       </aside>
 
       {selectedTeam && activeVersion && (
-        <section className="space-y-4">
-          <div className="rounded-2xl border border-line bg-surface-muted p-4">
-            <h3 className="text-[13px] font-bold text-ink">Team 信息</h3>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <EditableText
-                  value={selectedTeam.name}
-                  className="text-[18px] font-bold"
-                  onSave={value => saveSelected({ name: value, version: { name: value } })}
-                />
-                <EditableText
-                  value={selectedTeam.description ?? ''}
-                  placeholder="点击补充 Team 说明"
-                  multiline
-                  className="mt-1 max-w-3xl text-[13px] leading-6 text-ink-soft"
-                  onSave={value => saveSelected({ description: value, version: { description: value } })}
-                />
+        <section className="min-w-0 overflow-y-auto p-4 custom-scrollbar lg:p-6">
+          <div className="flex flex-col gap-4 border-b border-line pb-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="max-w-full truncate font-display text-[28px] font-bold leading-tight text-ink">{selectedTeam.name}</h2>
+                <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-muted px-2.5 py-1 font-mono text-[11px] font-bold text-ink-soft">
+                  <GitBranch className="h-3.5 w-3.5" aria-hidden />
+                  当前版本 v{activeVersion.versionNumber}
+                </span>
+                <span className="inline-flex rounded-full border border-line bg-surface-muted px-2.5 py-1 font-mono text-[11px] font-bold text-ink-faint">
+                  {members.length} 成员 · max-A2A {activeVersion.maxA2ADepth ?? 5}
+                </span>
               </div>
-              <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-ink-soft">
-                <GitBranch className="h-3.5 w-3.5" aria-hidden />
-                当前版本 v{activeVersion.versionNumber}
-              </span>
+              <p className="mt-2 max-w-3xl text-[13px] leading-6 text-ink-soft">
+                {selectedTeam.description || activeVersion.description || '这个 Team 还没有说明。'}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled
+                title="克隆为新 Team"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3 text-[12px] font-bold text-ink-soft opacity-60"
+              >
+                <Copy className="h-3.5 w-3.5" aria-hidden />
+                克隆为新 Team
+              </button>
+              <button
+                type="button"
+                disabled={providerSaving}
+                onClick={() => void applyProviderToCurrentTeam()}
+                aria-label="应用到当前 Team"
+                title="应用到当前 Team"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[12px] font-bold text-white transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {providerSaving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                )}
+                把当前 Provider 应用到全员
+              </button>
             </div>
           </div>
+          {(providerStatus || providerError) && (
+            <p className={`mt-2 text-[11px] ${providerError ? 'text-[color:var(--danger)]' : 'text-ink-faint'}`}>
+              {providerError || providerStatus}
+            </p>
+          )}
 
-          <section className="space-y-3">
-            <h3 className="text-[13px] font-bold text-ink">Team 分工</h3>
-            <div className="grid gap-4 xl:grid-cols-2">
-              <section className="rounded-2xl border border-line bg-surface-muted p-4">
-                <h4 className="text-[13px] font-bold text-ink">协作方式</h4>
-                <EditableText
-                  value={activeVersion.workflowPrompt || ''}
-                  placeholder="点击配置协作方式"
-                  multiline
-                  className="mt-3 max-h-80 overflow-y-auto border border-line bg-surface p-3 text-ink-soft custom-scrollbar"
-                  onSave={value => saveSelected({ version: { workflowPrompt: value } })}
-                />
-              </section>
+          <div className="mt-4 flex gap-5 overflow-x-auto border-b border-line text-[12px] font-bold text-ink-soft custom-scrollbar">
+            <button type="button" className="shrink-0 border-b-2 border-accent px-1 pb-2 text-ink">
+              成员（{members.length}）
+            </button>
+            <button type="button" className="shrink-0 px-1 pb-2 transition-colors hover:text-ink">
+              分工 & 规则
+            </button>
+            <button type="button" className="shrink-0 px-1 pb-2 transition-colors hover:text-ink">
+              长期记忆
+            </button>
+            <button type="button" className="shrink-0 px-1 pb-2 transition-colors hover:text-ink">
+              历史版本
+            </button>
+          </div>
 
-              <section className="rounded-2xl border border-line bg-surface-muted p-4">
-                <h4 className="text-[13px] font-bold text-ink">分工规则</h4>
-                <EditableText
-                  value={routingRulesText}
-                  placeholder="每行一条，例如：需求不清 -> 需求澄清成员"
-                  multiline
-                  className="mt-3 border border-line bg-surface p-3 text-ink-soft"
-                  onSave={value => saveSelected({ version: { routingPolicy: { rules: splitLines(value) } } })}
-                />
-                {routingRules.length > 0 && (
-                  <ul className="mt-3 space-y-2 text-[12px] leading-5 text-ink-soft">
-                    {routingRules.map((rule, index) => (
-                      <li key={`${rule}-${index}`} className="flex gap-2">
-                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
-                        <span>{rule}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
+          <section className="mt-5 space-y-4">
+            <div className="rounded-xl border border-line bg-surface-muted p-4">
+              <h3 className="text-[13px] font-bold text-ink">Team 信息</h3>
+              <div className="mt-2 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
+                <div>
+                  <FieldLabel>Team 名称</FieldLabel>
+                  <EditableText
+                    value={selectedTeam.name}
+                    className="text-[18px] font-bold"
+                    onSave={value => saveSelected({ name: value, version: { name: value } })}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>执行工具</FieldLabel>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <CustomSelect<ProviderName>
+                      value={currentTeamProvider}
+                      onChange={setCurrentTeamProvider}
+                      options={PROVIDER_OPTIONS}
+                      ariaLabel="选择当前 Team 执行工具"
+                      className="min-w-44"
+                      buttonClassName="h-9 rounded-lg px-3 py-2 text-[12px]"
+                    />
+                    <button
+                      type="button"
+                      disabled={providerSaving}
+                      onClick={() => void applyProviderToCurrentTeam()}
+                      className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-line bg-surface px-3 text-[12px] font-bold text-ink transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {providerSaving ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                      )}
+                      应用到当前 Team
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <EditableText
+                value={selectedTeam.description ?? ''}
+                placeholder="点击补充 Team 说明"
+                multiline
+                className="mt-3 max-w-3xl text-[13px] leading-6 text-ink-soft"
+                onSave={value => saveSelected({ description: value, version: { description: value } })}
+              />
             </div>
 
-            <section className="rounded-2xl border border-line bg-surface-muted p-4">
+            <section className="space-y-3">
+              <h3 className="text-[13px] font-bold text-ink">Team 分工</h3>
+              <div className="grid gap-4 xl:grid-cols-2">
+                <section className="rounded-xl border border-line bg-surface-muted p-4">
+                  <h4 className="text-[13px] font-bold text-ink">协作方式</h4>
+                  <EditableText
+                    value={activeVersion.workflowPrompt || ''}
+                    placeholder="点击配置协作方式"
+                    multiline
+                    className="mt-3 max-h-80 overflow-y-auto border border-line bg-surface p-3 text-ink-soft custom-scrollbar"
+                    onSave={value => saveSelected({ version: { workflowPrompt: value } })}
+                  />
+                </section>
+
+                <section className="rounded-xl border border-line bg-surface-muted p-4">
+                  <h4 className="text-[13px] font-bold text-ink">分工规则</h4>
+                  <EditableText
+                    value={routingRulesText}
+                    placeholder="每行一条，例如：需求不清 -> 需求澄清成员"
+                    multiline
+                    className="mt-3 border border-line bg-surface p-3 text-ink-soft"
+                    onSave={value => saveSelected({ version: { routingPolicy: { rules: splitLines(value) } } })}
+                  />
+                  {routingRules.length > 0 && (
+                    <ul className="mt-3 space-y-2 text-[12px] leading-5 text-ink-soft">
+                      {routingRules.map((rule, index) => (
+                        <li key={`${rule}-${index}`} className="flex gap-2">
+                          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+                          <span>{rule}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </div>
+
+            <section className="rounded-xl border border-line bg-surface-muted p-4">
               <h4 className="text-[13px] font-bold text-ink">长期记忆</h4>
               <EditableText
                 value={teamMemory.join('\n')}
@@ -571,41 +676,17 @@ export function TeamSettingsTab({
             </section>
           </section>
 
-          <section className="rounded-2xl border border-line bg-surface-muted p-4">
+          <section className="rounded-xl border border-line bg-surface-muted p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <h3 className="text-[13px] font-bold text-ink">Team 成员</h3>
                 <p className="mt-1 text-[12px] text-ink-soft">{members.length} 位成员</p>
               </div>
-              <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-[minmax(0,1fr)_auto]">
-                <CustomSelect<ProviderName>
-                  value={currentTeamProvider}
-                  onChange={setCurrentTeamProvider}
-                  options={PROVIDER_OPTIONS}
-                  ariaLabel="选择当前 Team 执行工具"
-                  className="min-w-44"
-                  buttonClassName="h-9 rounded-lg px-3 py-2 text-[12px]"
-                />
-                <button
-                  type="button"
-                  disabled={providerSaving}
-                  onClick={() => void applyProviderToCurrentTeam()}
-                  className="inline-flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-accent px-3 text-[12px] font-bold text-white transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                >
-                  {providerSaving ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                  ) : (
-                    <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-                  )}
-                  应用到当前 Team
-                </button>
-              </div>
+              <span className="inline-flex w-fit items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-ink-soft">
+                <UsersRound className="h-3.5 w-3.5" aria-hidden />
+                可直接编辑成员配置
+              </span>
             </div>
-            {(providerStatus || providerError) && (
-              <p className={`mt-2 text-[11px] ${providerError ? 'text-[color:var(--danger)]' : 'text-ink-faint'}`}>
-                {providerError || providerStatus}
-              </p>
-            )}
             <div className="mt-3 grid gap-2 xl:grid-cols-2">
               {members.map(member => (
                 <div key={member.id} className="rounded-xl border border-line bg-surface px-3 py-3">
@@ -751,6 +832,7 @@ export function TeamSettingsTab({
               ))}
             </div>
           </section>
+        </section>
         </section>
       )}
     </div>

@@ -10,6 +10,7 @@
     "test:home-quick-start": "rm -rf .tmp-tests/home-quick-start && ./node_modules/.bin/tsc --target es2017 --lib dom,dom.iterable,esnext --skipLibCheck --module commonjs --moduleResolution node --jsx react-jsx --esModuleInterop --outDir .tmp-tests/home-quick-start tests/home-quick-start-regression.tsx && node .tmp-tests/home-quick-start/tests/home-quick-start-regression.js",
     "test:room-navigation": "node tests/client-room-navigation-regression.mjs",
     "test:settings-readiness": "node tests/settings-readiness-regression.mjs",
+    "test:settings-team-uiux": "node tests/settings-team-uiux-regression.mjs",
     "test:evolution-review-actions": "node tests/evolution-review-actions-regression.mjs",
     "test:evolution-review-uiux": "node tests/evolution-review-modal-uiux-regression.mjs",
     "test:evolution-feedback-modal": "node tests/evolution-feedback-modal-regression.mjs",
