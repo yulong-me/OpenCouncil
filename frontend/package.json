@@ -11,6 +11,7 @@
     "test:room-navigation": "node tests/client-room-navigation-regression.mjs",
     "test:settings-readiness": "node tests/settings-readiness-regression.mjs",
     "test:evolution-review-actions": "node tests/evolution-review-actions-regression.mjs",
+    "test:evolution-review-uiux": "node tests/evolution-review-modal-uiux-regression.mjs",
     "test:evolution-feedback-modal": "node tests/evolution-feedback-modal-regression.mjs",
     "test:workspace-upload": "node tests/workspace-upload-regression.mjs",
     "test:workspace-actions": "node tests/workspace-open-git-regression.mjs",
