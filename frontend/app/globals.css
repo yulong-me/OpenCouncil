@@ -27,6 +27,7 @@
     --line-strong: #C8BEA9;
     --nav-bg: rgba(236, 230, 212, 0.96);
     --accent: #B25530;
+    --accent-contrast: #FFFFFF;
     --accent-deep: #7A3617;
     --focus: #C43A2F;
     --focus-deep: #A83228;
@@ -76,6 +77,7 @@
     --line-strong: #3A372C;
     --nav-bg: rgba(26, 25, 19, 0.96);
     --accent: #D27244;
+    --accent-contrast: #15140F;
     --accent-deep: #F0C9AB;
     --focus: #E05B50;
     --focus-deep: #F17368;
@@ -133,6 +135,10 @@ textarea {
 :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 74%, transparent);
   outline-offset: 2px;
+}
+
+.text-on-accent {
+  color: var(--accent-contrast);
 }
 
 ::-webkit-scrollbar {

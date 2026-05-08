@@ -403,7 +403,7 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
             type="button"
             className={`inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-full md:rounded-lg px-0 text-[12px] font-semibold transition-colors md:w-auto md:px-3 ${
               canSend
-                ? 'bg-accent text-white hover:bg-accent-deep'
+                ? 'bg-accent text-on-accent hover:bg-accent-deep'
                 : 'cursor-not-allowed border border-line bg-surface-muted text-ink-soft'
             }`}
             onClick={() => void submitDraft()}

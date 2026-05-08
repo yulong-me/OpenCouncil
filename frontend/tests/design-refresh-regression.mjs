@@ -11,12 +11,16 @@ const messageList = readFileSync(resolve(root, 'components/MessageList.tsx'), 'u
 const actionArea = readFileSync(resolve(root, 'components/room-view/RoomActionArea.tsx'), 'utf8')
 const roomHeader = readFileSync(resolve(root, 'components/room-view/RoomHeader.tsx'), 'utf8')
 const agentPanel = readFileSync(resolve(root, 'components/AgentPanel.tsx'), 'utf8')
+const bubbleSection = readFileSync(resolve(root, 'components/BubbleSection.tsx'), 'utf8')
 
 assert.match(globalsCss, /font-family: 'Inter', 'Noto Sans SC'/)
 assert.match(globalsCss, /'JetBrains Mono'/)
 assert.doesNotMatch(globalsCss, /Bricolage Grotesque/)
 assert.doesNotMatch(globalsCss, /ambient-glow-float/)
 assert.doesNotMatch(globalsCss, /ambient-ring-drift/)
+assert.match(globalsCss, /--accent-contrast:\s*#FFFFFF/i)
+assert.match(globalsCss, /--accent-contrast:\s*#15140F/i)
+assert.match(globalsCss, /\.text-on-accent\s*\{[\s\S]*color: var\(--accent-contrast\);/)
 assert.match(globalsCss, /--provider-opencode:\s*#7C3AED/i)
 assert.match(globalsCss, /--provider-codex:\s*#0E8345/i)
 
@@ -44,6 +48,7 @@ assert.match(messageList, /由 @\{handoffInfo\.fromAgentName\} 召唤/)
 assert.match(messageList, /getStreamingStatusLabel/)
 assert.match(messageList, /tone-focus-dot inline-block h-1\.5 w-1\.5 rounded-full animate-focus-pulse/)
 assert.doesNotMatch(messageList, /● 回答中/)
+assert.match(bubbleSection, /tabIndex=\{-1\}/)
 
 assert.match(roomHeader, /renaming && roomId && suggestionsOpen/)
 assert.doesNotMatch(roomHeader, /roomId && \(\s*<button\s+type="button"\s+onClick=\{\(\) => \{ void handleGenerateTitleSuggestions\(\) \}\}/)
@@ -51,5 +56,30 @@ assert.doesNotMatch(roomHeader, /roomId && \(\s*<button\s+type="button"\s+onClic
 assert.doesNotMatch(actionArea, /导出任务报告|discussion-report|Download/)
 assert.match(agentPanel, /Team 成员/)
 assert.doesNotMatch(agentPanel, /📋/)
+
+const accentContrastSources = [
+  sidebar,
+  composer,
+  messageList,
+  actionArea,
+  roomHeader,
+  agentPanel,
+  bubbleSection,
+  readFileSync(resolve(root, 'components/CreateRoomModal.tsx'), 'utf8'),
+  readFileSync(resolve(root, 'components/DirectoryBrowser.tsx'), 'utf8'),
+  readFileSync(resolve(root, 'components/WorkspaceSidebar.tsx'), 'utf8'),
+  readFileSync(resolve(root, 'components/AgentInviteDrawer.tsx'), 'utf8'),
+  readFileSync(resolve(root, 'components/room-view/DepthSwitcher.tsx'), 'utf8'),
+  readFileSync(resolve(root, 'components/room-view/EvolutionFeedbackModal.tsx'), 'utf8'),
+  readFileSync(resolve(root, 'components/room-view/EvolutionReviewModal.tsx'), 'utf8'),
+  readFileSync(resolve(root, 'components/room-view/EmptyRoomQuickStart.tsx'), 'utf8'),
+  readFileSync(resolve(root, 'components/settings-modal/ProviderSettingsTab.tsx'), 'utf8'),
+  readFileSync(resolve(root, 'components/settings-modal/SkillSettingsTab.tsx'), 'utf8'),
+  readFileSync(resolve(root, 'components/settings-modal/TeamSettingsTab.tsx'), 'utf8'),
+]
+
+for (const source of accentContrastSources) {
+  assert.doesNotMatch(source, /bg-accent[^\n]*text-white|text-white[^\n]*bg-accent/)
+}
 
 console.log('design-refresh-regression: ok')

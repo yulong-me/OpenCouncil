@@ -34,13 +34,14 @@ export function EvolutionFeedbackModal({
   onStopBusyAgentsAndSubmit,
 }: EvolutionFeedbackModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
+  const feedbackTextareaRef = useRef<HTMLTextAreaElement>(null)
   const roomBusy = busyAgents.length > 0
   const actionInProgress = creating || stoppingAndSubmitting
   const currentVersionLabel = `v${currentVersionNumber ?? '?'}`
   const nextVersionLabel = typeof currentVersionNumber === 'number' ? `v${currentVersionNumber + 1}` : 'v?'
 
   useEffect(() => {
-    dialogRef.current?.focus()
+    feedbackTextareaRef.current?.focus()
   }, [])
 
   useEffect(() => {
@@ -135,6 +136,7 @@ export function EvolutionFeedbackModal({
           </label>
           <textarea
             id="team-evolution-feedback"
+            ref={feedbackTextareaRef}
             value={draft}
             onChange={event => onDraftChange(event.target.value.slice(0, 600))}
             rows={5}
@@ -222,7 +224,7 @@ export function EvolutionFeedbackModal({
               type="button"
               onClick={() => { void onSubmit(draft) }}
               disabled={actionInProgress || !draft.trim() || roomBusy}
-              className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-on-accent transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               {creating && <Loader2 className="h-4 w-4 animate-spin" />}
               生成改进建议

@@ -284,7 +284,7 @@ function EditableText({
                 type="button"
                 onClick={() => { void commit() }}
                 disabled={saving}
-                className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12px] font-bold text-white transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12px] font-bold text-on-accent transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />}
                 保存
@@ -548,7 +548,7 @@ export function TeamSettingsTab({
                 onClick={() => void applyProviderToCurrentTeam()}
                 aria-label="应用到当前 Team"
                 title="应用到当前 Team"
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[12px] font-bold text-white transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[12px] font-bold text-on-accent transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {providerSaving ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

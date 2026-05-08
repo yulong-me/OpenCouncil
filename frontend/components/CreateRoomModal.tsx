@@ -828,7 +828,7 @@ export default function CreateRoomModal({
                         type="button"
                         onClick={handleGenerateTeamDraft}
                         disabled={teamDraftLoading || teamGoal.trim().length === 0}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-on-accent disabled:opacity-50"
                       >
                         <Wand2 className="h-3.5 w-3.5" aria-hidden />
                         {teamDraftLoading ? '正在生成 Team 方案…' : teamDraft ? '重新生成' : '生成 Team 方案'}
@@ -1032,7 +1032,7 @@ export default function CreateRoomModal({
                     type="button"
                     onClick={handleCreateTeamFromDraft}
                     disabled={!teamDraft || teamDraftCreating || teamDraft.members.length < 1 || teamDraft.name.trim().length === 0}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-on-accent transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     {teamDraftCreating ? '创建中…' : '创建 Team 并进入现场'}
                   </button>
@@ -1050,7 +1050,7 @@ export default function CreateRoomModal({
                 {/* CTA */}
                 <button
                   type="button"
-                  className="w-full rounded-lg bg-accent py-3 text-white font-semibold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md active:scale-[0.99] disabled:active:scale-100"
+                  className="w-full rounded-lg bg-accent py-3 text-on-accent font-semibold hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md active:scale-[0.99] disabled:active:scale-100"
                   onClick={handleSubmit}
                   disabled={submitting || selectedWorkers.length < minimumWorkerCount || selectedCliBlockers.length > 0}
                 >

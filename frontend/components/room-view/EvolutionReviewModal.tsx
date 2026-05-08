@@ -315,14 +315,17 @@ export function EvolutionReviewModal({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3 border-b border-line/70 bg-surface-muted px-6 py-3">
+        <div
+          data-testid="evolution-review-progress"
+          className="grid shrink-0 gap-2 border-b border-line/70 bg-surface-muted px-4 py-3 sm:px-6 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center md:gap-3"
+        >
           <span className="shrink-0 font-mono text-[11.5px] uppercase tracking-[0.06em] text-ink-soft">
             已处理 {reviewedCount} / {proposal.changes.length}
           </span>
-          <div className="h-1.5 min-w-24 flex-1 overflow-hidden rounded-full bg-surface">
+          <div className="h-1.5 w-full min-w-0 overflow-hidden rounded-full bg-surface">
             <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${progressPercent}%` }} />
           </div>
-          <span className="shrink-0 text-[11.5px] text-ink-soft">
+          <span className="min-w-0 text-[11.5px] leading-5 text-ink-soft md:shrink-0">
             已采纳 <b className="text-[color:var(--success)]">{acceptedCount}</b> · 不采纳 <b>{rejectedCount}</b> · 待处理 <b>{remainingCount}</b>
           </span>
         </div>
@@ -357,7 +360,7 @@ export function EvolutionReviewModal({
                       >
                         <span className={`flex h-8 w-8 items-center justify-center rounded-md border text-[12px] font-semibold ${
                           change.decision === 'accepted'
-                            ? 'border-accent bg-accent text-white'
+                            ? 'border-accent bg-accent text-on-accent'
                             : change.decision === 'rejected'
                               ? 'border-line bg-surface-muted text-ink-soft'
                               : 'border-line text-ink-soft'
@@ -388,7 +391,7 @@ export function EvolutionReviewModal({
                       <div className="grid gap-4 border-b border-line px-4 py-4 lg:grid-cols-[minmax(0,1fr)_auto]">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent text-[12px] font-bold text-white">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent text-[12px] font-bold text-on-accent">
                               {index + 1}
                             </span>
                             <span className="rounded-md bg-accent/10 px-2 py-1 text-[11px] font-semibold text-accent">
@@ -401,13 +404,13 @@ export function EvolutionReviewModal({
                           <h3 className="mt-3 text-xl font-semibold leading-tight text-ink">{change.title}</h3>
                           <p className="mt-2 text-[13px] leading-6 text-ink-soft">{change.impact}</p>
                         </div>
-                        <div className="grid gap-2 sm:grid-cols-2 lg:w-72">
+                        <div className="grid auto-rows-min gap-2 self-start sm:grid-cols-2 lg:w-72">
                           <button
                             type="button"
                             data-testid="evolution-accept-current"
                             onClick={() => { void handleCurrentDecision('accepted') }}
                             disabled={actionInProgress || change.decision === 'accepted'}
-                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-wait disabled:opacity-60"
+                            className="inline-flex h-10 min-h-10 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-on-accent transition-colors hover:bg-accent/90 disabled:cursor-wait disabled:opacity-60"
                           >
                             {decidingChangeId === change.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                             {change.decision === 'accepted' ? '已采纳' : change.decision === 'rejected' ? '改为采纳' : '采纳这条建议'}
@@ -417,7 +420,7 @@ export function EvolutionReviewModal({
                             data-testid="evolution-reject-current"
                             onClick={() => { void handleCurrentDecision('rejected') }}
                             disabled={actionInProgress || change.decision === 'rejected'}
-                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted disabled:cursor-wait disabled:opacity-60"
+                            className="inline-flex h-10 min-h-10 items-center justify-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted disabled:cursor-wait disabled:opacity-60"
                           >
                             {decidingChangeId === change.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
                             {change.decision === 'rejected' ? '已不采纳' : '不采纳'}
@@ -495,7 +498,7 @@ export function EvolutionReviewModal({
                     data-testid="evolution-accept-all-pending"
                     onClick={() => { void handleBulkDecision('accepted') }}
                     disabled={actionInProgress}
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-wait disabled:opacity-60"
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-on-accent transition-colors hover:bg-accent/90 disabled:cursor-wait disabled:opacity-60"
                   >
                     <Check className="h-4 w-4" />
                     采纳剩余
@@ -604,7 +607,7 @@ export function EvolutionReviewModal({
               data-testid="evolution-confirm-upgrade"
               onClick={() => { void onMerge() }}
               disabled={!canMerge || actionInProgress}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-[13px] font-semibold text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-[13px] font-semibold text-on-accent transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {merging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               {remainingCount > 0 ? <>确认升级 Team · 还需处理 {remainingCount} 条</> : '确认升级 Team'}

@@ -241,7 +241,7 @@ export function WorkspaceSidebar({ workspacePath }: WorkspaceSidebarProps) {
             }}
             className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-medium transition-colors ${
               tab === 'files'
-                ? 'bg-accent text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]'
+                ? 'bg-accent text-on-accent shadow-[0_8px_18px_rgba(0,0,0,0.18)]'
                 : 'border border-line bg-surface text-ink-soft hover:text-ink hover:bg-surface-muted'
             }`}
           >
@@ -256,7 +256,7 @@ export function WorkspaceSidebar({ workspacePath }: WorkspaceSidebarProps) {
             }}
             className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-medium transition-colors ${
               tab === 'git'
-                ? 'bg-accent text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]'
+                ? 'bg-accent text-on-accent shadow-[0_8px_18px_rgba(0,0,0,0.18)]'
                 : 'border border-line bg-surface text-ink-soft hover:text-ink hover:bg-surface-muted'
             }`}
           >

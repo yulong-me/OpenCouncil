@@ -202,8 +202,8 @@ export function AgentInviteDrawer({ roomId, currentAgentIds, onClose, onInvited 
                     isDone
                       ? 'tone-success-pill border cursor-default'
                       : isInviting
-                        ? 'bg-accent/50 text-white cursor-wait'
-                        : 'bg-accent hover:bg-accent-deep text-white'
+                        ? 'bg-accent/50 text-on-accent cursor-wait'
+                        : 'bg-accent hover:bg-accent-deep text-on-accent'
                   }`}
                 >
                   {isDone ? '已邀请' : isInviting ? '邀请中…' : '邀请'}

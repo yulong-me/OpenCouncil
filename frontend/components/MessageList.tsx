@@ -390,7 +390,7 @@ export const MessageList = memo(function MessageList({
       {showScrollBtn && (
         <button
           onClick={onScrollToBottom}
-          className="sticky bottom-4 left-1/2 -translate-x-1/2 layer-local-float bg-accent text-white px-4 py-2 rounded-full text-xs font-medium shadow-lg hover:bg-accent-deep transition-colors flex items-center gap-1.5"
+          className="sticky bottom-4 left-1/2 -translate-x-1/2 layer-local-float bg-accent text-on-accent px-4 py-2 rounded-full text-xs font-medium shadow-lg hover:bg-accent-deep transition-colors flex items-center gap-1.5"
         >
           <ChevronDown className="w-3.5 h-3.5" /> 回到底部
         </button>

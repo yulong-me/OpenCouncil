@@ -326,7 +326,7 @@ export function EmptyRoomQuickStart({
           <button
             type="button"
             onClick={onStartBlank}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-3 text-[14px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-3 text-[14px] font-semibold text-on-accent shadow-sm transition-opacity hover:opacity-90"
           >
             发起任务
             <ArrowRight className="h-4 w-4" aria-hidden />
@@ -341,7 +341,7 @@ export function EmptyRoomQuickStart({
         <button
           type="button"
           onClick={onStartBlank}
-          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-accent px-5 text-[14px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-accent px-5 text-[14px] font-semibold text-on-accent shadow-sm transition-opacity hover:opacity-90"
         >
           发起任务
           <ArrowRight className="h-4 w-4" aria-hidden />

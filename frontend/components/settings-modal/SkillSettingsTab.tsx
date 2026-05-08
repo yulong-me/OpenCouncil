@@ -101,7 +101,7 @@ function SkillCreateForm({ onCreated }: { onCreated: (skill: SkillConfig) => voi
       {error && <p className="tone-danger-panel rounded-xl border px-3 py-1.5 text-[12px]">{error}</p>}
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={() => setOpen(false)} className="px-4 py-1.5 text-[12px] text-ink-soft hover:text-ink hover:bg-surface-muted rounded-xl transition-colors">取消</button>
-        <button type="button" onClick={handleCreate} disabled={saving} className="px-4 py-1.5 text-[12px] font-bold bg-accent text-white rounded-xl hover:bg-accent-deep disabled:opacity-50 transition-all flex items-center gap-1.5">
+        <button type="button" onClick={handleCreate} disabled={saving} className="px-4 py-1.5 text-[12px] font-bold bg-accent text-on-accent rounded-xl hover:bg-accent-deep disabled:opacity-50 transition-all flex items-center gap-1.5">
           <Plus className="w-3.5 h-3.5" aria-hidden />
           {saving ? '创建中…' : '创建'}
         </button>
@@ -176,7 +176,7 @@ function SkillImportForm({ onImported }: { onImported: (skill: SkillConfig) => v
       {error && <p className="tone-danger-panel rounded-xl border px-3 py-1.5 text-[12px]">{error}</p>}
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={() => setOpen(false)} className="px-4 py-1.5 text-[12px] text-ink-soft hover:text-ink hover:bg-surface-muted rounded-xl transition-colors">取消</button>
-        <button type="button" onClick={handleImport} disabled={saving} className="px-4 py-1.5 text-[12px] font-bold bg-accent text-white rounded-xl hover:bg-accent-deep disabled:opacity-50 transition-all flex items-center gap-1.5">
+        <button type="button" onClick={handleImport} disabled={saving} className="px-4 py-1.5 text-[12px] font-bold bg-accent text-on-accent rounded-xl hover:bg-accent-deep disabled:opacity-50 transition-all flex items-center gap-1.5">
           <Save className="w-3.5 h-3.5" aria-hidden />
           {saving ? '导入中…' : '导入'}
         </button>
@@ -361,7 +361,7 @@ function SkillRow({
                 type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-[12px] font-bold text-white transition-colors hover:bg-accent-deep disabled:opacity-50"
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-[12px] font-bold text-on-accent transition-colors hover:bg-accent-deep disabled:opacity-50"
               >
                 <Save className="h-3.5 w-3.5" aria-hidden />
                 {saving ? '保存中…' : '保存'}

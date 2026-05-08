@@ -300,7 +300,7 @@ function ProviderDetail({
                 && Math.max(Number(editContextWindow) || 200000, 1) === (provider.contextWindow || 200000)
               )
             }
-            className="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-accent px-3 text-[12px] font-bold text-white transition-colors hover:bg-accent-deep disabled:opacity-50"
+            className="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-accent px-3 text-[12px] font-bold text-on-accent transition-colors hover:bg-accent-deep disabled:opacity-50"
           >
             <Save className="h-3.5 w-3.5" aria-hidden />
             {saving ? '保存中…' : '保存'}

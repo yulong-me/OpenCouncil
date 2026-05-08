@@ -82,7 +82,7 @@ export function RoomActionArea({
               <button
                 type="button"
                 onClick={onCreateEvolutionProposal}
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-on-accent transition-opacity hover:opacity-90"
               >
                 <Sparkles className="h-3.5 w-3.5" aria-hidden />
                 提一条改进意见
