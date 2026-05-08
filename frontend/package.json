@@ -16,6 +16,7 @@
     "test:mobile-home-uiux": "node tests/mobile-home-uiux-regression.mjs",
     "test:mobile-room-uiux": "node tests/mobile-room-uiux-regression.mjs",
     "test:mobile-agent-drawer-uiux": "node tests/mobile-agent-drawer-uiux-regression.mjs",
+    "test:mobile-evolution-feedback-uiux": "node tests/mobile-evolution-feedback-uiux-regression.mjs",
     "test:api-url": "rm -rf .tmp-tests/api-url && ./node_modules/.bin/tsc --target es2017 --lib dom,dom.iterable,esnext --skipLibCheck --module commonjs --moduleResolution node --esModuleInterop --outDir .tmp-tests/api-url tests/api-url-regression.ts && node .tmp-tests/api-url/tests/api-url-regression.js",
     "test:evolution-review-actions": "node tests/evolution-review-actions-regression.mjs",
     "test:evolution-review-uiux": "node tests/evolution-review-modal-uiux-regression.mjs",

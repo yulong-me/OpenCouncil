@@ -38,11 +38,15 @@ export function EvolutionFeedbackModal({
   const nextVersionLabel = typeof currentVersionNumber === 'number' ? `v${currentVersionNumber + 1}` : 'v?'
 
   return (
-    <div className="fixed inset-0 layer-modal flex items-start justify-center bg-[color:var(--overlay-scrim)] px-4 pt-20">
-      <div className="w-full max-w-[580px] overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_30px_80px_-10px_rgba(20,15,8,0.35)]">
-        <div className="border-b border-line px-6 pb-3 pt-5">
+    <div className="fixed inset-0 layer-modal flex items-end sm:items-start justify-center bg-[color:var(--overlay-scrim)] px-0 pt-0 sm:px-4 sm:pt-20">
+      <div className="flex max-h-[80dvh] w-full max-w-[580px] flex-col overflow-hidden rounded-t-[16px] rounded-b-none sm:rounded-[14px] border border-line bg-surface shadow-[0_30px_80px_-10px_rgba(20,15,8,0.35)]">
+        <div className="flex h-6 shrink-0 items-center justify-center sm:hidden">
+          <span className="h-1 w-9 rounded-full bg-line" aria-hidden />
+        </div>
+
+        <div className="shrink-0 border-b border-line px-4 pb-4 pt-1 sm:px-6 sm:pb-3 sm:pt-5">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="font-display text-[22px] font-medium leading-tight text-ink">改进这支 Team</h2>
+            <h2 className="font-display text-[20px] font-medium leading-tight text-ink sm:text-[22px]">改进这支 Team</h2>
             <button
               type="button"
               onClick={onClose}
@@ -60,35 +64,7 @@ export function EvolutionFeedbackModal({
           </div>
         </div>
 
-        {roomBusy && (
-          <div
-            data-testid="evolution-room-busy-warning"
-            className="mx-6 mt-3 rounded-lg border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/10 px-3 py-2.5"
-          >
-            <div className="flex gap-2.5">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--warning)]" />
-              <div className="min-w-0">
-                <p className="text-[12.5px] font-semibold text-ink">
-                  当前还有 {busyAgents.length} 位成员在执行
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {busyAgents.map(agent => {
-                    const color = getAgentColor(agent.name)
-                    const statusLabel = agent.status === 'thinking' ? '输出中…' : '等待中'
-                    return (
-                      <span key={agent.id} className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-soft">
-                        <AgentAvatar name={agent.name} color={color.bg} textColor={color.text} size={16} className="rounded-full" />
-                        {agent.name} · {statusLabel}
-                      </span>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="px-6 pt-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 sm:px-6">
           <label className="block font-display text-[16px] font-medium text-ink" htmlFor="team-evolution-feedback">
             这支 Team <em>下次怎么做</em> 会更好？
           </label>
@@ -105,6 +81,34 @@ export function EvolutionFeedbackModal({
             <span>系统会自动结合现场记录归纳出 Team 升级建议</span>
             <span className="shrink-0 font-mono">{draft.length} / 600</span>
           </div>
+
+          {roomBusy && (
+            <div
+              data-testid="evolution-room-busy-warning"
+              className="mt-3 rounded-lg border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/10 px-3 py-2.5"
+            >
+              <div className="flex gap-2.5">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--warning)]" />
+                <div className="min-w-0">
+                  <p className="text-[12.5px] font-semibold text-ink">
+                    当前还有 {busyAgents.length} 位成员在执行
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {busyAgents.map(agent => {
+                      const color = getAgentColor(agent.name)
+                      const statusLabel = agent.status === 'thinking' ? '输出中…' : '等待中'
+                      return (
+                        <span key={agent.id} className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-soft">
+                          <AgentAvatar name={agent.name} color={color.bg} textColor={color.text} size={16} className="rounded-full" />
+                          {agent.name} · {statusLabel}
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {error && (
             <p className="mt-3 rounded-lg bg-[color:var(--danger)]/8 px-3 py-2 text-[12px] text-[color:var(--danger)]">
@@ -128,24 +132,24 @@ export function EvolutionFeedbackModal({
           )}
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-3 border-t border-line bg-surface-muted px-6 py-3.5">
+        <div className="mt-4 flex shrink-0 flex-col gap-2 border-t border-line bg-surface-muted px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           {roomBusy && onStopBusyAgentsAndSubmit ? (
             <button
               type="button"
               onClick={() => { void onStopBusyAgentsAndSubmit(draft) }}
               disabled={actionInProgress || !draft.trim()}
-              className="text-left text-[12px] font-medium text-ink-soft underline decoration-ink-faint underline-offset-4 transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+              className="order-2 sm:order-1 text-center text-[12px] font-medium text-ink-soft underline decoration-ink-faint underline-offset-4 transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 sm:text-left"
             >
               {stoppingAndSubmitting ? '正在停止并生成…' : '停止当前执行并生成改进'}
             </button>
           ) : (
-            <span className="text-[12px] text-ink-faint">Team Architect 会读取本次现场记录</span>
+            <span className="order-2 sm:order-1 text-center text-[12px] text-ink-faint sm:text-left">Team Architect 会读取本次现场记录</span>
           )}
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="order-1 flex w-full shrink-0 items-center gap-2 sm:order-2 sm:w-auto">
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-9 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted"
+              className="hidden h-9 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted sm:inline-flex"
             >
               取消
             </button>
@@ -153,7 +157,7 @@ export function EvolutionFeedbackModal({
               type="button"
               onClick={() => { void onSubmit(draft) }}
               disabled={actionInProgress || !draft.trim() || roomBusy}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               {creating && <Loader2 className="h-4 w-4 animate-spin" />}
               生成改进建议
