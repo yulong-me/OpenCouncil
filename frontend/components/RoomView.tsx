@@ -584,6 +584,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         initialTopic={createInitialTopic}
         initialTeamId={createInitialTeamId}
         initialWorkerIds={createInitialWorkerIds}
+        desktopOffset={taskPanelCollapsed ? 52 : taskPanelWidth}
       />
       <div className="app-islands-shell h-[100dvh] flex overflow-hidden text-ink font-sans">
         <RoomListSidebarDesktop
@@ -727,27 +728,29 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           )}
         </div>
 
-        <AgentPanel
-          roomId={activeRoomId}
-          agents={agents}
-          teamName={teamName}
-          teamVersionNumber={teamVersionNumber}
-          workspace={workspace}
-          skillSummary={{
-            effectiveSkills,
-            globalSkillCount,
-            workspaceDiscoveredCount,
-          }}
-          sessionTelemetryByAgent={sessionTelemetryByAgent}
-          stoppingAgentIds={stoppingAgentIds}
-          onStopAgent={handleStopAgent}
-          onOpenInviteDrawer={openInviteDrawer}
-          isMobileOpen={agentDrawerOpen}
-          onMobileClose={() => setAgentDrawerOpen(false)}
-          desktopWidth={agentPanelWidth}
-          desktopCollapsed={agentPanelCollapsed}
-          onDesktopWidthChange={handleAgentPanelWidthChange}
-        />
+        {activeRoomId && (
+          <AgentPanel
+            roomId={activeRoomId}
+            agents={agents}
+            teamName={teamName}
+            teamVersionNumber={teamVersionNumber}
+            workspace={workspace}
+            skillSummary={{
+              effectiveSkills,
+              globalSkillCount,
+              workspaceDiscoveredCount,
+            }}
+            sessionTelemetryByAgent={sessionTelemetryByAgent}
+            stoppingAgentIds={stoppingAgentIds}
+            onStopAgent={handleStopAgent}
+            onOpenInviteDrawer={openInviteDrawer}
+            isMobileOpen={agentDrawerOpen}
+            onMobileClose={() => setAgentDrawerOpen(false)}
+            desktopWidth={agentPanelWidth}
+            desktopCollapsed={agentPanelCollapsed}
+            onDesktopWidthChange={handleAgentPanelWidthChange}
+          />
+        )}
       </div>
 
       <SettingsModal

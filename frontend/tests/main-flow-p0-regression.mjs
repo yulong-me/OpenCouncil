@@ -15,9 +15,10 @@ const messageList = readFileSync(resolve(root, 'components/MessageList.tsx'), 'u
 
 assert.match(quickStart, /AgentAvatar/)
 assert.match(quickStart, /ReadinessDot/)
-assert.match(quickStart, /状态待检查/)
+assert.match(quickStart, /fallbackReadiness/)
 assert.match(quickStart, /template\.agentIds\.slice\(0,\s*4\)/)
-assert.match(quickStart, /template\.agentIds\.length\}\s*位专家/)
+assert.match(quickStart, /data-template-card-footer="true"/)
+assert.doesNotMatch(quickStart, /位专家/)
 assert.match(quickStart, /继续上次的协作/)
 
 assert.match(roomList, /teamId:\s*room\.teamId/)

@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Code2, FileText, Loader2, MessagesSquare, Scale, Search, Wand2 } from 'lucide-react'
+import { ArrowRight, Loader2, Wand2 } from 'lucide-react'
 import { API_URL } from '../../lib/api'
 import { AgentAvatar } from '../AgentAvatar'
+
+type ReadinessKey = 'ready' | 'cli_missing' | 'untested' | 'test_failed' | 'unknown'
 
 export interface QuickStartTemplate {
   id: string
@@ -12,7 +14,8 @@ export interface QuickStartTemplate {
   topic: string
   teamId: string
   agentIds: string[]
-  icon: 'litigation' | 'competitor' | 'paper' | 'roundtable' | 'software'
+  toolLabel: string
+  fallbackReadiness: Exclude<ReadinessKey, 'unknown'>
 }
 
 interface AgentSummary {
@@ -40,7 +43,11 @@ interface RecentRoomSummary {
   teamVersionNumber?: number
 }
 
-const READINESS_META = {
+const READINESS_META: Record<ReadinessKey, {
+  label: string
+  dotClassName: string
+  className: string
+}> = {
   ready: { label: '可用', dotClassName: 'bg-emerald-500', className: 'tone-success-pill border' },
   cli_missing: { label: 'CLI 未配置', dotClassName: 'bg-red-500', className: 'tone-danger-panel border' },
   untested: { label: '待测试', dotClassName: 'bg-amber-500', className: 'tone-warning-pill border' },
@@ -61,7 +68,8 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
       'litigation-opposing-counsel',
       'litigation-risk-controller',
     ],
-    icon: 'litigation',
+    toolLabel: 'OpenCode CLI',
+    fallbackReadiness: 'cli_missing',
   },
   {
     id: 'competitor-analysis',
@@ -75,7 +83,8 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
       'competitor-product-skeptic',
       'competitor-gtm-operator',
     ],
-    icon: 'competitor',
+    toolLabel: 'Claude Code',
+    fallbackReadiness: 'ready',
   },
   {
     id: 'paper-revision',
@@ -89,7 +98,8 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
       'paper-rebuttal-writer',
       'paper-hostile-reviewer',
     ],
-    icon: 'paper',
+    toolLabel: 'Codex CLI',
+    fallbackReadiness: 'untested',
   },
   {
     id: 'roundtable-forum',
@@ -98,7 +108,8 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
     topic: '',
     teamId: 'roundtable-forum',
     agentIds: ['paul-graham', 'steve-jobs', 'zhang-yiming', 'munger', 'taleb'],
-    icon: 'roundtable',
+    toolLabel: 'OpenCode',
+    fallbackReadiness: 'ready',
   },
   {
     id: 'software-development',
@@ -107,17 +118,10 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
     topic: '',
     teamId: 'software-development',
     agentIds: ['dev-architect', 'dev-challenge-architect', 'dev-implementer', 'dev-reviewer'],
-    icon: 'software',
+    toolLabel: 'Claude Code · OpenCode · Codex CLI',
+    fallbackReadiness: 'ready',
   },
 ]
-
-const TEMPLATE_ICONS = {
-  litigation: Scale,
-  competitor: Search,
-  paper: FileText,
-  roundtable: MessagesSquare,
-  software: Code2,
-}
 
 interface EmptyRoomQuickStartProps {
   onStartBlank: () => void
@@ -139,6 +143,57 @@ function ReadinessDot({ readiness }: { readiness: TemplateReadiness }) {
     >
       <span className={`h-1.5 w-1.5 rounded-full ${readiness.dotClassName}`} aria-hidden />
       {readiness.label}
+    </span>
+  )
+}
+
+const HOME_AVATAR_COLORS = ['#b25530', '#6b6c2f', '#3f5c70', '#7a3d6a', '#c08a1f']
+
+function HomeAvatarStack({
+  names,
+  count,
+  size = 22,
+  dataAttribute,
+}: {
+  names?: string[]
+  count: number
+  size?: number
+  dataAttribute?: string
+}) {
+  const visibleCount = Math.min(count, 4)
+  const overflow = Math.max(count - visibleCount, 0)
+
+  return (
+    <span className="flex" aria-label={`${count} 成员`}>
+      {Array.from({ length: visibleCount }).map((_, index) => {
+        const name = names?.[index] ?? String(index + 1)
+        return (
+          <span
+            key={`${name}-${index}`}
+            data-quick-start-room-avatar={dataAttribute === 'room' ? 'true' : undefined}
+            className="inline-flex items-center justify-center rounded-full border-2 border-surface text-[10px] font-semibold shadow-sm"
+            style={{
+              width: size,
+              height: size,
+              marginLeft: index ? -6 : 0,
+              color: HOME_AVATAR_COLORS[index % HOME_AVATAR_COLORS.length],
+              backgroundColor: `color-mix(in srgb, ${HOME_AVATAR_COLORS[index % HOME_AVATAR_COLORS.length]} 18%, var(--surface))`,
+            }}
+            aria-hidden
+          >
+            {name.slice(0, 1).toUpperCase()}
+          </span>
+        )
+      })}
+      {overflow > 0 && (
+        <span
+          className="inline-flex items-center justify-center rounded-full border-2 border-surface bg-surface-muted text-[10px] font-semibold text-ink-soft shadow-sm"
+          style={{ width: size, height: size, marginLeft: -6 }}
+          aria-hidden
+        >
+          +{overflow}
+        </span>
+      )}
     </span>
   )
 }
@@ -188,7 +243,7 @@ export function EmptyRoomQuickStart({
     if (statuses.some(readiness => readiness.status === 'ready')) {
       return READINESS_META.ready
     }
-    return READINESS_META.unknown
+    return READINESS_META[template.fallbackReadiness]
   }
 
   function getAgentName(agentId: string) {
@@ -240,9 +295,10 @@ export function EmptyRoomQuickStart({
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-bold text-ink">{room.topic}</span>
                     <span className="mt-0.5 block truncate text-[11px] text-ink-soft">
-                      {room.teamName}{room.teamVersionNumber ? ` · v${room.teamVersionNumber}` : ''} · {room.agentCount} 位成员
+                      {room.teamName}{room.teamVersionNumber ? ` · v${room.teamVersionNumber}` : ''} · {room.agentCount} 成员
                     </span>
                   </span>
+                  <HomeAvatarStack count={room.agentCount} dataAttribute="room" />
                 </button>
               ))}
             </div>
@@ -256,7 +312,6 @@ export function EmptyRoomQuickStart({
           </div>
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-2 xl:grid-cols-3">
           {QUICK_START_TEMPLATES.map(template => {
-            const Icon = TEMPLATE_ICONS[template.icon]
             const readiness = getTemplateReadiness(template)
             const creating = creatingTemplateId === template.id
             return (
@@ -265,11 +320,30 @@ export function EmptyRoomQuickStart({
                 type="button"
                 onClick={() => onStartTemplate(template)}
                 disabled={Boolean(creatingTemplateId)}
-                className="group flex min-h-[118px] flex-col justify-between rounded-[10px] border border-line bg-surface px-3 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:cursor-wait disabled:opacity-70 sm:min-h-36 sm:px-4 sm:py-4"
+                className="group flex min-h-[132px] flex-col rounded-[10px] border border-line bg-surface px-3 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:cursor-wait disabled:opacity-70 sm:min-h-36 sm:px-4 sm:py-4"
               >
-                <span className="flex items-center justify-between gap-3">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-muted text-accent">
-                    <Icon className="h-4 w-4" aria-hidden />
+                <span className="min-w-0">
+                  <span className="block truncate font-display text-[17px] font-medium text-ink">{template.title}</span>
+                  <span className="mt-1.5 block text-[12px] leading-5 text-ink-soft">{template.description}</span>
+                </span>
+                <span data-template-card-footer="true" className="mt-auto flex items-center justify-between gap-3 pt-3">
+                  <span className="flex -space-x-1">
+                    {template.agentIds.slice(0, 4).map(agentId => {
+                      const name = getAgentName(agentId)
+                      return (
+                        <AgentAvatar
+                          key={agentId}
+                          name={name}
+                          size={22}
+                          className="rounded-full border-2 border-surface shadow-sm"
+                        />
+                      )
+                    })}
+                    {template.agentIds.length > 4 && (
+                      <span className="-ml-1.5 inline-flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 border-surface bg-surface-muted text-[10px] font-semibold text-ink-soft shadow-sm">
+                        +{template.agentIds.length - 4}
+                      </span>
+                    )}
                   </span>
                   {creating ? (
                     <Loader2 className="h-4 w-4 animate-spin text-accent" aria-hidden />
@@ -277,27 +351,8 @@ export function EmptyRoomQuickStart({
                     <ReadinessDot readiness={readiness} />
                   )}
                 </span>
-                <span>
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="block font-display text-[17px] font-medium text-ink">{template.title}</span>
-                  </span>
-                  <span className="mt-1.5 block text-[12px] leading-5 text-ink-soft">{template.description}</span>
-                  <span className="mt-3 flex items-center gap-1.5">
-                    <span className="flex -space-x-1">
-                      {template.agentIds.slice(0, 4).map(agentId => {
-                        const name = getAgentName(agentId)
-                        return (
-                          <AgentAvatar
-                            key={agentId}
-                            name={name}
-                            size={18}
-                            className="rounded-full border border-surface shadow-sm"
-                          />
-                        )
-                      })}
-                    </span>
-                    <span className="whitespace-nowrap text-[11px] text-ink-faint">{template.agentIds.length} 位专家</span>
-                  </span>
+                <span className="mt-2 border-t border-dashed border-line pt-2 font-mono text-[10.5px] leading-4 tracking-[0.02em] text-ink-faint">
+                  {template.toolLabel}
                 </span>
               </button>
             )

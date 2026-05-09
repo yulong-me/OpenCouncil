@@ -839,23 +839,14 @@ function PanelContent({
       <div className="flex-1 overflow-y-auto px-2.5 py-2.5 space-y-2.5 custom-scrollbar">
         {agents.length === 0 ? (
           <div className="app-window-surface rounded-2xl border border-line bg-surface px-3.5 py-4">
-            <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-faint">下一次现场</p>
-            <div className="mt-3 rounded-xl border border-line bg-surface-muted/55 p-3 [background-image:repeating-linear-gradient(135deg,var(--line)_0_1px,transparent_1px_14px)]">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-surface text-ink-soft/60">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-surface-muted text-ink-soft/60">
               <Users className="h-4 w-4" />
             </div>
-              <p className="font-display text-[18px] leading-6 text-ink">
-                没有 Team 在现场。<br />选一支，就开始。
-              </p>
-              <div className="my-4 h-px bg-line" />
-              <div className="space-y-2 text-[12px] leading-5 text-ink-soft">
-                <p><span className="rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px]">@</span> 用 @ 点名 Team 成员</p>
-                <p><span className="rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px]">⌘↵</span> 把消息送进现场</p>
-                <p><span className="rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px]">⌥</span> 悬停成员看上下文遥测</p>
-              </div>
-            </div>
-            <p className="mt-3 text-[11px] leading-5 text-ink-faint">
-              选择任务记录后显示 Team 成员。任务结束后可以提改进，让 Team 升级。
+            <p className="mt-3 font-display text-[17px] leading-6 text-ink">
+              暂无 Team 成员
+            </p>
+            <p className="mt-2 text-[11px] leading-5 text-ink-faint">
+              成员载入后会显示职责、状态和上下文遥测。
             </p>
           </div>
         ) : (

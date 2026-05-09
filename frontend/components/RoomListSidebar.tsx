@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, FileText, GripVertical, Moon, Plus, Search, Settings, Sun, Trash2, UserCircle, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileText, GripVertical, Moon, Network, Plus, Search, Settings, Sun, Trash2, UserCircle, X } from 'lucide-react'
 import {
   formatRelativeTime,
   type DiscussionState,
@@ -83,8 +83,14 @@ interface RoomListSidebarProps {
 
 function SidebarBrand() {
   return (
-    <div className="min-w-0">
-      <p className="truncate text-title font-bold text-ink">OpenCouncil</p>
+    <div className="flex min-w-0 items-center gap-2.5">
+      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-ink text-surface shadow-sm">
+        <Network className="h-3.5 w-3.5" aria-hidden />
+      </span>
+      <span className="min-w-0">
+        <p className="truncate text-title font-bold text-ink">OpenCouncil</p>
+        <p className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">OPEN · TEAM · COUNCIL</p>
+      </span>
     </div>
   )
 }
@@ -436,30 +442,39 @@ function CommandPalette({
 function SidebarRoomsHeader({
   activeCount,
   archivedCount,
-  onNewRoom,
 }: {
   activeCount: number
   archivedCount: number
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 px-0.5">
+      <div className="min-w-0">
+        <p className="text-label uppercase text-ink-soft">任务记录</p>
+      </div>
+      <p className="shrink-0 text-[11px] text-ink-faint">
+        {activeCount} 进行中 · {archivedCount} 已归档
+      </p>
+    </div>
+  )
+}
+
+function SidebarStartTaskButton({
+  onNewRoom,
+}: {
   onNewRoom: () => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-label uppercase text-ink-soft">任务记录</p>
-        <p className="mt-0.5 text-[11px] text-ink-faint">
-          {activeCount} 进行中 · {archivedCount} 已归档
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={onNewRoom}
-        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:border-accent/55 hover:bg-accent/[0.06] hover:text-accent"
-        aria-label="发起任务"
-        title="发起任务"
-      >
-        <Plus className="h-4 w-4" />
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={onNewRoom}
+      className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-dashed border-line bg-transparent px-2.5 text-left text-caption text-ink-soft transition-colors hover:border-accent/45 hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/[0.35]"
+    >
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span className="truncate">发起任务</span>
+      </span>
+      <span className="shrink-0 text-[11px] text-ink-faint">选 Team · 进入现场</span>
+    </button>
   )
 }
 
@@ -680,8 +695,9 @@ function SidebarConversationSection({
 
   return (
     <div className="space-y-3">
-      <SidebarRoomsHeader activeCount={totalActive} archivedCount={totalArchived} onNewRoom={onNewRoom} />
       <SidebarCommandTrigger onOpen={() => setCommandOpen(true)} />
+      <SidebarStartTaskButton onNewRoom={onNewRoom} />
+      <SidebarRoomsHeader activeCount={totalActive} archivedCount={totalArchived} />
       <CommandPalette
         open={commandOpen}
         query={commandQuery}

@@ -74,9 +74,9 @@ assert.match(evolutionModal, /改进建议/)
 assert.match(evolutionModal, /确认升级 Team/)
 assert.doesNotMatch(evolutionModal, /团队升级确认/)
 
-assert.match(agentPanel, /下一次现场/)
-assert.match(agentPanel, /没有 Team 在现场/)
-assert.match(agentPanel, /选择任务记录后显示 Team 成员/)
+assert.match(agentPanel, /暂无 Team 成员/)
+assert.match(agentPanel, /成员载入后会显示职责、状态和上下文遥测/)
+assert.doesNotMatch(agentPanel, /下一次现场/)
 assert.doesNotMatch(agentPanel, /📋/)
 
 console.log('create-room-overall-ux-regression: ok')
