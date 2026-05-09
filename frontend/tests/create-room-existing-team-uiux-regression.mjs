@@ -9,7 +9,7 @@ const roomView = readFileSync(resolve(root, 'components/RoomView.tsx'), 'utf8')
 
 // 1. The existing-Team modal should sit inside the desktop main area, below the top edge,
 // not cover the left task sidebar with a full-window centered overlay.
-assert.match(roomView, /desktopOffset=\{taskPanelCollapsed \? 52 : taskPanelWidth\}/)
+assert.match(roomView, /desktopOffset=\{taskPanelCollapsed \? 0 : taskPanelWidth\}/)
 assert.match(createRoom, /desktopOffset = 0/)
 assert.match(createRoom, /md:left-\[var\(--create-room-modal-left\)\]/)
 assert.match(createRoom, /items-start justify-center px-4/)

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clock3, Copy, Crown, GripVertical, Users, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clock3, Copy, Crown, GripVertical, RefreshCw, Users, X } from 'lucide-react'
 import { AgentAvatar } from './AgentAvatar'
 import { getAgentColor, type Agent, type SessionTelemetry } from '../lib/agents'
 import { formatCompactTokenCount, formatLatencyMs, getRemainingContextRatio } from '../lib/telemetry'
@@ -28,7 +28,6 @@ interface AgentPanelProps {
   sessionTelemetryByAgent?: Record<string, SessionTelemetry>
   stoppingAgentIds?: Set<string>
   onStopAgent?: (agent: Agent) => Promise<void> | void
-  onOpenInviteDrawer?: () => void
   isMobileOpen?: boolean
   onMobileClose?: () => void
   desktopWidth?: number
@@ -37,6 +36,13 @@ interface AgentPanelProps {
 }
 
 // ── Section 1: Compact agent card ─────────────────────────────────────────────
+function formatAgentRoleLabel(label?: string) {
+  const trimmed = label?.trim()
+  if (!trimmed) return ''
+  if (/[\u4e00-\u9fff]/.test(trimmed)) return trimmed
+  return trimmed.replace(/[_-]+/g, ' ')
+}
+
 function AgentItem({
   agent,
   sessionTelemetry,
@@ -60,61 +66,50 @@ function AgentItem({
   const isManager = agent.role === 'MANAGER'
   const avatarColors = getAgentColor(agent.name)
   const hasSessionTelemetry = Boolean(sessionTelemetry)
-  const contextHealth = sessionTelemetry?.contextHealth
-  const headerStatusLabel = contextHealth
-    ? '有上下文快照'
-    : hasSessionTelemetry
-      ? '会话中'
-      : statusMeta.label
-  const headerStatusDotClassName = contextHealth
-    ? 'bg-[color:var(--success)]'
-    : hasSessionTelemetry
-      ? 'bg-[color:var(--accent)]'
-      : statusMeta.dotClassName
+  const roleLabel = formatAgentRoleLabel(agent.domainLabel)
 
   return (
-    <div className={`app-window-surface rounded-2xl border px-2.5 py-2.5 transition-all ${
-      isBusy ? 'shadow-[0_12px_24px_rgba(0,0,0,0.12)]' : 'shadow-sm'
+    <div className={`rounded-[9px] border px-[10px] py-[10px] transition-all ${
+      isBusy ? 'border-line bg-surface shadow-sm' : 'border-line bg-surface/70'
     }`}>
-      <div className="flex items-start gap-2.5">
-        <div className="relative mt-0.5 h-9 w-9 shrink-0 overflow-hidden rounded-xl shadow-sm">
+      <div className="flex items-start gap-[10px]">
+        <div className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full">
           <AgentAvatar
             name={agent.name}
             color={avatarColors.bg}
             textColor={avatarColors.text}
-            size={36}
-            className="h-full w-full rounded-xl"
+            size={32}
+            className="h-full w-full rounded-full"
           />
           <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface ${statusMeta.dotClassName}`} />
         </div>
 
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-semibold text-ink">{agent.name}</p>
-              <div className="mt-1 inline-flex max-w-full items-center gap-1.5 text-[11px] text-ink-soft/72">
-                <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${headerStatusDotClassName}`} />
-                <span className="truncate">{headerStatusLabel}</span>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <p className="truncate text-[13px] font-semibold text-ink">{agent.name}</p>
+                {isManager ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium tone-warning-pill border">
+                    <Crown className="h-3 w-3" />
+                    主持
+                  </span>
+                ) : null}
               </div>
+              {roleLabel ? (
+                <p className="mt-1 truncate text-[11.5px] text-ink-soft/72">{roleLabel}</p>
+              ) : null}
             </div>
-            {sessionTelemetry ? (
-              <div className="shrink-0">
-                <TelemetryRingTrigger telemetry={sessionTelemetry} />
-              </div>
-            ) : isManager ? (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium tone-warning-pill border">
-                <Crown className="h-3 w-3" />
-                主持
-              </span>
-            ) : null}
           </div>
 
-          {((isBusy && !isManager && onStopAgent) || (agent.domainLabel && !hasSessionTelemetry)) ? (
-            <div className="flex items-center gap-2 flex-wrap">
-              {agent.domainLabel && !hasSessionTelemetry ? (
-                <span className="truncate text-[10px] text-ink-soft/58">{agent.domainLabel}</span>
-              ) : null}
-              {isBusy && !isManager && onStopAgent ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-medium ${statusMeta.className}`}>
+              {statusMeta.label}
+            </span>
+            {hasSessionTelemetry ? (
+              <TelemetryRingTrigger telemetry={sessionTelemetry} />
+            ) : null}
+            {isBusy && !isManager && onStopAgent ? (
                 <button
                   type="button"
                   onClick={() => { void onStopAgent(agent) }}
@@ -123,17 +118,8 @@ function AgentItem({
                 >
                   {stopping ? '停止中…' : '停止'}
                 </button>
-              ) : null}
-            </div>
-          ) : null}
-
-          {!sessionTelemetry ? (
-            <div className="border-t border-line/70 pt-2">
-              <div className="rounded-2xl border border-dashed border-line bg-surface-muted/45 px-3 py-2 text-[11px] text-ink-soft/70">
-                等待首轮上下文遥测…
-              </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
@@ -149,7 +135,7 @@ function ContextRing({
   size?: number
   label?: boolean
 }) {
-  const strokeWidth = size >= 60 ? 6 : 5
+  const strokeWidth = size >= 48 ? 5 : 2.5
   const radius = (size - strokeWidth) / 2
   const circumference = 2 * Math.PI * radius
   const remainingRatio = getRemainingContextRatio(contextHealth)
@@ -183,12 +169,12 @@ function ContextRing({
           strokeDashoffset={strokeDashoffset}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className={`${size >= 60 ? 'text-[13px]' : 'text-[12px]'} font-semibold text-ink`}>{contextHealth.leftPct}%</span>
-        {label ? (
+      {label ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className={`${size >= 60 ? 'text-[13px]' : 'text-[12px]'} font-semibold text-ink`}>{contextHealth.leftPct}%</span>
           <span className="text-[9px] uppercase tracking-[0.16em] text-ink-soft/70">left</span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -286,13 +272,7 @@ function TelemetryRingTrigger({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [detailsPinned])
 
-  if (!telemetry) {
-    return (
-      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface-muted text-[10px] font-semibold text-ink-soft/70">
-        --
-      </div>
-    )
-  }
+  if (!telemetry) return null
 
   const detailsVisible = detailsPinned || hoverActive
 
@@ -316,15 +296,19 @@ function TelemetryRingTrigger({
         }}
         onMouseEnter={handleHoverEnter}
         onMouseLeave={handleHoverLeave}
-        className="group relative inline-flex h-[60px] w-[60px] items-center justify-center rounded-full transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+        className="group inline-flex h-[22px] items-center gap-1 rounded-full border border-line bg-surface px-1.5 text-[10px] font-medium text-ink-soft transition-colors hover:border-accent/35 hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/45"
         title={contextHealth ? `Context left ${contextHealth.leftPct}%` : 'Context telemetry pending'}
       >
         {contextHealth ? (
-          <ContextRing contextHealth={contextHealth} size={56} />
+          <>
+            <ContextRing contextHealth={contextHealth} size={18} label={false} />
+            <span className="font-mono">{contextHealth.leftPct}%</span>
+          </>
         ) : (
-          <div className="flex h-[56px] w-[56px] items-center justify-center rounded-full border border-dashed border-line bg-surface text-[13px] font-semibold text-ink-soft/60 shadow-sm">
-            --
-          </div>
+          <>
+            <span className="h-1.5 w-1.5 rounded-full bg-ink-soft/35" />
+            <span>会话中</span>
+          </>
         )}
       </button>
       <TelemetryPopover
@@ -587,7 +571,6 @@ export function AgentPanel({
   sessionTelemetryByAgent,
   stoppingAgentIds,
   onStopAgent,
-  onOpenInviteDrawer,
   isMobileOpen,
   onMobileClose,
   desktopWidth = 240,
@@ -763,21 +746,6 @@ export function AgentPanel({
                 showExtras={false}
               />
             </div>
-            {roomId && onOpenInviteDrawer && (
-              <div className="shrink-0 border-t border-line bg-nav-bg px-3.5 py-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onMobileClose?.()
-                    onOpenInviteDrawer()
-                  }}
-                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3 text-[12px] font-semibold text-ink transition-colors hover:border-accent/45 hover:bg-surface-muted hover:text-accent"
-                >
-                  <Users className="h-3.5 w-3.5" aria-hidden />
-                  邀请 Agent 参与任务
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -807,36 +775,27 @@ function PanelContent({
   showExtras?: boolean
 }) {
   const [skillsCollapsed, setSkillsCollapsed] = useState(true)
-  const hasSkills = Boolean(
-    skillSummary &&
-    (
-      skillSummary.effectiveSkills.length > 0 ||
-      skillSummary.globalSkillCount > 0 ||
-      skillSummary.workspaceDiscoveredCount > 0
-    ),
-  )
+  const hasEffectiveSkills = Boolean(skillSummary?.effectiveSkills.length)
 
   return (
     <>
       {showHeader && (
-        <div className="border-b border-line px-3 py-3 space-y-1.5">
-          {roomId && (
-            <button
-              type="button"
-              onClick={() => navigator.clipboard.writeText(roomId)}
-              title="点击复制对话 ID"
-              className="flex items-center gap-1.5 rounded-lg border border-line bg-surface-muted px-2 py-1.5 text-[11px] text-ink-soft transition-colors cursor-pointer group w-full hover:border-accent/30 hover:text-accent"
-            >
-              <span className="opacity-60 group-hover:opacity-100 shrink-0">ID:</span>
-              <span className="font-mono truncate group-hover:text-accent">{roomId.slice(0, 8)}…</span>
-              <Copy className="ml-auto h-3 w-3 opacity-40 transition-opacity group-hover:opacity-80" aria-hidden />
-            </button>
-          )}
-          <h2 className="pt-0.5 text-title text-ink">Team 成员</h2>
+        <div className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-[14px]">
+          <h2 className="font-mono text-[12px] font-medium uppercase tracking-[0.08em] text-ink-soft">
+            TEAM 成员 · {agents.length}
+          </h2>
+          <button
+            type="button"
+            className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-muted hover:text-accent"
+            aria-label="刷新遥测"
+            title={roomId ? `刷新遥测 · ${roomId.slice(0, 8)}` : '刷新遥测'}
+          >
+            <RefreshCw className="h-3 w-3" aria-hidden />
+          </button>
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-2.5 py-2.5 space-y-2.5 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto px-[10px] py-1.5 custom-scrollbar">
         {agents.length === 0 ? (
           <div className="app-window-surface rounded-2xl border border-line bg-surface px-3.5 py-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-surface-muted text-ink-soft/60">
@@ -850,7 +809,7 @@ function PanelContent({
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1">
             {agents.map(agent => (
               <AgentItem
                 key={agent.id}
@@ -863,7 +822,11 @@ function PanelContent({
           </div>
         )}
 
-        {showExtras && hasSkills && skillSummary && (
+        {showExtras && workspace && (
+          <WorkspaceSidebar workspacePath={workspace} />
+        )}
+
+        {showExtras && hasEffectiveSkills && skillSummary && (
           <section className="rounded-2xl border border-line bg-surface-muted px-2.5 py-2.5 space-y-2">
             <button
               type="button"
@@ -913,9 +876,6 @@ function PanelContent({
           </section>
         )}
 
-        {showExtras && workspace && (
-          <WorkspaceSidebar workspacePath={workspace} />
-        )}
       </div>
     </>
   )

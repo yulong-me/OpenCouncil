@@ -31,10 +31,10 @@ assert.match(sidebar, /⌘K/)
 assert.match(sidebar, /data-command-palette="true"/)
 assert.match(sidebar, /搜索任务记录、最近消息或操作/)
 
-assert.match(composer, /告诉 Team 这次要做什么/)
+assert.match(composer, /@\$?\{?agents\[0\]\?\.name/)
 assert.match(composer, /先 @ 选择一位 Team 成员/)
-assert.match(composer, /focus-within:border-accent focus-within:ring-2 focus-within:ring-accent\/\[0\.22\]/)
-assert.match(composer, /hover:border-accent\/55 hover:text-accent/)
+assert.match(composer, /focus-within:border-accent focus-within:ring-2 focus-within:ring-accent\/\[0\.18\]/)
+assert.match(composer, /hover:bg-surface-muted hover:text-accent/)
 assert.match(composer, /aria-label="@点名"/)
 assert.match(composer, /aria-label="附件"/)
 assert.match(composer, /aria-label="Skill"/)
@@ -68,7 +68,6 @@ const accentContrastSources = [
   readFileSync(resolve(root, 'components/CreateRoomModal.tsx'), 'utf8'),
   readFileSync(resolve(root, 'components/DirectoryBrowser.tsx'), 'utf8'),
   readFileSync(resolve(root, 'components/WorkspaceSidebar.tsx'), 'utf8'),
-  readFileSync(resolve(root, 'components/AgentInviteDrawer.tsx'), 'utf8'),
   readFileSync(resolve(root, 'components/room-view/DepthSwitcher.tsx'), 'utf8'),
   readFileSync(resolve(root, 'components/room-view/EvolutionFeedbackModal.tsx'), 'utf8'),
   readFileSync(resolve(root, 'components/room-view/EvolutionReviewModal.tsx'), 'utf8'),

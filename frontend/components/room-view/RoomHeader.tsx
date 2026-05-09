@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, GitPullRequest, Loader2, Menu, Settings, Sparkles, UserPlus, Users } from 'lucide-react'
+import { Check, GitPullRequest, Loader2, Menu, PanelLeft, PanelRight, Settings, Sparkles, Users } from 'lucide-react'
 
 import { DepthSwitcher } from './DepthSwitcher'
 
@@ -17,8 +17,10 @@ interface RoomHeaderProps {
   onChangeDepth: (newDepth: number | null) => void
   onToggleMobileMenu: () => void
   onOpenAgentDrawer: () => void
-  onOpenInviteDrawer: () => void
   onOpenSystemSettings: () => void
+  onOpenTeamSettings?: () => void
+  taskPanelCollapsed: boolean
+  onToggleTaskPanel: () => void
   agentPanelCollapsed: boolean
   onToggleAgentPanel: () => void
   onGenerateTitleSuggestions?: () => Promise<string[]>
@@ -41,8 +43,10 @@ export function RoomHeader({
   onChangeDepth,
   onToggleMobileMenu,
   onOpenAgentDrawer,
-  onOpenInviteDrawer,
   onOpenSystemSettings,
+  onOpenTeamSettings,
+  taskPanelCollapsed,
+  onToggleTaskPanel,
   agentPanelCollapsed,
   onToggleAgentPanel,
   onGenerateTitleSuggestions,
@@ -150,6 +154,14 @@ export function RoomHeader({
   }
 
   const headerTitle = !roomId ? 'OpenCouncil' : (currentRoomTopic || '新任务记录')
+  const taskActionButtonClassName = 'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-surface px-2.5 text-[12px] font-semibold text-ink-soft shadow-sm transition-colors hover:bg-nav-bg hover:text-accent disabled:cursor-not-allowed disabled:opacity-60'
+  const mobileTaskButtonClassName = 'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent disabled:cursor-not-allowed disabled:opacity-60'
+  const layoutPanelButtonClassName = (active: boolean, display = 'inline-flex') =>
+    `${display} h-8 w-8 items-center justify-center rounded-md transition-colors ${
+      active
+        ? 'bg-surface-muted text-ink shadow-sm'
+        : 'text-ink-faint hover:bg-surface-muted hover:text-accent'
+    }`
 
   return (
     <div
@@ -221,10 +233,17 @@ export function RoomHeader({
                 {headerTitle}
               </button>
               {roomId && teamName && teamVersionNumber && (
-                <span className="mt-0.5 flex items-center gap-1.5 truncate text-[10.5px] text-ink-faint sm:hidden">
+                <button
+                  type="button"
+                  onClick={onOpenTeamSettings}
+                  disabled={!onOpenTeamSettings}
+                  aria-label={`编辑 Team：${teamName}`}
+                  title="编辑 Team"
+                  className="mt-0.5 flex max-w-full items-center gap-1.5 truncate text-[10.5px] text-ink-faint transition-colors hover:text-accent disabled:cursor-default disabled:hover:text-ink-faint sm:hidden"
+                >
                   {teamName}
                   <span className="rounded-full border border-line bg-surface-muted px-1.5 py-0.5 font-mono text-[10px]">v{teamVersionNumber}</span>
-                </span>
+                </button>
               )}
             </div>
           )}
@@ -270,104 +289,137 @@ export function RoomHeader({
           )}
         </div>
         {teamName && teamVersionNumber && (
-          <span className="hidden shrink-0 rounded-full border border-line bg-surface-muted px-2.5 py-1 text-[11px] font-semibold text-ink-soft sm:inline-flex">
+          <button
+            type="button"
+            onClick={onOpenTeamSettings}
+            disabled={!onOpenTeamSettings}
+            aria-label={`编辑 Team：${teamName}`}
+            title="编辑 Team"
+            className="hidden shrink-0 rounded-full border border-line bg-surface-muted px-2.5 py-1 text-[11px] font-semibold text-ink-soft transition-colors hover:border-accent/35 hover:bg-surface hover:text-accent disabled:cursor-default disabled:hover:border-line disabled:hover:bg-surface-muted disabled:hover:text-ink-soft sm:inline-flex"
+          >
             {teamName} · v{teamVersionNumber}
-          </span>
+          </button>
         )}
       </div>
-      <div className="flex items-center gap-1 sm:gap-2">
+      <div className="flex items-center gap-2">
         {roomId && (
-          <div className="flex items-center gap-1 sm:gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                if (!isTeamRoom) return
-                if (pendingEvolutionCount > 0 && onReviewEvolution) {
-                  onReviewEvolution()
-                  return
-                }
-                if (onCreateEvolutionProposal) {
-                  void onCreateEvolutionProposal()
-                }
-              }}
-              disabled={!isTeamRoom || creatingEvolutionProposal || (!onCreateEvolutionProposal && pendingEvolutionCount === 0)}
-              className="hidden h-9 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-[12px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
-              title={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进') : '当前任务记录不是由 Team 创建的'}
+          <>
+            <div
+              role="group"
+              aria-label="任务操作"
+              data-control-scope="task"
+              className="hidden h-10 shrink-0 items-center gap-1 rounded-xl border border-accent/25 bg-accent/[0.045] p-1 shadow-sm md:inline-flex"
             >
-              {creatingEvolutionProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
-              {creatingEvolutionProposal ? '正在整理' : pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!isTeamRoom) return
-                if (pendingEvolutionCount > 0 && onReviewEvolution) {
-                  onReviewEvolution()
-                  return
-                }
-                if (onCreateEvolutionProposal) {
-                  void onCreateEvolutionProposal()
-                }
-              }}
-              disabled={!isTeamRoom || creatingEvolutionProposal || (!onCreateEvolutionProposal && pendingEvolutionCount === 0)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent disabled:cursor-not-allowed disabled:opacity-60 md:hidden"
-              title={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进') : '当前任务记录不是由 Team 创建的'}
-              aria-label={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进') : '当前任务记录不是由 Team 创建的'}
-            >
-              {creatingEvolutionProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
-            </button>
-            <DepthSwitcher
-              value={maxA2ADepth}
-              currentDepth={currentA2ADepth}
-              maxDepth={displayMaxDepth}
-              onChange={onChangeDepth}
-            />
-            <span className="hidden h-4 w-px bg-line md:inline-block" aria-hidden />
-          </div>
+              <DepthSwitcher
+                value={maxA2ADepth}
+                currentDepth={currentA2ADepth}
+                maxDepth={displayMaxDepth}
+                onChange={onChangeDepth}
+              />
+              <span className="h-5 w-px bg-accent/20" aria-hidden />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isTeamRoom) return
+                  if (pendingEvolutionCount > 0 && onReviewEvolution) {
+                    onReviewEvolution()
+                    return
+                  }
+                  if (onCreateEvolutionProposal) {
+                    void onCreateEvolutionProposal()
+                  }
+                }}
+                disabled={!isTeamRoom || creatingEvolutionProposal || (!onCreateEvolutionProposal && pendingEvolutionCount === 0)}
+                className={taskActionButtonClassName}
+                title={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进') : '当前任务记录不是由 Team 创建的'}
+              >
+                {creatingEvolutionProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
+                {creatingEvolutionProposal ? '正在整理' : pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进'}
+              </button>
+            </div>
+            <div className="inline-flex items-center gap-1 md:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isTeamRoom) return
+                  if (pendingEvolutionCount > 0 && onReviewEvolution) {
+                    onReviewEvolution()
+                    return
+                  }
+                  if (onCreateEvolutionProposal) {
+                    void onCreateEvolutionProposal()
+                  }
+                }}
+                disabled={!isTeamRoom || creatingEvolutionProposal || (!onCreateEvolutionProposal && pendingEvolutionCount === 0)}
+                className={mobileTaskButtonClassName}
+                title={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进') : '当前任务记录不是由 Team 创建的'}
+                aria-label={isTeamRoom ? (pendingEvolutionCount > 0 ? '查看改进建议' : '提个改进') : '当前任务记录不是由 Team 创建的'}
+              >
+                {creatingEvolutionProposal ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={onOpenAgentDrawer}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent"
+                aria-label="查看 Team 成员"
+              >
+                <Users className="w-5 h-5" />
+              </button>
+            </div>
+          </>
         )}
-        {roomId && (
-          <button
-            type="button"
-            onClick={onOpenAgentDrawer}
-            className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent"
-            aria-label="查看 Team 成员"
-          >
-            <Users className="w-5 h-5" />
-          </button>
-        )}
-        {roomId ? (
-          <button
-            type="button"
-            onClick={onOpenInviteDrawer}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent"
-            aria-label="邀请 Agent 参与任务"
-          >
-            <UserPlus className="w-5 h-5" />
-          </button>
-        ) : (
+        {!roomId && (
           <button
             type="button"
             onClick={onOpenSystemSettings}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent md:hidden"
             aria-label="打开设置"
             title="打开设置"
           >
             <Settings className="w-5 h-5" />
           </button>
         )}
-        <button
-          type="button"
-          onClick={onToggleAgentPanel}
-          className="hidden lg:inline-flex p-2 text-ink-soft hover:text-accent transition-colors"
-          aria-label={agentPanelCollapsed ? '展开 Team 成员面板' : '收起 Team 成员面板'}
-          title={agentPanelCollapsed ? '展开 Team 成员面板' : '收起 Team 成员面板'}
+        <span className="hidden h-6 w-px bg-line md:inline-block" aria-hidden />
+        <div
+          role="group"
+          aria-label="系统布局"
+          data-control-scope="system"
+          className="hidden h-10 items-center gap-0.5 rounded-xl border border-line bg-surface-muted/70 p-1 shadow-sm md:inline-flex"
         >
-          {agentPanelCollapsed ? (
-            <ChevronLeft className="w-5 h-5" />
-          ) : (
-            <ChevronRight className="w-5 h-5" />
+          {!roomId && (
+            <button
+              type="button"
+              onClick={onOpenSystemSettings}
+              className={layoutPanelButtonClassName(false)}
+              aria-label="打开设置"
+              title="打开设置"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
           )}
-        </button>
+          <button
+            type="button"
+            onClick={onToggleTaskPanel}
+            className={layoutPanelButtonClassName(!taskPanelCollapsed)}
+            aria-label={taskPanelCollapsed ? '展开任务记录面板' : '收起任务记录面板'}
+            aria-pressed={!taskPanelCollapsed}
+            title={taskPanelCollapsed ? '展开任务记录面板' : '收起任务记录面板'}
+          >
+            <PanelLeft className="h-4 w-4" />
+          </button>
+          {roomId && (
+            <button
+              type="button"
+              onClick={onToggleAgentPanel}
+              className={layoutPanelButtonClassName(!agentPanelCollapsed, 'hidden lg:inline-flex')}
+              aria-label={agentPanelCollapsed ? '展开 Team 成员面板' : '收起 Team 成员面板'}
+              aria-pressed={!agentPanelCollapsed}
+              title={agentPanelCollapsed ? '展开 Team 成员面板' : '收起 Team 成员面板'}
+            >
+              <PanelRight className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

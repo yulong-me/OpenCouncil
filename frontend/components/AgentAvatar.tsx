@@ -60,6 +60,7 @@ export function AgentAvatar({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
+        borderRadius: '9999px',
         fontSize,
         fontWeight: 800,
         lineHeight: 1,

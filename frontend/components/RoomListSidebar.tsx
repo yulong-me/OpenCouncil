@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, FileText, GripVertical, Moon, Network, Plus, Search, Settings, Sun, Trash2, UserCircle, X } from 'lucide-react'
+import { FileText, GripVertical, Moon, Network, Plus, Search, Settings, Sun, Trash2, UserCircle, X } from 'lucide-react'
 import {
   formatRelativeTime,
   type DiscussionState,
@@ -75,7 +75,6 @@ interface RoomListSidebarProps {
   desktopWidth?: number
   desktopCollapsed?: boolean
   onDesktopWidthChange?: (width: number) => void
-  onDesktopToggleCollapsed?: () => void
   mobileMenuOpen?: boolean
   onToggleMobileMenu?: () => void
   onCloseMobileMenu?: () => void
@@ -818,7 +817,6 @@ export function RoomListSidebarDesktop({
   desktopWidth = 280,
   desktopCollapsed = false,
   onDesktopWidthChange,
-  onDesktopToggleCollapsed,
 }: Omit<RoomListSidebarProps, 'mobileMenuOpen' | 'onToggleMobileMenu' | 'onCloseMobileMenu'>) {
   const dragStartRef = useRef<{ x: number; width: number } | null>(null)
 
@@ -851,30 +849,10 @@ export function RoomListSidebarDesktop({
   return (
     <div
       className="relative layer-app-panel hidden h-full shrink-0 overflow-visible transition-[width] duration-200 ease-out md:block"
-      style={{ width: desktopCollapsed ? 52 : desktopWidth }}
+      style={{ width: desktopCollapsed ? 0 : desktopWidth }}
+      aria-hidden={desktopCollapsed}
     >
-      {desktopCollapsed ? (
-        <div className="app-islands-panel flex h-full flex-col items-center border-r border-line bg-surface px-2 py-3">
-          <button
-            type="button"
-            onClick={onDesktopToggleCollapsed}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent"
-            aria-label="展开任务记录面板"
-            title="展开任务记录面板"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onNewRoom}
-            className="mt-3 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:border-accent/55 hover:bg-accent/[0.06] hover:text-accent"
-            aria-label="发起任务"
-            title="发起任务"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        </div>
-      ) : (
+      {!desktopCollapsed && (
         <>
           <button
             type="button"
@@ -887,17 +865,8 @@ export function RoomListSidebarDesktop({
           </button>
           <div className="app-islands-panel flex h-full flex-col border-r border-line bg-surface">
             <div className="shrink-0 border-b border-line px-4 py-3">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
                 <SidebarBrand />
-                <button
-                  type="button"
-                  onClick={onDesktopToggleCollapsed}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent"
-                  aria-label="收起任务记录面板"
-                  title="收起任务记录面板"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
               </div>
             </div>
             <div className="custom-scrollbar flex-1 overflow-y-auto p-3">

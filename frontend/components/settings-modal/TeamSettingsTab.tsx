@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CircleHelp, Copy, Edit2, GitBranch, Loader2, Plus, RefreshCw, Trash2, UsersRound, X } from 'lucide-react'
+import { CircleHelp, Copy, Edit2, GitBranch, Loader2, Plus, Trash2, UsersRound, X } from 'lucide-react'
 
 import { API_URL } from '@/lib/api'
 import { getAgentColor, type TeamListItem } from '@/lib/agents'
@@ -21,6 +21,7 @@ type TeamMemberSnapshot = NonNullable<TeamListItem['activeVersion']['memberSnaps
 type TeamMemberSkillRef = NonNullable<TeamMemberSnapshot['skillRefs']>[number]
 type SkillPickerSource = TeamMemberSkillRef['source']
 type TeamSubtab = 'members' | 'rules' | 'memory' | 'versions'
+type RoutingRule = { when: string; memberRole: string }
 
 const TEAM_SUBTABS: Array<{ id: TeamSubtab; label: string; description: string }> = [
   { id: 'members', label: '成员', description: '编辑成员分工、执行工具和 Skill' },
@@ -49,7 +50,6 @@ interface TeamSettingsPatch {
     workflowPrompt?: string
     routingPolicy?: Record<string, unknown>
     teamMemory?: string[]
-    maxA2ADepth?: number
   }
 }
 
@@ -104,6 +104,36 @@ function fallbackMembers(team?: TeamListItem): TeamMemberSnapshot[] {
     providerOpts: {},
     systemPrompt: '',
   }))
+}
+
+function getRoutingRules(policy?: Record<string, unknown>): RoutingRule[] {
+  const rules = Array.isArray(policy?.rules) ? policy.rules : []
+  return rules
+    .map(rule => {
+      if (typeof rule === 'string') {
+        const [when = rule, memberRole = ''] = rule.split('->').map(part => part.trim())
+        return { when, memberRole }
+      }
+      if (typeof rule !== 'object' || rule === null || Array.isArray(rule)) return null
+      const record = rule as Record<string, unknown>
+      return {
+        when: typeof record.when === 'string' ? record.when : '',
+        memberRole: typeof record.memberRole === 'string' ? record.memberRole : '',
+      }
+    })
+    .filter((rule): rule is RoutingRule => rule !== null && Boolean(rule.when || rule.memberRole))
+}
+
+function buildRoutingPolicy(policy: Record<string, unknown> | undefined, rules: RoutingRule[]): Record<string, unknown> {
+  return {
+    ...(policy ?? {}),
+    rules: rules
+      .map(rule => ({
+        when: rule.when.trim(),
+        memberRole: rule.memberRole.trim(),
+      }))
+      .filter(rule => rule.when || rule.memberRole),
+  }
 }
 
 function EditableText({
@@ -322,23 +352,33 @@ export function TeamSettingsTab({
   teams,
   skills,
   globalSkills,
+  initialTeamId,
   onUpdated,
 }: {
   teams: TeamListItem[]
   skills: SkillConfig[]
   globalSkills: ReadOnlySkill[]
+  initialTeamId?: string
   onUpdated: (team: TeamListItem) => void
 }) {
   const [selectedTeamId, setSelectedTeamId] = useState('')
+  const [appliedInitialTeamId, setAppliedInitialTeamId] = useState<string | undefined>(undefined)
   const [localTeams, setLocalTeams] = useState<TeamListItem[]>(teams)
-  const [currentTeamProvider, setCurrentTeamProvider] = useState<ProviderName>('opencode')
-  const [providerSaving, setProviderSaving] = useState(false)
-  const [providerStatus, setProviderStatus] = useState('')
-  const [providerError, setProviderError] = useState('')
   const [skillPickerMemberId, setSkillPickerMemberId] = useState<string | null>(null)
   const [activeSubtab, setActiveSubtab] = useState<TeamSubtab>('members')
 
   useEffect(() => setLocalTeams(teams), [teams])
+
+  useEffect(() => {
+    setAppliedInitialTeamId(undefined)
+  }, [initialTeamId])
+
+  useEffect(() => {
+    if (!initialTeamId || appliedInitialTeamId === initialTeamId) return
+    if (!localTeams.some(team => team.id === initialTeamId)) return
+    setSelectedTeamId(initialTeamId)
+    setAppliedInitialTeamId(initialTeamId)
+  }, [appliedInitialTeamId, initialTeamId, localTeams])
 
   useEffect(() => {
     setSkillPickerMemberId(null)
@@ -347,8 +387,9 @@ export function TeamSettingsTab({
 
   useEffect(() => {
     if (selectedTeamId && localTeams.some(team => team.id === selectedTeamId)) return
+    if (initialTeamId && localTeams.some(team => team.id === initialTeamId)) return
     setSelectedTeamId(localTeams[0]?.id ?? '')
-  }, [selectedTeamId, localTeams])
+  }, [initialTeamId, selectedTeamId, localTeams])
 
   const selectedTeam = useMemo(
     () => localTeams.find(team => team.id === selectedTeamId) ?? localTeams[0],
@@ -356,19 +397,11 @@ export function TeamSettingsTab({
   )
   const activeVersion = selectedTeam?.activeVersion
   const members = useMemo(() => fallbackMembers(selectedTeam), [selectedTeam])
-
-  useEffect(() => {
-    const providerValues = Array.from(new Set(members.map(member => member.provider).filter(Boolean)))
-    if (providerValues.length === 0) return
-    const firstProvider = providerValues[0]
-    if (providerValues.length === 1 && firstProvider !== currentTeamProvider) {
-      setCurrentTeamProvider(firstProvider)
-      return
-    }
-    if (!providerValues.includes(currentTeamProvider)) {
-      setCurrentTeamProvider(firstProvider)
-    }
-  }, [currentTeamProvider, members])
+  const routingRules = useMemo(
+    () => getRoutingRules(activeVersion?.routingPolicy),
+    [activeVersion],
+  )
+  const teamMemory = activeVersion?.teamMemory ?? []
 
   const skillOptions = useMemo<SkillPickerOption[]>(() => [
     ...skills
@@ -412,6 +445,42 @@ export function TeamSettingsTab({
     return saveSelected({ version: { memberSnapshots: nextMembers } })
   }
 
+  function saveRoutingRules(nextRules: RoutingRule[]) {
+    if (!activeVersion) return Promise.resolve()
+    return saveSelected({ version: { routingPolicy: buildRoutingPolicy(activeVersion.routingPolicy, nextRules) } })
+  }
+
+  function updateRoutingRule(index: number, update: Partial<RoutingRule>) {
+    const nextRules = routingRules.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...update } : rule)
+    return saveRoutingRules(nextRules)
+  }
+
+  function addRoutingRule() {
+    const fallbackRole = members[0]?.roleLabel || members[0]?.name || '成员角色'
+    return saveRoutingRules([...routingRules, { when: '新的触发条件', memberRole: fallbackRole }])
+  }
+
+  function removeRoutingRule(index: number) {
+    return saveRoutingRules(routingRules.filter((_rule, ruleIndex) => ruleIndex !== index))
+  }
+
+  function saveTeamMemory(nextMemory: string[]) {
+    return saveSelected({ version: { teamMemory: nextMemory } })
+  }
+
+  function updateTeamMemory(index: number, value: string) {
+    const nextMemory = teamMemory.map((item, itemIndex) => itemIndex === index ? value : item).filter(item => item.trim())
+    return saveTeamMemory(nextMemory)
+  }
+
+  function addTeamMemory() {
+    return saveTeamMemory([...teamMemory, '新的团队记忆'])
+  }
+
+  function removeTeamMemory(index: number) {
+    return saveTeamMemory(teamMemory.filter((_item, itemIndex) => itemIndex !== index))
+  }
+
   function updateMember(memberId: string, update: Partial<TeamMemberSnapshot>) {
     const nextMembers = members.map(member => member.id === memberId ? { ...member, ...update } : member)
     return saveMembers(nextMembers)
@@ -439,22 +508,6 @@ export function TeamSettingsTab({
     })
   }
 
-  async function applyProviderToCurrentTeam() {
-    if (!selectedTeam) return
-    setProviderSaving(true)
-    setProviderStatus('')
-    setProviderError('')
-    try {
-      await saveMembers(members.map(member => ({ ...member, provider: currentTeamProvider })))
-      setProviderStatus('已应用到当前 Team')
-      window.setTimeout(() => setProviderStatus(''), 1600)
-    } catch (err) {
-      setProviderError(err instanceof Error ? err.message : '保存失败')
-    } finally {
-      setProviderSaving(false)
-    }
-  }
-
   if (localTeams.length === 0) {
     return (
       <section className="flex h-full items-center justify-center bg-surface-muted p-6 text-center">
@@ -474,15 +527,6 @@ export function TeamSettingsTab({
             <h2 className="sr-only">Team 设置</h2>
             <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">Team · {localTeams.length}</p>
           </div>
-          <button
-            type="button"
-            disabled
-            title="新建 Team 即将开放"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft opacity-60"
-            aria-label="新建 Team"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-          </button>
         </div>
         <div className="space-y-1">
           {localTeams.map(team => {
@@ -544,28 +588,8 @@ export function TeamSettingsTab({
                 <Copy className="h-3.5 w-3.5" aria-hidden />
                 克隆为新 Team
               </button>
-              <button
-                type="button"
-                disabled={providerSaving}
-                onClick={() => void applyProviderToCurrentTeam()}
-                aria-label="应用到当前 Team"
-                title="应用到当前 Team"
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-[12px] font-bold text-on-accent transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {providerSaving ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-                )}
-                把当前 Provider 应用到全员
-              </button>
             </div>
           </div>
-          {(providerStatus || providerError) && (
-            <p className={`mt-2 text-[11px] ${providerError ? 'text-[color:var(--danger)]' : 'text-ink-faint'}`}>
-              {providerError || providerStatus}
-            </p>
-          )}
 
           <div className="mt-4 flex gap-5 overflow-x-auto border-b border-line text-[13px] text-ink-soft custom-scrollbar">
             {TEAM_SUBTABS.map(item => (
@@ -598,9 +622,9 @@ export function TeamSettingsTab({
                 return (
                   <div
                     key={member.id}
-                    className="rounded-[10px] border border-line bg-surface-muted/70 px-4 py-3.5"
+                    className="member-card rounded-xl border-y border-r border-l-[3px] border-y-line border-r-line border-l-accent/40 bg-surface px-4 py-4 shadow-sm transition-colors hover:border-l-accent/70"
                   >
-                    <div className="flex gap-3.5">
+                    <div className="grid gap-3.5 md:grid-cols-[2.75rem_minmax(0,1fr)]">
                       <AgentAvatar
                         name={member.name}
                         color={color.bg}
@@ -609,32 +633,68 @@ export function TeamSettingsTab({
                         className="mt-0.5 shrink-0 rounded-full ring-2 ring-surface"
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                          <span className="sr-only">成员名称</span>
-                          <span className="sr-only">成员名称：给这个成员起一个好识别的名字，例如 信息搜集专员、风险审查员。</span>
-                          <div className="min-w-0 max-w-[18rem]">
-                            <EditableText
-                              value={member.name}
-                              placeholder="成员名称"
-                              className="px-0 py-0 text-[14px] font-semibold hover:bg-transparent"
-                              onSave={value => updateMember(member.id, { name: value })}
-                            />
+                        <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="sr-only">成员名称</span>
+                              <span className="sr-only">成员名称：给这个成员起一个好识别的名字，例如 信息搜集专员、风险审查员。</span>
+                              <div className="min-w-0 max-w-[18rem]">
+                                <EditableText
+                                  value={member.name}
+                                  placeholder="成员名称"
+                                  className="px-0 py-0 text-[14px] font-semibold hover:bg-transparent"
+                                  onSave={value => updateMember(member.id, { name: value })}
+                                />
+                              </div>
+                              <Edit2 className="h-3 w-3 shrink-0 text-ink-faint" aria-hidden />
+                            </div>
+                            <span className="sr-only">角色分工：一句话说明它在 Team 里的身份，例如 信息搜集、方案设计、审查把关。</span>
+                            <div className="mt-1 max-w-[28rem]">
+                              <EditableText
+                                value={member.roleLabel}
+                                placeholder="角色分工"
+                                className="px-0 py-0 text-[11px] text-ink-soft hover:bg-transparent"
+                                onSave={value => updateMember(member.id, { roleLabel: value })}
+                              />
+                            </div>
                           </div>
-                          <Edit2 className="h-3 w-3 shrink-0 text-ink-faint" aria-hidden />
-                          <span className="sr-only">角色分工：一句话说明它在 Team 里的身份，例如 信息搜集、方案设计、审查把关。</span>
-                          <div className="max-w-[15rem]">
-                            <EditableText
-                              value={member.roleLabel}
-                              placeholder="角色分工"
-                              className="px-0 py-0 text-[11px] text-ink-soft hover:bg-transparent"
-                              onSave={value => updateMember(member.id, { roleLabel: value })}
-                            />
+                          <div className="member-toolbar member-action-bar grid shrink-0 gap-1.5 rounded-lg border border-line bg-surface-muted/60 p-1.5 shadow-sm sm:grid-cols-[auto_auto]">
+                            <span className="sr-only">执行工具：选择这个成员实际调用哪个 CLI 工具，例如 OpenCode 或 Codex CLI。</span>
+                            <span className="member-provider-select inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface pl-2 pr-1 transition-colors hover:border-accent/30">
+                              <span className="shrink-0 text-[10px] font-bold text-ink-faint">执行工具</span>
+                              <CustomSelect<ProviderName>
+                                value={member.provider}
+                                onChange={provider => void updateMember(member.id, { provider })}
+                                options={PROVIDER_OPTIONS}
+                                ariaLabel={`选择 ${member.name} 的执行工具`}
+                                className="w-[8.75rem]"
+                                buttonClassName="h-7 cursor-pointer gap-1 rounded-md border-transparent bg-transparent px-2 py-0 text-[11px] hover:border-transparent hover:bg-surface-muted focus:ring-2 focus:ring-accent/20"
+                                menuClassName="right-auto min-w-[9rem]"
+                              />
+                            </span>
+                            <span className="sr-only">角色灵魂：给执行工具看的完整工作要求，适合写边界、步骤、输出格式和注意事项。</span>
+                            <span className="role-soul-edit inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface px-2 transition-colors hover:border-accent/30">
+                              <Edit2 className="h-3 w-3 shrink-0 text-ink-faint" aria-hidden />
+                              <EditableText
+                                value={member.systemPrompt}
+                                placeholder="角色灵魂"
+                                multiline
+                                monospace
+                                displayLabel="角色灵魂"
+                                alwaysUseDialog
+                                longTextDialogTitle="编辑角色灵魂"
+                                className="h-6 w-auto cursor-pointer whitespace-nowrap rounded-md border border-transparent bg-transparent px-0 py-0 text-[11px] font-semibold text-ink-soft hover:bg-transparent hover:text-accent focus:ring-2 focus:ring-accent/20"
+                                onSave={value => updateMember(member.id, { systemPrompt: value })}
+                              />
+                            </span>
                           </div>
                         </div>
 
-                        <div className="mt-2.5 grid gap-3.5 md:grid-cols-2">
-                          <div>
-                            <FieldLabel help="负责什么：写清楚它主要产出什么，例如 搜集资料、写方案、做审查。">负责什么</FieldLabel>
+                        <div className="member-field-grid mt-3 grid gap-x-5 gap-y-3 border-t border-line pt-3 md:grid-cols-2">
+                          <div className="min-w-0">
+                            <div className="member-field-label">
+                              <FieldLabel help="负责什么：写清楚它主要产出什么，例如 搜集资料、写方案、做审查。">负责什么</FieldLabel>
+                            </div>
                             <EditableText
                               value={member.responsibility ?? ''}
                               placeholder="负责什么"
@@ -644,8 +704,10 @@ export function TeamSettingsTab({
                               onSave={value => updateMember(member.id, { responsibility: value })}
                             />
                           </div>
-                          <div>
-                            <FieldLabel help="什么时候用它：写清楚什么情况下该找它，例如 用户要查资料时。">什么时候用它</FieldLabel>
+                          <div className="min-w-0">
+                            <div className="member-field-label">
+                              <FieldLabel help="什么时候用它：写清楚什么情况下该找它，例如 用户要查资料时。">什么时候用它</FieldLabel>
+                            </div>
                             <EditableText
                               value={member.whenToUse ?? ''}
                               placeholder="什么时候用它"
@@ -655,25 +717,11 @@ export function TeamSettingsTab({
                               onSave={value => updateMember(member.id, { whenToUse: value })}
                             />
                           </div>
-                        </div>
 
-                        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-ink-soft">
-                          <span className="sr-only">执行工具：选择这个成员实际调用哪个 CLI 工具，例如 OpenCode 或 Codex CLI。</span>
-                          <span className="inline-flex min-w-0 items-center gap-1.5">
-                            <FieldLabel>执行工具</FieldLabel>
-                            <CustomSelect<ProviderName>
-                              value={member.provider}
-                              onChange={provider => void updateMember(member.id, { provider })}
-                              options={PROVIDER_OPTIONS}
-                              ariaLabel={`选择 ${member.name} 的执行工具`}
-                              className="min-w-32"
-                              buttonClassName="h-7 rounded-md px-2 py-1 text-[11px]"
-                              menuClassName="min-w-44"
-                            />
-                          </span>
-                          <span className="h-3.5 w-px bg-line" aria-hidden />
-                          <span className="relative inline-flex min-w-0 flex-wrap items-center gap-1.5">
-                            <FieldLabel help="Skill：从系统维护或系统扫描到的 Skill 中选择这个成员运行时需要的能力包。">Skill</FieldLabel>
+                          <div className="relative flex min-w-0 flex-wrap items-center gap-1.5 border-t border-line pt-3 text-[12px] text-ink-soft md:col-span-2">
+                              <div className="member-field-label">
+                                <FieldLabel help="Skill：从系统维护或系统扫描到的 Skill 中选择这个成员运行时需要的能力包。">Skill</FieldLabel>
+                              </div>
                             {memberSkillRefs.length === 0 ? (
                               <span className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] text-ink-faint">未配置</span>
                             ) : (
@@ -701,7 +749,7 @@ export function TeamSettingsTab({
                             <button
                               type="button"
                               onClick={() => setSkillPickerMemberId(current => current === member.id ? null : member.id)}
-                              className="inline-flex h-6 items-center justify-center rounded border border-dashed border-line bg-transparent px-2 text-[11px] text-ink-soft transition-colors hover:border-accent/40 hover:text-accent"
+                              className="inline-flex h-6 cursor-pointer items-center justify-center rounded border border-dashed border-line bg-transparent px-2 text-[11px] text-ink-soft transition-colors hover:border-accent/40 hover:text-accent"
                               aria-label={`给 ${member.name} 添加 Skill`}
                             >
                               + 添加
@@ -731,37 +779,129 @@ export function TeamSettingsTab({
                                 </div>
                               </div>
                             )}
-                          </span>
+                          </div>
                         </div>
-                      </div>
-
-                      <div className="flex shrink-0 flex-col items-end gap-1.5">
-                        <span className="sr-only">详细工作说明：给执行工具看的完整工作要求，适合写边界、步骤、输出格式和注意事项。</span>
-                        <EditableText
-                          value={member.systemPrompt}
-                          placeholder="详细工作说明"
-                          multiline
-                          monospace
-                          displayLabel="详细工作说明"
-                          alwaysUseDialog
-                          longTextDialogTitle="编辑详细工作说明"
-                          className="max-w-36 px-0 py-0 text-right text-[11.5px] text-ink-soft hover:bg-transparent hover:text-accent"
-                          onSave={value => updateMember(member.id, { systemPrompt: value })}
-                        />
-                        <button
-                          type="button"
-                          disabled
-                          title="移除成员建设中"
-                          className="inline-flex items-center gap-1 text-[11.5px] text-[color:var(--danger)] opacity-50"
-                        >
-                          <Trash2 className="h-3 w-3" aria-hidden />
-                          移除
-                        </button>
                       </div>
                     </div>
                   </div>
                 )
               })}
+            </section>
+          ) : activeSubtab === 'rules' ? (
+            <section className="mt-4 space-y-4">
+              <div className="rounded-[10px] border border-line bg-surface-muted/70 px-4 py-3.5">
+                <FieldLabel help="这段内容会进入 Team 成员运行时的系统提示，决定团队如何协作、接力和收敛。">团队协作说明</FieldLabel>
+                <EditableText
+                  value={activeVersion.workflowPrompt ?? ''}
+                  placeholder="点击编辑团队协作说明"
+                  multiline
+                  longTextDialogTitle="编辑团队协作说明"
+                  alwaysUseDialog
+                  className="mt-1 px-0 text-[12.5px] leading-6 hover:bg-transparent"
+                  onSave={value => saveSelected({ version: { workflowPrompt: value } })}
+                />
+              </div>
+
+              <div className="rounded-[10px] border border-line bg-surface-muted/70 px-4 py-3.5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <FieldLabel help="定义什么情况应该交给哪个角色。生成 Team 时标准格式是 when -> memberRole。">协作路由规则</FieldLabel>
+                    <p className="mt-1 text-[12px] leading-5 text-ink-soft">每条规则描述一个触发条件，以及应该接力给的成员角色。</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void addRoutingRule()}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed border-line bg-surface px-2.5 text-[11px] font-semibold text-ink-soft transition-colors hover:border-accent/40 hover:text-accent"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden />
+                    添加规则
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-2.5">
+                  {routingRules.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-line bg-surface px-3 py-3 text-[12px] text-ink-soft">暂无路由规则。</p>
+                  ) : routingRules.map((rule, index) => (
+                    <div key={`${rule.when}-${rule.memberRole}-${index}`} className="rounded-lg border border-line bg-surface px-3 py-3">
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)_auto] md:items-start">
+                        <div>
+                          <FieldLabel>触发条件</FieldLabel>
+                          <EditableText
+                            value={rule.when}
+                            placeholder="例如：需求不清时"
+                            multiline
+                            longTextDialogTitle="编辑触发条件"
+                            className="mt-0.5 px-0 text-[12.5px] leading-5 hover:bg-transparent"
+                            onSave={value => updateRoutingRule(index, { when: value })}
+                          />
+                        </div>
+                        <div>
+                          <FieldLabel>交给角色</FieldLabel>
+                          <EditableText
+                            value={rule.memberRole}
+                            placeholder="例如：需求澄清"
+                            className="mt-0.5 px-0 text-[12.5px] leading-5 hover:bg-transparent"
+                            onSave={value => updateRoutingRule(index, { memberRole: value })}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void removeRoutingRule(index)}
+                          className="inline-flex h-8 items-center gap-1 self-start rounded-lg px-2 text-[11px] font-semibold text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/8"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </section>
+          ) : activeSubtab === 'memory' ? (
+            <section className="mt-4 rounded-[10px] border border-line bg-surface-muted/70 px-4 py-3.5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <FieldLabel help="保存 Team 级别的长期偏好、约束和经验，用于后续 Team 演进和协作配置。">Team 长期记忆</FieldLabel>
+                  <p className="mt-1 text-[12px] leading-5 text-ink-soft">每条记忆应该是可复用的团队规则或偏好。</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void addTeamMemory()}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed border-line bg-surface px-2.5 text-[11px] font-semibold text-ink-soft transition-colors hover:border-accent/40 hover:text-accent"
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden />
+                  添加记忆
+                </button>
+              </div>
+
+              <div className="mt-3 space-y-2.5">
+                {teamMemory.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-line bg-surface px-3 py-3 text-[12px] text-ink-soft">暂无长期记忆。</p>
+                ) : teamMemory.map((item, index) => (
+                  <div key={`${item}-${index}`} className="flex gap-2 rounded-lg border border-line bg-surface px-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <EditableText
+                        value={item}
+                        placeholder="例如：交付前必须说明验证证据"
+                        multiline
+                        longTextDialogTitle="编辑 Team 长期记忆"
+                        className="px-0 py-0 text-[12.5px] leading-5 hover:bg-transparent"
+                        onSave={value => updateTeamMemory(index, value)}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void removeTeamMemory(index)}
+                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/8"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      删除
+                    </button>
+                  </div>
+                ))}
+              </div>
             </section>
           ) : (
             <ConstructionPanel

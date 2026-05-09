@@ -30,6 +30,7 @@
     "test:create-room-existing-team-uiux": "node tests/create-room-existing-team-uiux-regression.mjs",
     "test:create-room-overall-ux": "node tests/create-room-overall-ux-regression.mjs",
     "test:create-team-generate": "node tests/create-team-generate-regression.mjs",
+    "test:room-empty-uiux": "node tests/room-empty-uiux-regression.mjs",
     "test:command-palette": "node tests/command-palette-regression.mjs",
     "test:room-active-a2a": "node tests/room-active-a2a-regression.mjs",
     "test:room-done-state": "node tests/room-done-state-regression.mjs",

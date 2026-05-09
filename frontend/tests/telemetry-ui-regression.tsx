@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { AgentPanel } from '../components/AgentPanel'
 import { MetadataBadge } from '../components/MetadataBadge'
-import { formatSessionSnapshotLabel, getRemainingContextRatio, mergeSessionTelemetryMaps } from '../lib/telemetry'
+import { formatLatencyMs, formatSessionSnapshotLabel, getRemainingContextRatio, mergeSessionTelemetryMaps } from '../lib/telemetry'
+
+assert.equal(formatLatencyMs(10000), '10.0s')
 
 assert.equal(
   formatSessionSnapshotLabel({
@@ -36,12 +38,14 @@ const markup = renderToStaticMarkup(
 
 assert.match(markup, /Claude Code/)
 assert.doesNotMatch(markup, /Session ID/)
-assert.match(markup, /ArrowDown|svg/)
+assert.doesNotMatch(markup, /ArrowDown|ArrowUp|Clock3/)
+assert.doesNotMatch(markup, /<svg/)
 assert.match(markup, /43k/)
 assert.match(markup, /86/)
 assert.match(markup, /title="Claude Code · MiniMax-M2\.7-highspeed-long-model-name-for-wrap-check"/)
 assert.match(markup, /2\.4s/)
 assert.match(markup, /\$0\.010/)
+assert.match(markup, /Claude Code[\s\S]*43k[\s\S]*86[\s\S]*2\.4s/)
 
 const agentPanelMarkup = renderToStaticMarkup(
   <AgentPanel

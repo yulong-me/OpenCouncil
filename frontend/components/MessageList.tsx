@@ -280,7 +280,7 @@ export const MessageList = memo(function MessageList({
   }, [agentNameSet, agentNames, sortedMessages])
 
   return (
-    <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 md:px-8 md:py-6 md:space-y-6 custom-scrollbar" ref={containerRef} onScroll={onScroll}>
+    <div className="flex flex-1 flex-col overflow-y-auto px-3 py-4 space-y-4 md:px-8 md:py-6 md:space-y-6 custom-scrollbar" ref={containerRef} onScroll={onScroll}>
       {sortedMessages.map(msg => (
         <MessageBubble
           key={msg.id}
@@ -326,13 +326,13 @@ export const MessageList = memo(function MessageList({
       )}
 
       {!loading && sortedMessages.length === 0 && roomId && (
-        <div className="flex min-h-[24rem] items-center justify-center px-4 py-8 text-center text-ink-soft">
+        <div className="flex min-h-full flex-1 items-center justify-center px-4 py-10 text-center text-ink-soft">
           <div className="w-full max-w-[560px]">
             <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-faint">· 现场已就绪 ·</p>
             <h2 className="font-display text-[36px] font-normal leading-[1.15] text-ink">
               从 <span className="italic text-accent">@一位专家</span> 开始
             </h2>
-            <p className="mx-auto mt-3 max-w-[480px] text-[13px] leading-6 text-ink-soft">
+            <p className="mx-auto mt-3.5 max-w-[480px] text-[14px] leading-[1.6] text-ink-soft">
               {teamId === 'software-development'
                 ? (
                     <>
@@ -359,14 +359,18 @@ export const MessageList = memo(function MessageList({
                       type="button"
                       data-empty-room-agent-pill="true"
                       onClick={() => onPrefillMention(agent)}
-                      className="inline-flex items-center gap-2 rounded-full border border-line bg-surface py-1.5 pl-1.5 pr-3 text-[12px] font-medium text-ink shadow-sm transition-colors hover:border-accent/45 hover:bg-surface-muted hover:text-accent"
+                      className="inline-flex items-center gap-2 rounded-full border py-1.5 pl-1.5 pr-3 text-[12px] font-medium text-ink transition-colors hover:border-accent/45 hover:bg-surface-muted hover:text-accent"
+                      style={{
+                        borderColor: `${agentColors.bg}33`,
+                        backgroundColor: `${agentColors.bg}0D`,
+                      }}
                     >
                       <AgentAvatar
                         name={agent.name}
-                        color={agentColors.bg}
-                        textColor={agentColors.text}
+                        color={`${agentColors.bg}1A`}
+                        textColor={agentColors.bg}
                         size={20}
-                        className="rounded-full"
+                        className="rounded-full ring-1 ring-inset ring-current/20"
                       />
                       <span className="font-mono text-ink-faint">@</span>
                       <span>{agent.name}</span>
@@ -390,7 +394,7 @@ export const MessageList = memo(function MessageList({
       {showScrollBtn && (
         <button
           onClick={onScrollToBottom}
-          className="sticky bottom-4 left-1/2 -translate-x-1/2 layer-local-float bg-accent text-on-accent px-4 py-2 rounded-full text-xs font-medium shadow-lg hover:bg-accent-deep transition-colors flex items-center gap-1.5"
+          className="sticky bottom-4 self-center w-fit shrink-0 layer-local-float bg-accent text-on-accent px-4 py-2 rounded-full text-xs font-medium shadow-lg hover:bg-accent-deep transition-colors flex items-center gap-1.5"
         >
           <ChevronDown className="w-3.5 h-3.5" /> 回到底部
         </button>
@@ -680,68 +684,79 @@ const ToolCalls = memo(function ToolCalls({
   onHoverToolCall,
   onToggleExpandedToolCall,
 }: ToolCallsProps) {
+  const [toolCallsOpen, setToolCallsOpen] = useState(false)
+
   return (
     <div className="mb-3">
-      <div className="flex items-center gap-2 text-xs font-medium mb-2 px-2 py-1 rounded-lg" style={{ color: agentColor, backgroundColor: `${agentColor}10` }}>
+      <button
+        type="button"
+        aria-expanded={toolCallsOpen}
+        onClick={() => setToolCallsOpen(open => !open)}
+        className="mb-2 flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-medium transition-colors hover:bg-surface-muted"
+        style={{ color: agentColor, backgroundColor: `${agentColor}10` }}
+      >
+        <ChevronDown className={`h-3 w-3 transition-transform ${toolCallsOpen ? 'rotate-0' : '-rotate-90'}`} />
         <Wrench className="w-3 h-3" />
         <span>工具调用</span>
         <span className="text-[11px] opacity-50 font-normal tracking-wider">{toolCalls.length} 次</span>
-      </div>
-      <div className="ml-2 pl-3.5 border-l-2 font-mono text-[13px] flex flex-wrap gap-2 items-center" style={{ borderColor: `${agentColor}40` }}>
-        {toolCalls.map((tool, i) => {
-          const key = `${msgId}-${tool.callId ?? i}`
-          const isHovered = hoveredToolCall === key
-          const isExpanded = expandedToolCall === key
-          return (
-            <div key={tool.callId ?? i} className="relative">
-              <span
-                className="text-[11px] font-bold px-2 py-1 rounded cursor-help whitespace-nowrap"
-                style={{ backgroundColor: `${agentColor}20`, color: agentColor }}
-                onMouseEnter={() => {
-                  if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current)
-                  onHoverToolCall(key)
-                }}
-                onMouseLeave={() => {
-                  hoverTimerRef.current = window.setTimeout(() => onHoverToolCall(null), 100)
-                }}
-              >
-                {tool.toolName}
-              </span>
-              {isHovered && (
-                <div
-                  className="absolute layer-tooltip left-0 top-full mt-1 w-80 bg-surface border border-line rounded-lg shadow-xl text-xs select-text"
+      </button>
+      {toolCallsOpen && (
+        <div className="ml-2 pl-3.5 border-l-2 font-mono text-[13px] flex flex-wrap gap-2 items-center" style={{ borderColor: `${agentColor}40` }}>
+          {toolCalls.map((tool, i) => {
+            const key = `${msgId}-${tool.callId ?? i}`
+            const isHovered = hoveredToolCall === key
+            const isExpanded = expandedToolCall === key
+            return (
+              <div key={tool.callId ?? i} className="relative">
+                <span
+                  className="text-[11px] font-bold px-2 py-1 rounded cursor-help whitespace-nowrap"
+                  style={{ backgroundColor: `${agentColor}20`, color: agentColor }}
                   onMouseEnter={() => {
                     if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current)
                     onHoverToolCall(key)
                   }}
-                  onMouseLeave={() => onHoverToolCall(null)}
+                  onMouseLeave={() => {
+                    hoverTimerRef.current = window.setTimeout(() => onHoverToolCall(null), 100)
+                  }}
                 >
-                  <div className="flex items-center justify-between px-3 py-2 border-b border-line">
-                    <span className="font-medium text-ink-soft">{tool.toolName}</span>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => onToggleExpandedToolCall(isExpanded ? null : key)}
-                        className="p-1 rounded hover:bg-surface-muted text-ink-soft hover:text-ink transition-colors"
-                        title={isExpanded ? '收起' : '全屏'}
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(JSON.stringify(tool.toolInput, null, 2))}
-                        className="p-1 rounded hover:bg-surface-muted text-ink-soft hover:text-ink transition-colors"
-                        title="复制全部"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
+                  {tool.toolName}
+                </span>
+                {isHovered && (
+                  <div
+                    className="absolute layer-tooltip left-0 top-full mt-1 w-80 bg-surface border border-line rounded-lg shadow-xl text-xs select-text"
+                    onMouseEnter={() => {
+                      if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current)
+                      onHoverToolCall(key)
+                    }}
+                    onMouseLeave={() => onHoverToolCall(null)}
+                  >
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-line">
+                      <span className="font-medium text-ink-soft">{tool.toolName}</span>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => onToggleExpandedToolCall(isExpanded ? null : key)}
+                          className="p-1 rounded hover:bg-surface-muted text-ink-soft hover:text-ink transition-colors"
+                          title={isExpanded ? '收起' : '全屏'}
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => navigator.clipboard.writeText(JSON.stringify(tool.toolInput, null, 2))}
+                          className="p-1 rounded hover:bg-surface-muted text-ink-soft hover:text-ink transition-colors"
+                          title="复制全部"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
+                    <pre className={`text-[11px] text-ink whitespace-pre-wrap break-all p-3 ${isExpanded ? 'max-h-none overflow-y-visible' : 'max-h-48 overflow-y-auto'}`}>{JSON.stringify(tool.toolInput, null, 2)}</pre>
                   </div>
-                  <pre className={`text-[11px] text-ink whitespace-pre-wrap break-all p-3 ${isExpanded ? 'max-h-none overflow-y-visible' : 'max-h-48 overflow-y-auto'}`}>{JSON.stringify(tool.toolInput, null, 2)}</pre>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 })

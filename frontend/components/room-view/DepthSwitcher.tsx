@@ -53,23 +53,23 @@ export function DepthSwitcher({ value, onChange, currentDepth, maxDepth }: {
   }
 
   return (
-    <div ref={rootRef} className="relative flex items-center" title="A2A 协作深度">
+    <div ref={rootRef} className="relative flex shrink-0 items-center" title="A2A 协作深度">
       <button
         type="button"
         onClick={() => setOpen(current => !current)}
         onKeyDown={handleTriggerKeyDown}
         aria-expanded={open}
         aria-label={`A2A 协作深度：剩余 ${remaining}，上限 ${maxDepth === 0 ? '无限' : maxDepth}`}
-        className="inline-flex h-9 items-center gap-1 rounded-lg bg-surface-muted px-2 text-[11px] font-semibold transition-colors hover:bg-surface-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
+        className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-surface-muted px-2 text-[11px] font-semibold transition-colors hover:bg-surface-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35"
       >
         <span className="text-ink-soft">A2A</span>
-        <span className="text-accent font-bold">{remaining}</span>
+        <span className="font-bold text-accent">{remaining}</span>
         <span className="text-ink-soft">/</span>
         <span className="text-ink">{maxDepth === 0 ? '∞' : maxDepth}</span>
-        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 layer-dropdown min-w-[120px] overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+        <div className="absolute left-0 top-full layer-dropdown mt-1 min-w-[120px] overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
           {options.map(option => (
             <button
               key={String(option.value)}

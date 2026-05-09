@@ -20,12 +20,10 @@ import {
 import {
   extractUserMentionsFromAgents,
   findActiveMentionTrigger,
-  getAgentColor,
   insertMention,
   type Agent,
 } from '../lib/agents'
 import { telemetry } from '../lib/logger'
-import { AgentAvatar } from './AgentAvatar'
 import MentionPicker from './MentionPicker'
 
 export interface RoomComposerHandle {
@@ -78,9 +76,9 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
     const targetName = mentionNames[0]
     return targetName ? agents.find(agent => agent.name === targetName) ?? null : null
   }, [agentNames, agents, userInput])
-  const selectedRecipientColors = selectedRecipient
-    ? getAgentColor(selectedRecipient.name)
-    : null
+  const emptyPlaceholder = agents[0]?.name
+    ? `@${agents[0]?.name} 我们要重构 thermal_curve.py …`
+    : '说清楚目标、交付物、边界。'
 
   const filteredAgents = useMemo(() => {
     const base = mentionQuery
@@ -325,41 +323,11 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
           onHighlight={setMentionHighlightIdx}
         />
       )}
-      <div className="app-islands-input rounded-[18px] border border-line bg-surface px-2.5 py-2 shadow-sm transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/[0.22] md:rounded-xl md:px-3 md:py-2.5">
-        <div className="mb-1 flex items-center justify-between gap-2 md:mb-2">
-          {selectedRecipient && selectedRecipientColors ? (
-            <div
-              className="inline-flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-caption font-medium"
-              style={{
-                borderColor: `${selectedRecipientColors.bg}42`,
-                backgroundColor: `${selectedRecipientColors.bg}12`,
-                color: selectedRecipientColors.bg,
-              }}
-            >
-              <AgentAvatar
-                name={selectedRecipient.name}
-                color={selectedRecipientColors.bg}
-                textColor={selectedRecipientColors.text}
-                size={16}
-                className="rounded-full"
-              />
-              <span className="min-w-0 truncate">@{selectedRecipient.name}</span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              data-recipient-ghost="true"
-              onClick={openRecipientPicker}
-              className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-dashed border-line bg-surface-muted px-2.5 py-1.5 text-caption font-medium text-ink-soft transition-colors hover:border-accent/55 hover:text-accent"
-            >
-              先 @ 选一位 Team 成员
-            </button>
-          )}
-        </div>
+      <div className="app-islands-input rounded-xl border border-line bg-surface px-3 py-2.5 shadow-sm transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/[0.18]">
         <textarea
           ref={textareaRef}
-          className="min-h-10 md:min-h-16 max-h-48 w-full resize-none border-0 bg-transparent px-1 py-1 text-body text-ink placeholder:text-ink-faint focus:outline-none"
-          placeholder={selectedRecipient ? `告诉 ${selectedRecipient.name} 这次要做什么` : '告诉 Team 这次要做什么，或先 @ 选择成员'}
+          className="min-h-[50px] max-h-48 w-full resize-none border-0 bg-transparent px-1 py-1 text-body text-ink placeholder:text-ink-faint focus:outline-none"
+          placeholder={selectedRecipient ? `告诉 ${selectedRecipient.name} 这次要做什么` : emptyPlaceholder}
           value={userInput}
           onChange={handleInputChange}
           onCompositionStart={handleCompositionStart}

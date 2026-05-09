@@ -217,53 +217,59 @@ export function WorkspaceSidebar({ workspacePath }: WorkspaceSidebarProps) {
 
   return (
     <>
-      <div className="space-y-2.5 rounded-2xl border border-line bg-surface-muted px-2.5 py-2.5 shadow-sm">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <p className="min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft/45">Workspace</p>
+      <div className="space-y-2 rounded-[9px] border border-line bg-surface px-[10px] py-[10px] shadow-none">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft/45">Workspace</p>
+            <p className="mt-1 truncate text-[12px] font-semibold text-ink" title={workspacePath}>
+              {workspaceLabel}
+            </p>
           </div>
-          <p className="truncate text-[12px] font-medium text-ink" title={workspacePath}>
-            {workspaceLabel}
-          </p>
-          <p className="truncate text-[10px] text-ink-soft/60" title={workspacePath}>
-            {workspacePath}
-          </p>
-          {externalNotice && <p className="tone-success-text text-[10px]">{externalNotice}</p>}
-          {externalError && <p className="tone-danger-text text-[10px]">{externalError}</p>}
+
+          <div
+            role="tablist"
+            aria-label="Workspace 视图"
+            className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md border border-line bg-surface-muted/70 p-0.5"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'files'}
+              onClick={() => {
+                debug('ui:workspace:tab_change', { workspacePath, tab: 'files' })
+                setTab('files')
+              }}
+              className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[10.5px] font-medium transition-colors ${
+                tab === 'files'
+                  ? 'bg-surface text-ink shadow-sm'
+                  : 'text-ink-soft hover:bg-surface hover:text-ink'
+              }`}
+            >
+              <FolderTree className="h-3.5 w-3.5" aria-hidden />
+              Files
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'git'}
+              onClick={() => {
+                debug('ui:workspace:tab_change', { workspacePath, tab: 'git' })
+                setTab('git')
+              }}
+              className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[10.5px] font-medium transition-colors ${
+                tab === 'git'
+                  ? 'bg-surface text-ink shadow-sm'
+                  : 'text-ink-soft hover:bg-surface hover:text-ink'
+              }`}
+            >
+              <GitBranch className="h-3.5 w-3.5" aria-hidden />
+              Git
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            onClick={() => {
-              debug('ui:workspace:tab_change', { workspacePath, tab: 'files' })
-              setTab('files')
-            }}
-            className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-medium transition-colors ${
-              tab === 'files'
-                ? 'bg-accent text-on-accent shadow-[0_8px_18px_rgba(0,0,0,0.18)]'
-                : 'border border-line bg-surface text-ink-soft hover:text-ink hover:bg-surface-muted'
-            }`}
-          >
-            <FolderTree className="h-3.5 w-3.5" />
-            Files
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              debug('ui:workspace:tab_change', { workspacePath, tab: 'git' })
-              setTab('git')
-            }}
-            className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-medium transition-colors ${
-              tab === 'git'
-                ? 'bg-accent text-on-accent shadow-[0_8px_18px_rgba(0,0,0,0.18)]'
-                : 'border border-line bg-surface text-ink-soft hover:text-ink hover:bg-surface-muted'
-            }`}
-          >
-            <GitBranch className="h-3.5 w-3.5" />
-            Git
-          </button>
-        </div>
+        {externalNotice && <p className="tone-success-text text-[10px]">{externalNotice}</p>}
+        {externalError && <p className="tone-danger-text text-[10px]">{externalError}</p>}
 
         {tab === 'files'
           ? <WorkspaceFilesPanel workspacePath={workspacePath} onOpenFile={openFilePreview} onOpenExternal={openExternal} />

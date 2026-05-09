@@ -24,7 +24,7 @@ export function formatCompactTokenCount(value?: number): string {
 export function formatLatencyMs(value?: number): string {
   if (!isFiniteNonNegative(value)) return '0ms'
   if (value < 1000) return `${Math.round(value)}ms`
-  if (value < 10_000) return `${(value / 1000).toFixed(1)}s`
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`
   return `${Math.round(value / 1000)}s`
 }
 

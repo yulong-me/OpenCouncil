@@ -27,10 +27,14 @@ export default function SettingsModal({
   isOpen,
   onClose,
   initialTab = 'team',
+  initialTeamId,
+  onTeamUpdated,
 }: {
   isOpen: boolean
   onClose: () => void
   initialTab?: SettingsTab
+  initialTeamId?: string
+  onTeamUpdated?: (team: TeamListItem) => void
 }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab)
   const [providers, setProviders] = useState<Record<string, ProviderConfig>>({})
@@ -160,7 +164,11 @@ export default function SettingsModal({
                 teams={teams}
                 skills={skills}
                 globalSkills={globalSkills}
-                onUpdated={updated => setTeams(previous => previous.map(team => team.id === updated.id ? updated : team))}
+                initialTeamId={initialTeamId}
+                onUpdated={updated => {
+                  setTeams(previous => previous.map(team => team.id === updated.id ? updated : team))
+                  onTeamUpdated?.(updated)
+                }}
               />
             ) : (
               <SkillSettingsTab

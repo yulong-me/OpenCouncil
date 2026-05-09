@@ -119,10 +119,31 @@ export function WorkspaceFilesPanel({ workspacePath, onOpenFile, onOpenExternal 
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1.5">
-        <Folder className="h-3.5 w-3.5 text-ink-soft" />
-        <span className="text-[11px] font-semibold text-ink-soft">工作区文件</span>
-        <div className="ml-auto flex items-center gap-1">
+      <div className="flex min-h-6 items-center gap-1.5">
+        {breadcrumbs.length > 1 ? (
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-[10px] text-ink-soft/70">
+            {breadcrumbs.map((crumb, index) => (
+              <span key={crumb.path} className="flex min-w-0 items-center gap-1">
+                {index > 0 && <ChevronRight className="h-3 w-3 shrink-0 text-ink-soft/40" />}
+                {index === breadcrumbs.length - 1 ? (
+                  <span className="truncate font-medium text-ink-soft">{crumb.label}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void loadPath(crumb.path)}
+                    className="truncate transition-colors hover:text-accent"
+                  >
+                    {crumb.label}
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="min-w-0 flex-1" />
+        )}
+
+        <div className="flex shrink-0 items-center gap-1">
           <input
             ref={fileInputRef}
             type="file"
@@ -136,6 +157,7 @@ export function WorkspaceFilesPanel({ workspacePath, onOpenFile, onOpenExternal 
             onClick={() => fileInputRef.current?.click()}
             disabled={loading || uploading}
             className="rounded p-0.5 text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="上传文件到当前目录"
             title="上传文件到当前目录"
           >
             <Upload className="h-3.5 w-3.5" />
@@ -144,6 +166,7 @@ export function WorkspaceFilesPanel({ workspacePath, onOpenFile, onOpenExternal 
             type="button"
             onClick={() => onOpenExternal(currentPath, 'finder')}
             className="rounded p-0.5 text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+            aria-label="在 Finder 中打开当前目录"
             title="在 Finder 中打开当前目录"
           >
             <FolderOpen className="h-3.5 w-3.5" />
@@ -152,6 +175,7 @@ export function WorkspaceFilesPanel({ workspacePath, onOpenFile, onOpenExternal 
             type="button"
             onClick={() => onOpenExternal(currentPath, 'vscode')}
             className="rounded p-0.5 text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+            aria-label="在 VS Code 中打开当前目录"
             title="在 VS Code 中打开当前目录"
           >
             <Code2 className="h-3.5 w-3.5" />
@@ -161,31 +185,13 @@ export function WorkspaceFilesPanel({ workspacePath, onOpenFile, onOpenExternal 
               type="button"
               onClick={() => browseResult?.parent && void loadPath(browseResult.parent)}
               className="rounded p-0.5 text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+              aria-label="返回上级"
               title="返回上级"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1 text-[10px] text-ink-soft/70">
-        {breadcrumbs.map((crumb, index) => (
-          <span key={crumb.path} className="flex items-center gap-1">
-            {index > 0 && <ChevronRight className="h-3 w-3 text-ink-soft/40" />}
-            {index === breadcrumbs.length - 1 ? (
-              <span className="font-medium text-ink-soft">{crumb.label}</span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void loadPath(crumb.path)}
-                className="transition-colors hover:text-accent"
-              >
-                {crumb.label}
-              </button>
-            )}
-          </span>
-        ))}
       </div>
 
       {loading && <p className="py-2 text-[11px] text-ink-soft/60">加载中…</p>}
