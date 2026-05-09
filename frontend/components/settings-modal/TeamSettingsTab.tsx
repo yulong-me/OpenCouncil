@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, CircleHelp, Copy, GitBranch, Loader2, Plus, RefreshCw, UsersRound, X } from 'lucide-react'
+import { CircleHelp, Copy, Edit2, GitBranch, Loader2, Plus, RefreshCw, Trash2, UsersRound, X } from 'lucide-react'
 
 import { API_URL } from '@/lib/api'
-import type { TeamListItem } from '@/lib/agents'
+import { getAgentColor, type TeamListItem } from '@/lib/agents'
+import { AgentAvatar } from '@/components/AgentAvatar'
 import { CustomSelect } from '@/components/ui/CustomSelect'
 import type { ProviderName, ReadOnlySkill, SkillConfig } from './types'
 
@@ -19,6 +20,14 @@ const LONG_TEXT_MODAL_THRESHOLD = 120
 type TeamMemberSnapshot = NonNullable<TeamListItem['activeVersion']['memberSnapshots']>[number]
 type TeamMemberSkillRef = NonNullable<TeamMemberSnapshot['skillRefs']>[number]
 type SkillPickerSource = TeamMemberSkillRef['source']
+type TeamSubtab = 'members' | 'rules' | 'memory' | 'versions'
+
+const TEAM_SUBTABS: Array<{ id: TeamSubtab; label: string; description: string }> = [
+  { id: 'members', label: '成员', description: '编辑成员分工、执行工具和 Skill' },
+  { id: 'rules', label: '分工 & 规则', description: 'Team 协作方式和路由规则' },
+  { id: 'memory', label: '长期记忆', description: 'Team 级长期记忆' },
+  { id: 'versions', label: '历史版本', description: 'Team 版本记录和回滚' },
+]
 
 interface SkillPickerOption {
   key: string
@@ -42,49 +51,6 @@ interface TeamSettingsPatch {
     teamMemory?: string[]
     maxA2ADepth?: number
   }
-}
-
-function getFirstText(record: Record<string, unknown>, keys: string[]): string {
-  for (const key of keys) {
-    const value = record[key]
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
-  return ''
-}
-
-function formatRoutingRule(rule: unknown): string {
-  if (typeof rule === 'string') return rule.trim()
-  if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return ''
-
-  const item = rule as Record<string, unknown>
-  const trigger = getFirstText(item, ['when', 'condition', 'trigger', 'input', 'if', 'on'])
-  const target = getFirstText(item, ['memberRole', 'role', 'member', 'agent', 'target', 'to', 'owner', 'routeTo', 'assignee'])
-  const action = getFirstText(item, ['action', 'behavior', 'instruction'])
-
-  if (trigger && target) return `${trigger} -> ${target}`
-  if (trigger && action) return `${trigger}: ${action}`
-  if (target && action) return `${target}: ${action}`
-
-  const values = Object.values(item)
-    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    .map(value => value.trim())
-  if (values.length >= 2) return `${values[0]} -> ${values[1]}`
-  return values[0] ?? ''
-}
-
-function formatRoutingPolicy(policy?: Record<string, unknown>): string[] {
-  if (!policy) return []
-  const candidateLists = [policy.rules, policy.routes, policy.routingRules, policy.conditions]
-  for (const candidate of candidateLists) {
-    if (!Array.isArray(candidate)) continue
-    const rules = candidate.map(formatRoutingRule).filter(Boolean)
-    if (rules.length > 0) return rules
-  }
-  return []
-}
-
-function splitLines(value: string): string[] {
-  return value.split('\n').map(item => item.trim()).filter(Boolean)
 }
 
 function skillSourceLabel(source: SkillPickerSource): string {
@@ -146,6 +112,8 @@ function EditableText({
   multiline = false,
   monospace = false,
   longTextDialogTitle,
+  displayLabel,
+  alwaysUseDialog = false,
   className = '',
   onSave,
 }: {
@@ -154,6 +122,8 @@ function EditableText({
   multiline?: boolean
   monospace?: boolean
   longTextDialogTitle?: string
+  displayLabel?: string
+  alwaysUseDialog?: boolean
   className?: string
   onSave: (value: string) => Promise<void> | void
 }) {
@@ -163,7 +133,8 @@ function EditableText({
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
-  const useDialogEditor = Boolean(longTextDialogTitle && multiline && value.length > LONG_TEXT_MODAL_THRESHOLD)
+  const useDialogEditor = Boolean(longTextDialogTitle && multiline && (alwaysUseDialog || value.length > LONG_TEXT_MODAL_THRESHOLD))
+  const visibleText = displayLabel ?? value
 
   useEffect(() => {
     if (!editing && !dialogOpen) setDraft(value)
@@ -233,10 +204,10 @@ function EditableText({
         }}
         className={`min-h-7 w-full rounded-lg px-2 py-1.5 text-left text-[12px] leading-5 text-ink transition-colors hover:bg-surface focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/20 ${monospace ? 'font-mono' : ''} ${className}`}
       >
-        <span className={value ? `${useDialogEditor ? 'line-clamp-4' : 'whitespace-pre-line'}` : 'text-ink-faint'}>
-          {value || placeholder}
+        <span className={visibleText ? `${useDialogEditor && !displayLabel ? 'line-clamp-4' : 'whitespace-pre-line'}` : 'text-ink-faint'}>
+          {visibleText || placeholder}
         </span>
-        {useDialogEditor && (
+        {useDialogEditor && !displayLabel && (
           <span className="mt-1 block text-[11px] font-medium text-accent">内容较长，点击弹窗编辑</span>
         )}
       </button>
@@ -328,10 +299,22 @@ function FieldHelp({ label, text }: { label: string; text: string }) {
 
 function FieldLabel({ children, help }: { children: string; help?: string }) {
   return (
-    <p className="flex items-center gap-1 px-2 text-[11px] font-bold text-ink-faint">
+    <p className="flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-[0.06em] text-ink-faint">
       <span>{children}</span>
       {help && <FieldHelp label={children} text={help} />}
     </p>
+  )
+}
+
+function ConstructionPanel({ title, description }: { title: string; description: string }) {
+  return (
+    <section className="mt-5 flex min-h-[18rem] items-center justify-center rounded-[10px] border border-dashed border-line bg-surface-muted/60 px-6 py-10 text-center">
+      <div className="max-w-sm">
+        <p className="font-display text-[22px] font-medium text-ink">建设中</p>
+        <p className="mt-2 text-[13px] font-semibold text-ink">{title}</p>
+        <p className="mt-1 text-[12px] leading-5 text-ink-soft">{description}</p>
+      </div>
+    </section>
   )
 }
 
@@ -353,11 +336,13 @@ export function TeamSettingsTab({
   const [providerStatus, setProviderStatus] = useState('')
   const [providerError, setProviderError] = useState('')
   const [skillPickerMemberId, setSkillPickerMemberId] = useState<string | null>(null)
+  const [activeSubtab, setActiveSubtab] = useState<TeamSubtab>('members')
 
   useEffect(() => setLocalTeams(teams), [teams])
 
   useEffect(() => {
     setSkillPickerMemberId(null)
+    setActiveSubtab('members')
   }, [selectedTeamId])
 
   useEffect(() => {
@@ -370,10 +355,21 @@ export function TeamSettingsTab({
     [selectedTeamId, localTeams],
   )
   const activeVersion = selectedTeam?.activeVersion
-  const routingRules = formatRoutingPolicy(activeVersion?.routingPolicy)
-  const routingRulesText = routingRules.join('\n')
-  const teamMemory = activeVersion?.teamMemory ?? []
-  const members = fallbackMembers(selectedTeam)
+  const members = useMemo(() => fallbackMembers(selectedTeam), [selectedTeam])
+
+  useEffect(() => {
+    const providerValues = Array.from(new Set(members.map(member => member.provider).filter(Boolean)))
+    if (providerValues.length === 0) return
+    const firstProvider = providerValues[0]
+    if (providerValues.length === 1 && firstProvider !== currentTeamProvider) {
+      setCurrentTeamProvider(firstProvider)
+      return
+    }
+    if (!providerValues.includes(currentTeamProvider)) {
+      setCurrentTeamProvider(firstProvider)
+    }
+  }, [currentTeamProvider, members])
+
   const skillOptions = useMemo<SkillPickerOption[]>(() => [
     ...skills
       .filter(skill => skill.enabled)
@@ -461,15 +457,17 @@ export function TeamSettingsTab({
 
   if (localTeams.length === 0) {
     return (
-      <section className="rounded-2xl border border-line bg-surface-muted p-6 text-center">
-        <p className="text-[15px] font-bold text-ink">Team 设置</p>
-        <p className="mt-2 text-[13px] text-ink-soft">还没有可用 Team。</p>
+      <section className="flex h-full items-center justify-center bg-surface-muted p-6 text-center">
+        <div>
+          <p className="text-[15px] font-bold text-ink">Team 设置</p>
+          <p className="mt-2 text-[13px] text-ink-soft">还没有可用 Team。</p>
+        </div>
       </section>
     )
   }
 
   return (
-    <div className="grid min-h-[calc(100vh-12rem)] overflow-hidden rounded-xl border border-line bg-surface lg:grid-cols-[250px_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 overflow-hidden bg-surface lg:grid-cols-[250px_minmax(0,1fr)]">
       <aside className="border-b border-line bg-bg p-3 lg:border-b-0 lg:border-r">
         <div className="mb-3 flex items-center justify-between gap-2 px-1">
           <div className="min-w-0">
@@ -515,12 +513,12 @@ export function TeamSettingsTab({
       </aside>
 
       {selectedTeam && activeVersion && (
-        <section className="min-w-0 overflow-y-auto p-4 custom-scrollbar lg:p-6">
+        <section className="min-w-0 overflow-y-auto p-6 custom-scrollbar lg:p-8">
           <div className="flex flex-col gap-4 border-b border-line pb-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="max-w-full truncate font-display text-[28px] font-bold leading-tight text-ink">{selectedTeam.name}</h2>
-                <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-muted px-2.5 py-1 font-mono text-[11px] font-bold text-ink-soft">
+                <span className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-accent/10 px-2.5 py-1 font-mono text-[11px] font-bold text-accent">
                   <GitBranch className="h-3.5 w-3.5" aria-hidden />
                   当前版本 v{activeVersion.versionNumber}
                 </span>
@@ -528,9 +526,13 @@ export function TeamSettingsTab({
                   {members.length} 成员 · max-A2A {activeVersion.maxA2ADepth ?? 5}
                 </span>
               </div>
-              <p className="mt-2 max-w-3xl text-[13px] leading-6 text-ink-soft">
-                {selectedTeam.description || activeVersion.description || '这个 Team 还没有说明。'}
-              </p>
+              <EditableText
+                value={selectedTeam.description ?? activeVersion.description ?? ''}
+                placeholder="点击补充 Team 说明"
+                multiline
+                className="mt-1 max-w-3xl px-0 text-[13px] leading-6 text-ink-soft hover:bg-transparent"
+                onSave={value => saveSelected({ description: value, version: { description: value } })}
+              />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -565,274 +567,208 @@ export function TeamSettingsTab({
             </p>
           )}
 
-          <div className="mt-4 flex gap-5 overflow-x-auto border-b border-line text-[12px] font-bold text-ink-soft custom-scrollbar">
-            <button type="button" className="shrink-0 border-b-2 border-accent px-1 pb-2 text-ink">
-              成员（{members.length}）
-            </button>
-            <button type="button" className="shrink-0 px-1 pb-2 transition-colors hover:text-ink">
-              分工 & 规则
-            </button>
-            <button type="button" className="shrink-0 px-1 pb-2 transition-colors hover:text-ink">
-              长期记忆
-            </button>
-            <button type="button" className="shrink-0 px-1 pb-2 transition-colors hover:text-ink">
-              历史版本
-            </button>
+          <div className="mt-4 flex gap-5 overflow-x-auto border-b border-line text-[13px] text-ink-soft custom-scrollbar">
+            {TEAM_SUBTABS.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                aria-selected={activeSubtab === item.id}
+                onClick={() => setActiveSubtab(item.id)}
+                className={`shrink-0 border-b-2 px-0 pb-2 transition-colors ${
+                  activeSubtab === item.id
+                    ? 'border-accent font-medium text-ink'
+                    : 'border-transparent hover:text-ink'
+                }`}
+              >
+                {item.id === 'members' ? <>成员（{members.length}）</> : item.label}
+              </button>
+            ))}
           </div>
 
-          <section className="mt-5 space-y-4">
-            <div className="rounded-xl border border-line bg-surface-muted p-4">
-              <h3 className="text-[13px] font-bold text-ink">Team 信息</h3>
-              <div className="mt-2 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
-                <div>
-                  <FieldLabel>Team 名称</FieldLabel>
-                  <EditableText
-                    value={selectedTeam.name}
-                    className="text-[18px] font-bold"
-                    onSave={value => saveSelected({ name: value, version: { name: value } })}
-                  />
-                </div>
-                <div>
-                  <FieldLabel>执行工具</FieldLabel>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <CustomSelect<ProviderName>
-                      value={currentTeamProvider}
-                      onChange={setCurrentTeamProvider}
-                      options={PROVIDER_OPTIONS}
-                      ariaLabel="选择当前 Team 执行工具"
-                      className="min-w-44"
-                      buttonClassName="h-9 rounded-lg px-3 py-2 text-[12px]"
-                    />
-                    <button
-                      type="button"
-                      disabled={providerSaving}
-                      onClick={() => void applyProviderToCurrentTeam()}
-                      className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-line bg-surface px-3 text-[12px] font-bold text-ink transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {providerSaving ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                      ) : (
-                        <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-                      )}
-                      应用到当前 Team
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <EditableText
-                value={selectedTeam.description ?? ''}
-                placeholder="点击补充 Team 说明"
-                multiline
-                className="mt-3 max-w-3xl text-[13px] leading-6 text-ink-soft"
-                onSave={value => saveSelected({ description: value, version: { description: value } })}
-              />
-            </div>
+          {activeSubtab === 'members' ? (
+            <section className="mt-4 space-y-2.5">
+              {members.map(member => {
+                const memberSkillRefs = getMemberSkillRefs(member, skills)
+                const availableSkillOptions = skillOptions.filter(option => (
+                  isSkillOptionCompatibleWithProvider(option, member.provider)
+                  && !new Set(memberSkillRefs.map(skillRefKey)).has(option.key)
+                ))
+                const color = getAgentColor(member.name)
 
-            <section className="space-y-3">
-              <h3 className="text-[13px] font-bold text-ink">Team 分工</h3>
-              <div className="grid gap-4 xl:grid-cols-2">
-                <section className="rounded-xl border border-line bg-surface-muted p-4">
-                  <h4 className="text-[13px] font-bold text-ink">协作方式</h4>
-                  <EditableText
-                    value={activeVersion.workflowPrompt || ''}
-                    placeholder="点击配置协作方式"
-                    multiline
-                    className="mt-3 max-h-80 overflow-y-auto border border-line bg-surface p-3 text-ink-soft custom-scrollbar"
-                    onSave={value => saveSelected({ version: { workflowPrompt: value } })}
-                  />
-                </section>
-
-                <section className="rounded-xl border border-line bg-surface-muted p-4">
-                  <h4 className="text-[13px] font-bold text-ink">分工规则</h4>
-                  <EditableText
-                    value={routingRulesText}
-                    placeholder="每行一条，例如：需求不清 -> 需求澄清成员"
-                    multiline
-                    className="mt-3 border border-line bg-surface p-3 text-ink-soft"
-                    onSave={value => saveSelected({ version: { routingPolicy: { rules: splitLines(value) } } })}
-                  />
-                  {routingRules.length > 0 && (
-                    <ul className="mt-3 space-y-2 text-[12px] leading-5 text-ink-soft">
-                      {routingRules.map((rule, index) => (
-                        <li key={`${rule}-${index}`} className="flex gap-2">
-                          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
-                          <span>{rule}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              </div>
-
-            <section className="rounded-xl border border-line bg-surface-muted p-4">
-              <h4 className="text-[13px] font-bold text-ink">长期记忆</h4>
-              <EditableText
-                value={teamMemory.join('\n')}
-                placeholder="每行一条长期记忆"
-                multiline
-                className="mt-3 border border-line bg-surface p-3 text-ink-soft"
-                onSave={value => saveSelected({ version: { teamMemory: splitLines(value) } })}
-              />
-            </section>
-          </section>
-
-          <section className="rounded-xl border border-line bg-surface-muted p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <h3 className="text-[13px] font-bold text-ink">Team 成员</h3>
-                <p className="mt-1 text-[12px] text-ink-soft">{members.length} 位成员</p>
-              </div>
-              <span className="inline-flex w-fit items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-ink-soft">
-                <UsersRound className="h-3.5 w-3.5" aria-hidden />
-                可直接编辑成员配置
-              </span>
-            </div>
-            <div className="mt-3 grid gap-2 xl:grid-cols-2">
-              {members.map(member => (
-                <div key={member.id} className="rounded-xl border border-line bg-surface px-3 py-3">
-                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                    <div className="min-w-0">
-                      <FieldLabel help="成员名称：给这个成员起一个好识别的名字，例如 信息搜集专员、风险审查员。">成员名称</FieldLabel>
-                      <EditableText
-                        value={member.name}
-                        placeholder="成员名称"
-                        className="font-bold"
-                        onSave={value => updateMember(member.id, { name: value })}
+                return (
+                  <div
+                    key={member.id}
+                    className="rounded-[10px] border border-line bg-surface-muted/70 px-4 py-3.5"
+                  >
+                    <div className="flex gap-3.5">
+                      <AgentAvatar
+                        name={member.name}
+                        color={color.bg}
+                        textColor={color.text}
+                        size={38}
+                        className="mt-0.5 shrink-0 rounded-full ring-2 ring-surface"
                       />
-                    </div>
-                    <div className="sm:w-44">
-                      <FieldLabel help="执行工具：选择这个成员实际调用哪个 CLI 工具，例如 OpenCode 或 Codex CLI。">执行工具</FieldLabel>
-                      <CustomSelect<ProviderName>
-                        value={member.provider}
-                        onChange={provider => void updateMember(member.id, { provider })}
-                        options={PROVIDER_OPTIONS}
-                        ariaLabel={`选择 ${member.name} 的执行工具`}
-                        buttonClassName="h-8 rounded-lg bg-surface-muted px-2 py-1 text-[12px]"
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-2">
-                    <div>
-                      <FieldLabel help="角色分工：一句话说明它在 Team 里的身份，例如 信息搜集、方案设计、审查把关。">角色分工</FieldLabel>
-                      <EditableText
-                        value={member.roleLabel}
-                        placeholder="角色分工"
-                        onSave={value => updateMember(member.id, { roleLabel: value })}
-                      />
-                    </div>
-                  </div>
-                  <div className="relative mt-2">
-                    <FieldLabel help="Skill：从系统维护或系统扫描到的 Skill 中选择这个成员运行时需要的能力包。">Skill</FieldLabel>
-                    <div className="mt-1 flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface-muted px-2 py-1.5">
-                      {getMemberSkillRefs(member, skills).length === 0 ? (
-                        <span className="text-[12px] text-ink-faint">未配置 Skill</span>
-                      ) : (
-                        getMemberSkillRefs(member, skills).map(ref => {
-                          const refKey = skillRefKey(ref)
-                          return (
-                            <span
-                              key={refKey}
-                              className="inline-flex max-w-full items-center gap-1 rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink-soft"
-                            >
-                              <span className="truncate">{ref.name}</span>
-                              <span className="rounded bg-surface-muted px-1 text-[10px] font-bold text-ink-faint">{skillSourceLabel(ref.source)}</span>
-                              <button
-                                type="button"
-                                onClick={() => void onRemoveMemberSkill(member, refKey)}
-                                className="inline-flex h-4 w-4 items-center justify-center rounded text-ink-faint transition-colors hover:bg-surface-muted hover:text-ink"
-                                aria-label={`移除 ${member.name} 的 ${ref.name} Skill`}
-                              >
-                                <X className="h-3 w-3" aria-hidden />
-                              </button>
-                            </span>
-                          )
-                        })
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setSkillPickerMemberId(current => current === member.id ? null : member.id)}
-                        className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:border-accent/40 hover:text-accent"
-                        aria-label={`给 ${member.name} 添加 Skill`}
-                        title="添加 Skill"
-                      >
-                        <Plus className="h-3.5 w-3.5" aria-hidden />
-                      </button>
-                    </div>
-                    {skillPickerMemberId === member.id && (
-                      <div className="absolute left-0 right-0 top-full layer-dropdown mt-1 rounded-xl border border-line bg-surface p-2 shadow-xl">
-                        <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">可用 Skill</p>
-                        <div className="max-h-56 overflow-y-auto custom-scrollbar">
-                          {skillOptions.filter(option => (
-                            isSkillOptionCompatibleWithProvider(option, member.provider)
-                            && !new Set(getMemberSkillRefs(member, skills).map(skillRefKey)).has(option.key)
-                          )).length === 0 ? (
-                            <p className="px-2 py-3 text-[12px] text-ink-soft">没有可添加的 Skill</p>
-                          ) : (
-                            skillOptions
-                              .filter(option => (
-                                isSkillOptionCompatibleWithProvider(option, member.provider)
-                                && !new Set(getMemberSkillRefs(member, skills).map(skillRefKey)).has(option.key)
-                              ))
-                              .map(option => (
-                                <button
-                                  key={option.key}
-                                  type="button"
-                                  onClick={() => void onSelectMemberSkill(member, option.key)}
-                                  className="flex w-full flex-col rounded-lg px-2 py-2 text-left text-ink transition-colors hover:bg-surface-muted"
-                                >
-                                  <span className="flex min-w-0 items-center gap-2">
-                                    <span className="truncate text-[13px] font-semibold">{option.name}</span>
-                                    <span className="shrink-0 rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-bold text-ink-faint">{skillSourceLabel(option.source)}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="sr-only">成员名称</span>
+                          <span className="sr-only">成员名称：给这个成员起一个好识别的名字，例如 信息搜集专员、风险审查员。</span>
+                          <div className="min-w-0 max-w-[18rem]">
+                            <EditableText
+                              value={member.name}
+                              placeholder="成员名称"
+                              className="px-0 py-0 text-[14px] font-semibold hover:bg-transparent"
+                              onSave={value => updateMember(member.id, { name: value })}
+                            />
+                          </div>
+                          <Edit2 className="h-3 w-3 shrink-0 text-ink-faint" aria-hidden />
+                          <span className="sr-only">角色分工：一句话说明它在 Team 里的身份，例如 信息搜集、方案设计、审查把关。</span>
+                          <div className="max-w-[15rem]">
+                            <EditableText
+                              value={member.roleLabel}
+                              placeholder="角色分工"
+                              className="px-0 py-0 text-[11px] text-ink-soft hover:bg-transparent"
+                              onSave={value => updateMember(member.id, { roleLabel: value })}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-2.5 grid gap-3.5 md:grid-cols-2">
+                          <div>
+                            <FieldLabel help="负责什么：写清楚它主要产出什么，例如 搜集资料、写方案、做审查。">负责什么</FieldLabel>
+                            <EditableText
+                              value={member.responsibility ?? ''}
+                              placeholder="负责什么"
+                              multiline
+                              longTextDialogTitle="编辑负责什么"
+                              className="mt-0.5 px-0 text-[12.5px] leading-5 hover:bg-transparent"
+                              onSave={value => updateMember(member.id, { responsibility: value })}
+                            />
+                          </div>
+                          <div>
+                            <FieldLabel help="什么时候用它：写清楚什么情况下该找它，例如 用户要查资料时。">什么时候用它</FieldLabel>
+                            <EditableText
+                              value={member.whenToUse ?? ''}
+                              placeholder="什么时候用它"
+                              multiline
+                              longTextDialogTitle="编辑什么时候用它"
+                              className="mt-0.5 px-0 text-[12.5px] leading-5 hover:bg-transparent"
+                              onSave={value => updateMember(member.id, { whenToUse: value })}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-ink-soft">
+                          <span className="sr-only">执行工具：选择这个成员实际调用哪个 CLI 工具，例如 OpenCode 或 Codex CLI。</span>
+                          <span className="inline-flex min-w-0 items-center gap-1.5">
+                            <FieldLabel>执行工具</FieldLabel>
+                            <CustomSelect<ProviderName>
+                              value={member.provider}
+                              onChange={provider => void updateMember(member.id, { provider })}
+                              options={PROVIDER_OPTIONS}
+                              ariaLabel={`选择 ${member.name} 的执行工具`}
+                              className="min-w-32"
+                              buttonClassName="h-7 rounded-md px-2 py-1 text-[11px]"
+                              menuClassName="min-w-44"
+                            />
+                          </span>
+                          <span className="h-3.5 w-px bg-line" aria-hidden />
+                          <span className="relative inline-flex min-w-0 flex-wrap items-center gap-1.5">
+                            <FieldLabel help="Skill：从系统维护或系统扫描到的 Skill 中选择这个成员运行时需要的能力包。">Skill</FieldLabel>
+                            {memberSkillRefs.length === 0 ? (
+                              <span className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] text-ink-faint">未配置</span>
+                            ) : (
+                              memberSkillRefs.map(ref => {
+                                const refKey = skillRefKey(ref)
+                                return (
+                                  <span
+                                    key={refKey}
+                                    className="inline-flex max-w-[12rem] items-center gap-1 rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink-soft"
+                                  >
+                                    <span className="truncate">{ref.name}</span>
+                                    <span className="rounded bg-surface-muted px-1 text-[10px] font-bold text-ink-faint">{skillSourceLabel(ref.source)}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => void onRemoveMemberSkill(member, refKey)}
+                                      className="inline-flex h-4 w-4 items-center justify-center rounded text-ink-faint transition-colors hover:bg-surface-muted hover:text-ink"
+                                      aria-label={`移除 ${member.name} 的 ${ref.name} Skill`}
+                                    >
+                                      <X className="h-3 w-3" aria-hidden />
+                                    </button>
                                   </span>
-                                  {option.description && (
-                                    <span className="mt-0.5 line-clamp-2 text-[11px] text-ink-faint">{option.description}</span>
-                                  )}
-                                </button>
-                              ))
-                          )}
+                                )
+                              })
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setSkillPickerMemberId(current => current === member.id ? null : member.id)}
+                              className="inline-flex h-6 items-center justify-center rounded border border-dashed border-line bg-transparent px-2 text-[11px] text-ink-soft transition-colors hover:border-accent/40 hover:text-accent"
+                              aria-label={`给 ${member.name} 添加 Skill`}
+                            >
+                              + 添加
+                            </button>
+                            {skillPickerMemberId === member.id && (
+                              <div className="absolute left-0 top-full layer-dropdown mt-1 w-72 rounded-xl border border-line bg-surface p-2 shadow-xl">
+                                <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">可用 Skill</p>
+                                <div className="max-h-56 overflow-y-auto custom-scrollbar">
+                                  {availableSkillOptions.length === 0 ? (
+                                    <p className="px-2 py-3 text-[12px] text-ink-soft">没有可添加的 Skill</p>
+                                  ) : availableSkillOptions.map(option => (
+                                    <button
+                                      key={option.key}
+                                      type="button"
+                                      onClick={() => void onSelectMemberSkill(member, option.key)}
+                                      className="flex w-full flex-col rounded-lg px-2 py-2 text-left text-ink transition-colors hover:bg-surface-muted"
+                                    >
+                                      <span className="flex min-w-0 items-center gap-2">
+                                        <span className="truncate text-[13px] font-semibold">{option.name}</span>
+                                        <span className="shrink-0 rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-bold text-ink-faint">{skillSourceLabel(option.source)}</span>
+                                      </span>
+                                      {option.description && (
+                                        <span className="mt-0.5 line-clamp-2 text-[11px] text-ink-faint">{option.description}</span>
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </span>
                         </div>
                       </div>
-                    )}
+
+                      <div className="flex shrink-0 flex-col items-end gap-1.5">
+                        <span className="sr-only">详细工作说明：给执行工具看的完整工作要求，适合写边界、步骤、输出格式和注意事项。</span>
+                        <EditableText
+                          value={member.systemPrompt}
+                          placeholder="详细工作说明"
+                          multiline
+                          monospace
+                          displayLabel="详细工作说明"
+                          alwaysUseDialog
+                          longTextDialogTitle="编辑详细工作说明"
+                          className="max-w-36 px-0 py-0 text-right text-[11.5px] text-ink-soft hover:bg-transparent hover:text-accent"
+                          onSave={value => updateMember(member.id, { systemPrompt: value })}
+                        />
+                        <button
+                          type="button"
+                          disabled
+                          title="移除成员建设中"
+                          className="inline-flex items-center gap-1 text-[11.5px] text-[color:var(--danger)] opacity-50"
+                        >
+                          <Trash2 className="h-3 w-3" aria-hidden />
+                          移除
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-2">
-                    <FieldLabel help="负责什么：写清楚它主要产出什么，例如 搜集资料、写方案、做审查。">负责什么</FieldLabel>
-                    <EditableText
-                      value={member.responsibility ?? ''}
-                      placeholder="负责什么"
-                      multiline
-                      longTextDialogTitle="编辑负责什么"
-                      className="text-ink-soft"
-                      onSave={value => updateMember(member.id, { responsibility: value })}
-                    />
-                  </div>
-                  <div className="mt-2">
-                    <FieldLabel help="什么时候用它：写清楚什么情况下该找它，例如 用户要查资料时。">什么时候用它</FieldLabel>
-                    <EditableText
-                      value={member.whenToUse ?? ''}
-                      placeholder="什么时候用它"
-                      multiline
-                      longTextDialogTitle="编辑什么时候用它"
-                      className="text-ink-soft"
-                      onSave={value => updateMember(member.id, { whenToUse: value })}
-                    />
-                  </div>
-                  <div className="mt-2">
-                    <FieldLabel help="详细工作说明：给执行工具看的完整工作要求，适合写边界、步骤、输出格式和注意事项。">详细工作说明，高级</FieldLabel>
-                    <EditableText
-                      value={member.systemPrompt}
-                      placeholder="详细工作说明，高级"
-                      multiline
-                      monospace
-                      longTextDialogTitle="编辑详细工作说明"
-                      className="text-ink-soft"
-                      onSave={value => updateMember(member.id, { systemPrompt: value })}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </section>
+                )
+              })}
+            </section>
+          ) : (
+            <ConstructionPanel
+              title={TEAM_SUBTABS.find(item => item.id === activeSubtab)?.label ?? '设置'}
+              description={TEAM_SUBTABS.find(item => item.id === activeSubtab)?.description ?? '此区域稍后开放。'}
+            />
+          )}
         </section>
       )}
     </div>

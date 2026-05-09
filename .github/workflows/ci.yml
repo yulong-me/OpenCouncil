@@ -73,5 +73,8 @@ jobs:
       - name: Test Node.js version gate
         run: pnpm run test:node-version
 
+      - name: Test better-sqlite3 native preflight
+        run: pnpm run test:better-sqlite-native
+
       - name: Build backend and frontend
         run: pnpm build

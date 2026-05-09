@@ -11,6 +11,7 @@ import { debug, warn } from '@/lib/logger'
 import { ProviderSettingsTab } from './settings-modal/ProviderSettingsTab'
 import { SettingsTabSwitcher } from './settings-modal/SettingsTabSwitcher'
 import { SkillSettingsTab } from './settings-modal/SkillSettingsTab'
+import { TeamArchitectProviderSettingsTab } from './settings-modal/TeamArchitectProviderSettingsTab'
 import { TeamSettingsTab } from './settings-modal/TeamSettingsTab'
 import type {
   ProviderName,
@@ -120,18 +121,23 @@ export default function SettingsModal({
           role="dialog"
           aria-modal="true"
           aria-label="系统设置"
-          className="layer-overlay-content pointer-events-auto flex h-[calc(100vh-32px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl settings-panel shadow-2xl md:h-[calc(100vh-48px)] animate-in zoom-in-95 duration-200"
+          className="layer-overlay-content pointer-events-auto flex h-[calc(100vh-32px)] w-full max-w-6xl overflow-hidden rounded-2xl settings-panel shadow-2xl md:h-[calc(100vh-48px)] animate-in zoom-in-95 duration-200"
         >
-          <div className="flex items-center justify-between px-5 py-4 border-b border-line settings-nav shrink-0">
-            <SettingsTabSwitcher tab={tab} onChange={setTab} />
-            <button type="button" onClick={onClose} aria-label="关闭设置" className="p-2 text-ink-soft hover:text-ink hover:bg-surface-muted rounded-full transition-colors">
+          <SettingsTabSwitcher tab={tab} onChange={setTab} />
+
+          <div className="relative flex min-w-0 flex-1 flex-col">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="关闭设置"
+              className="absolute right-3 top-3 layer-toolbar inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+            >
               <X className="w-4 h-4" aria-hidden />
             </button>
-          </div>
 
-          <div className="flex-1 overflow-y-auto p-5 custom-scrollbar space-y-4">
+          <div className="min-h-0 flex-1 overflow-hidden">
             {loading ? (
-              <div className="flex justify-center items-center h-40">
+              <div className="flex h-full items-center justify-center">
                 <span className="text-ink-soft text-[13px] animate-pulse">加载中…</span>
               </div>
             ) : tab === 'provider' ? (
@@ -139,11 +145,15 @@ export default function SettingsModal({
                 providers={providers}
                 readiness={providerReadiness}
                 selectedProvider={selectedProvider}
-                teamArchitectProvider={teamArchitectProvider}
                 onSelectProvider={setSelectedProvider}
                 onUpdateProvider={provider => setProviders(previous => ({ ...previous, [provider.name]: provider }))}
-                onTeamArchitectProviderChange={setTeamArchitectProvider}
                 onRefreshReadiness={refreshProviderReadiness}
+              />
+            ) : tab === 'team-architect' ? (
+              <TeamArchitectProviderSettingsTab
+                providers={providers}
+                teamArchitectProvider={teamArchitectProvider}
+                onTeamArchitectProviderChange={setTeamArchitectProvider}
               />
             ) : tab === 'team' ? (
               <TeamSettingsTab
@@ -162,6 +172,7 @@ export default function SettingsModal({
                 onDelete={skillId => setSkills(previous => previous.filter(skill => skill.id !== skillId))}
               />
             )}
+          </div>
           </div>
         </div>
     </div>

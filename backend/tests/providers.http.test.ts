@@ -168,9 +168,9 @@ describe('providersRouter opencode test command', () => {
 
     expect(res.status).toBe(200)
     expect(res.data.provider).toBe('opencode')
-    expect(res.data.args).toEqual(['run', '--thinking', '--dangerously-skip-permissions', '--format', 'json', '--', '<prompt>'])
+    expect(res.data.args).toEqual(['run', '--thinking', '--format', 'json', '--', '<prompt>'])
     expect(String(res.data.note)).not.toContain('-m')
-    expect(String(res.data.note)).toContain('--dangerously-skip-permissions')
+    expect(String(res.data.note)).not.toContain('--dangerously-skip-permissions')
   })
 
   runIfPortAvailable('tests opencode connection with the same runtime flags and captures text events', async () => {
@@ -192,7 +192,6 @@ describe('providersRouter opencode test command', () => {
     expect(spawnMock.mock.calls[0]?.[1]).toEqual([
       'run',
       '--thinking',
-      '--dangerously-skip-permissions',
       '--format',
       'json',
       '--',
@@ -206,7 +205,7 @@ describe('providersRouter opencode test command', () => {
       output: '你好',
     })
     expect(String(res.data.cli)).not.toContain('-m MiniMax-M2.7')
-    expect(String(res.data.cli)).toContain('--dangerously-skip-permissions')
+    expect(String(res.data.cli)).not.toContain('--dangerously-skip-permissions')
     expect(providerConfigMocks.updateTestResult).toHaveBeenCalledWith('opencode', {
       success: true,
       version: '你好',

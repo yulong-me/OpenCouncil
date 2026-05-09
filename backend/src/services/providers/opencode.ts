@@ -58,7 +58,6 @@ export function buildOpenCodeProviderLaunch(
   if (sessionId) args.push('--session', sessionId);
   if (model) args.push('-m', model);
   if (thinking) args.push('--thinking');
-  args.push('--dangerously-skip-permissions');
   args.push('--format', 'json');
   args.push('--', prompt);
 

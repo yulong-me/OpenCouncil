@@ -451,7 +451,7 @@ export function SkillSettingsTab({
   const selectedGlobalSkill = globalSkills.find(skill => globalSkillKey(skill) === selectedSkillKey)
 
   return (
-    <div className="grid min-h-[calc(100vh-12rem)] overflow-hidden rounded-xl border border-line bg-surface lg:grid-cols-[250px_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 overflow-hidden bg-surface lg:grid-cols-[250px_minmax(0,1fr)]">
       <aside className="border-b border-line bg-bg p-3 lg:border-b-0 lg:border-r">
         <div className="mb-3 flex items-center justify-between gap-2 px-1">
           <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">Managed · {skills.length}</p>
@@ -511,7 +511,7 @@ export function SkillSettingsTab({
         </div>
       </aside>
 
-      <section className="min-w-0 overflow-y-auto p-4 custom-scrollbar lg:p-6">
+      <section className="min-w-0 overflow-y-auto p-6 custom-scrollbar lg:p-8">
         {selectedManagedSkill ? (
           <SkillRow key={selectedManagedSkill.id} skill={selectedManagedSkill} onUpdate={onUpdate} onDelete={onDelete} />
         ) : selectedGlobalSkill ? (

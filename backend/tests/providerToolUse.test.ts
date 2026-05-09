@@ -152,7 +152,7 @@ describe('provider tool_use parsing', () => {
     expect(launch.cliPath).toBe('/Users/tester/bin/opencode');
     expect(launch.args).toEqual(expect.arrayContaining(['run', '--dir', workspace, '--format', 'json', '--', 'hello from opencode']));
     expect(launch.args).toEqual(expect.arrayContaining(['-m', 'google/gemini-2.5-pro']));
-    expect(launch.args).toContain('--dangerously-skip-permissions');
+    expect(launch.args).not.toContain('--dangerously-skip-permissions');
     expect(launch.args).not.toContain('--thinking');
     expect(launch.cwd).toBe(workspace);
     expect(launch.spawnOptions).toMatchObject({
@@ -334,7 +334,7 @@ describe('provider tool_use parsing', () => {
 
     expect(launch.args).not.toContain('-m');
     expect(launch.args).not.toContain('MiniMax-M2.7');
-    expect(launch.args).toContain('--dangerously-skip-permissions');
+    expect(launch.args).not.toContain('--dangerously-skip-permissions');
   });
 
   it('falls back to the default cwd when room workspace is absent', () => {
@@ -356,6 +356,6 @@ describe('provider tool_use parsing', () => {
     expect(opencodeLaunch.cwd).toBe('/tmp');
     expect(opencodeLaunch.args).not.toContain('--dir');
     expect(opencodeLaunch.args).not.toContain('-m');
-    expect(opencodeLaunch.args).toContain('--dangerously-skip-permissions');
+    expect(opencodeLaunch.args).not.toContain('--dangerously-skip-permissions');
   });
 });
