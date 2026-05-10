@@ -11,18 +11,19 @@ import {
   useState,
 } from 'react'
 import {
+  AtSign,
   Loader2,
+  Paperclip,
   Send,
+  Zap,
 } from 'lucide-react'
 import {
   extractUserMentionsFromAgents,
   findActiveMentionTrigger,
-  getAgentColor,
   insertMention,
   type Agent,
 } from '../lib/agents'
 import { telemetry } from '../lib/logger'
-import { AgentAvatar } from './AgentAvatar'
 import MentionPicker from './MentionPicker'
 
 export interface RoomComposerHandle {
@@ -75,9 +76,9 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
     const targetName = mentionNames[0]
     return targetName ? agents.find(agent => agent.name === targetName) ?? null : null
   }, [agentNames, agents, userInput])
-  const selectedRecipientColors = selectedRecipient
-    ? getAgentColor(selectedRecipient.name)
-    : null
+  const emptyPlaceholder = agents[0]?.name
+    ? `@${agents[0]?.name} 我们要重构 thermal_curve.py …`
+    : '说清楚目标、交付物、边界。'
 
   const filteredAgents = useMemo(() => {
     const base = mentionQuery
@@ -309,7 +310,7 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
   }, [closeMentionPicker, filteredAgents, mentionHighlightIdx, mentionPickerOpen, selectMentionAgent, submitDraft])
 
   const canSend = Boolean(userInput.trim()) && !sending
-  const shortcutHint = mentionPickerOpen ? '↵ 选择 · esc 取消' : '↵ 发送 · ⇧↵ 换行'
+  const shortcutHint = mentionPickerOpen ? '↵ 选择 · esc 取消' : '⌘↵ 发送 · ⇧↵ 换行'
 
   return (
     <div className="relative flex flex-col gap-2">
@@ -322,42 +323,11 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
           onHighlight={setMentionHighlightIdx}
         />
       )}
-      <div className="app-islands-input border border-line bg-surface p-2 shadow-sm transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/[0.22]">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          {selectedRecipient && selectedRecipientColors ? (
-            <div
-              className="inline-flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-caption font-medium"
-              style={{
-                borderColor: `${selectedRecipientColors.bg}42`,
-                backgroundColor: `${selectedRecipientColors.bg}12`,
-                color: selectedRecipientColors.bg,
-              }}
-            >
-              <AgentAvatar
-                name={selectedRecipient.name}
-                color={selectedRecipientColors.bg}
-                textColor={selectedRecipientColors.text}
-                size={16}
-                className="rounded-full"
-              />
-              <span className="min-w-0 truncate">@{selectedRecipient.name}</span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              data-recipient-ghost="true"
-              onClick={openRecipientPicker}
-              className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-dashed border-line bg-surface-muted px-2.5 py-1.5 text-caption font-medium text-ink-soft transition-colors hover:border-accent/55 hover:text-accent"
-            >
-              先 @ 选一位 Team 成员
-            </button>
-          )}
-        </div>
-        <div className="relative">
+      <div className="app-islands-input rounded-xl border border-line bg-surface px-3 py-2.5 shadow-sm transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/[0.18]">
         <textarea
           ref={textareaRef}
-          className="min-h-20 max-h-48 w-full resize-none border-0 bg-transparent px-1 pb-10 pr-12 pt-1 text-body text-ink placeholder:text-ink-faint focus:outline-none"
-          placeholder={selectedRecipient ? `告诉 ${selectedRecipient.name} 这次要做什么` : '告诉 Team 这次要做什么，或先 @ 选择成员'}
+          className="min-h-[50px] max-h-48 w-full resize-none border-0 bg-transparent px-1 py-1 text-body text-ink placeholder:text-ink-faint focus:outline-none"
+          placeholder={selectedRecipient ? `告诉 ${selectedRecipient.name} 这次要做什么` : emptyPlaceholder}
           value={userInput}
           onChange={handleInputChange}
           onCompositionStart={handleCompositionStart}
@@ -366,23 +336,52 @@ export const RoomComposer = memo(forwardRef<RoomComposerHandle, RoomComposerProp
           disabled={sending}
           aria-label="输入消息"
         />
-        <button
-          type="button"
-          className={`absolute bottom-1.5 right-1.5 inline-flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
-            canSend
-              ? 'bg-accent text-white hover:bg-accent-deep'
-              : 'cursor-not-allowed border border-line bg-surface-muted text-ink-soft'
-          }`}
-          onClick={() => void submitDraft()}
-          disabled={!canSend}
-          aria-label={queueMode ? '加入队列' : '发送'}
-          title={queueMode ? '加入队列' : '发送'}
-        >
-          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </button>
-        </div>
-        <div className="mt-1 flex justify-end px-1 font-mono text-[10px] text-ink-faint">
-          {shortcutHint}
+        <div className="mt-1 flex items-center justify-between gap-2 border-t border-line/70 pt-2">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={openRecipientPicker}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent"
+              aria-label="@点名"
+              title="@点名"
+            >
+              <AtSign className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              disabled
+              className="inline-flex h-7 w-7 cursor-not-allowed items-center justify-center rounded-md text-ink-faint"
+              aria-label="附件"
+              title="附件"
+            >
+              <Paperclip className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              disabled
+              className="inline-flex h-7 w-7 cursor-not-allowed items-center justify-center rounded-md text-ink-faint"
+              aria-label="Skill"
+              title="Skill"
+            >
+              <Zap className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            <span className="ml-1 hidden font-mono text-[10px] text-ink-faint md:inline">{shortcutHint}</span>
+          </div>
+          <button
+            type="button"
+            className={`inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-full md:rounded-lg px-0 text-[12px] font-semibold transition-colors md:w-auto md:px-3 ${
+              canSend
+                ? 'bg-accent text-on-accent hover:bg-accent-deep'
+                : 'cursor-not-allowed border border-line bg-surface-muted text-ink-soft'
+            }`}
+            onClick={() => void submitDraft()}
+            disabled={!canSend}
+            aria-label={queueMode ? '加入队列' : '发送'}
+            title={queueMode ? '加入队列' : '发送'}
+          >
+            {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            <span className="hidden md:inline">发送</span>
+          </button>
         </div>
       </div>
     </div>

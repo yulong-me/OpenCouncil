@@ -24,8 +24,19 @@ export function formatCompactTokenCount(value?: number): string {
 export function formatLatencyMs(value?: number): string {
   if (!isFiniteNonNegative(value)) return '0ms'
   if (value < 1000) return `${Math.round(value)}ms`
-  if (value < 10_000) return `${(value / 1000).toFixed(1)}s`
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`
   return `${Math.round(value / 1000)}s`
+}
+
+export function formatInvocationTokenFlow(usage?: Pick<InvocationUsage, 'inputTokens' | 'outputTokens'>): string | undefined {
+  const parts: string[] = []
+  if (isFiniteNonNegative(usage?.inputTokens) && usage.inputTokens > 0) {
+    parts.push(`↑${formatCompactTokenCount(usage.inputTokens)}`)
+  }
+  if (isFiniteNonNegative(usage?.outputTokens) && usage.outputTokens > 0) {
+    parts.push(`↓${formatCompactTokenCount(usage.outputTokens)}`)
+  }
+  return parts.length > 0 ? parts.join(' ') : undefined
 }
 
 export function formatUsd(value?: number): string {

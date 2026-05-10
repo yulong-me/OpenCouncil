@@ -21,6 +21,7 @@
     "build:backend": "pnpm --dir backend build",
     "build:frontend": "pnpm --dir frontend build",
     "test:node-version": "node tests/check-node-version.test.mjs",
+    "test:better-sqlite-native": "node tests/ensure-better-sqlite.test.mjs",
     "install:all": "pnpm -r install"
   },
   "devDependencies": {

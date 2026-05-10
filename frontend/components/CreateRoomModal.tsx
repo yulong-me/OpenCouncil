@@ -1,14 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type CSSProperties } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { X, Play, BrainCircuit, ChevronDown, Plus, Trash2, Wand2, Loader2 } from 'lucide-react'
+import { X, ArrowRight, BrainCircuit, ChevronRight, Edit2, Folder, RefreshCw, Sparkles, Wand2, Loader2 } from 'lucide-react'
 import { DirectoryPicker } from './DirectoryPicker'
 import { CustomSelect } from './ui/CustomSelect'
 import { API_URL } from '@/lib/api'
 import { buildSettingsHref } from '../lib/settingsTabs'
 import { debug, info, warn } from '@/lib/logger'
-import type { TeamListItem } from '@/lib/agents'
+import { getAgentColor, type TeamListItem } from '@/lib/agents'
 
 const API = API_URL;
 
@@ -23,6 +23,8 @@ interface AgentConfig {
   enabled: boolean
   tags: string[]
 }
+
+type ProviderName = AgentConfig['provider']
 
 type ProviderReadinessStatus = 'ready' | 'cli_missing' | 'untested' | 'test_failed'
 
@@ -99,7 +101,74 @@ const PROVIDER_READINESS_META: Record<ProviderReadinessStatus, { label: string; 
   untested: { label: '待测试', className: 'tone-warning-pill border' },
   test_failed: { label: '测试失败', className: 'tone-warning-pill border' },
 }
+const PROVIDER_LABELS: Record<ProviderName, string> = {
+  'claude-code': 'Claude Code',
+  opencode: 'OpenCode',
+  codex: 'Codex CLI',
+}
 const TEAM_DRAFT_PROGRESS_MESSAGE = '正在整理 Team 方案…'
+const TEAM_MEMBER_AVATAR_CLASSES = [
+  'bg-[color:var(--accent)] text-on-accent',
+  'bg-ink text-bg',
+  'bg-[color:var(--success)] text-bg',
+  'bg-[color:var(--warning)] text-ink',
+]
+
+function getMemberInitial(name: string): string {
+  return Array.from(name.trim())[0] ?? '?'
+}
+
+function getProviderPathLabel(readiness: ProviderReadiness): string {
+  if (readiness.status === 'untested') return '待测试'
+  if (readiness.status === 'cli_missing') return readiness.cliPath ? `${readiness.cliPath} 未找到` : '未配置命令'
+  if (readiness.status === 'test_failed') return readiness.message || readiness.resolvedPath || readiness.cliPath || '运行失败'
+  return readiness.resolvedPath || readiness.cliPath || '已配置'
+}
+
+function isProviderName(value: unknown): value is ProviderName {
+  return value === 'claude-code' || value === 'opencode' || value === 'codex'
+}
+
+function getDraftMemberSummary(member: TeamDraftMember): string {
+  return member.responsibility || member.role || member.whenToUse.replace(/^触发[:：]\s*/, '')
+}
+
+function DraftMemberCard({
+  member,
+  index,
+  onRemove,
+}: {
+  member: TeamDraftMember
+  index: number
+  onRemove: (index: number) => void
+}) {
+  const colors = getAgentColor(member.displayName)
+
+  return (
+    <div data-create-team-draft-member-card="true" className="flex items-start gap-2.5 rounded-lg border border-line bg-surface-muted p-2.5">
+      <span
+        data-create-team-draft-member-avatar="true"
+        className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-surface text-[11px] font-bold shadow-sm"
+        style={{ backgroundColor: colors.bg, color: colors.text }}
+        aria-hidden
+      >
+        {getMemberInitial(member.displayName)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[12.8px] font-semibold text-ink">{member.displayName}</p>
+        <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-5 text-ink-soft">{getDraftMemberSummary(member)}</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => onRemove(index)}
+        className="shrink-0 p-0.5 text-ink-soft transition-colors hover:text-[color:var(--danger)]"
+        aria-label={`删除成员 ${member.displayName}`}
+      >
+        <X className="h-3 w-3" aria-hidden />
+      </button>
+    </div>
+  )
+}
 
 function formatTeamDraftError(message?: string): string {
   if (!message) return '生成 Team 方案失败'
@@ -115,6 +184,28 @@ function normalizeTeamDraft(draft: TeamDraft): TeamDraft {
     ...draft,
     name: !name || name.toLowerCase() === 'goal-to-team draft' ? '新 Team 方案' : draft.name,
   }
+}
+
+function parseTeamDraftPayload(text: string): TeamDraft {
+  const lines = text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+  const payloads = lines.length > 0 ? lines : [text.trim()]
+  let finalDraft: TeamDraft | null = null
+
+  for (const payload of payloads) {
+    const parsed = JSON.parse(payload) as TeamDraftStreamEvent | TeamDraft
+    if ('type' in parsed) {
+      if (parsed.type === 'draft') finalDraft = normalizeTeamDraft(parsed.draft)
+      if (parsed.type === 'error') throw new Error(parsed.error || '生成 Team 方案失败')
+      continue
+    }
+    finalDraft = normalizeTeamDraft(parsed)
+  }
+
+  if (!finalDraft) throw new Error('生成 Team 方案失败，请重试')
+  return finalDraft
 }
 
 function getUserFacingError(error: unknown, fallback = '网络错误，请重试'): string {
@@ -216,6 +307,7 @@ export default function CreateRoomModal({
   initialTopic,
   initialTeamId,
   initialWorkerIds,
+  desktopOffset = 0,
 }: {
   isOpen: boolean
   onClose: () => void
@@ -223,6 +315,7 @@ export default function CreateRoomModal({
   initialTopic?: string
   initialTeamId?: string
   initialWorkerIds?: string[]
+  desktopOffset?: number
 }) {
   const [allAgents, setAllAgents] = useState<AgentConfig[]>([])
   const [loadingAgents, setLoadingAgents] = useState(true)
@@ -246,6 +339,7 @@ export default function CreateRoomModal({
   const [teamDraftCreating, setTeamDraftCreating] = useState(false)
   const [providerReadiness, setProviderReadiness] = useState<Record<string, ProviderReadiness>>({})
   const [loadingProviderReadiness, setLoadingProviderReadiness] = useState(false)
+  const [teamArchitectProvider, setTeamArchitectProvider] = useState<ProviderName>('claude-code')
   const [preflightWarnings, setPreflightWarnings] = useState<RoomPreflightIssue[]>([])
   const router = useRouter()
   const pathname = usePathname()
@@ -281,6 +375,11 @@ export default function CreateRoomModal({
   const selectedProviderReadiness = selectedProviderNames
     .map(provider => providerReadiness[provider])
     .filter((readiness): readiness is ProviderReadiness => Boolean(readiness))
+  const selectedTeamPreviewMembers = selectedTeam?.members.slice(0, 4) ?? []
+  const selectedTeamMemberRoles = selectedTeamPreviewMembers
+    .map(member => member.roleLabel || member.name)
+    .join(' · ')
+  const teamArchitectProviderLabel = providerReadiness[teamArchitectProvider]?.label ?? PROVIDER_LABELS[teamArchitectProvider]
   const selectedCliBlockers = selectedWorkers.filter(worker => providerReadiness[worker.provider]?.status === 'cli_missing')
   const providerBlockerMessage = selectedCliBlockers.length > 0
     ? `执行工具未准备好：${[...new Set(selectedCliBlockers.map(worker => providerReadiness[worker.provider]?.label ?? worker.provider))].join('、')}`
@@ -345,6 +444,16 @@ export default function CreateRoomModal({
         warn('ui:room_create:provider_readiness_failed', { error: err })
         setLoadingProviderReadiness(false)
       })
+    fetch(`${API}/api/system-settings/team-architect`)
+      .then(r => r.json())
+      .then((data: { provider?: unknown }) => {
+        if (isProviderName(data.provider)) {
+          setTeamArchitectProvider(data.provider)
+        }
+      })
+      .catch((err) => {
+        warn('ui:room_create:team_architect_provider_load_failed', { error: err })
+      })
   }, [isOpen])
 
   useEffect(() => {
@@ -408,6 +517,10 @@ export default function CreateRoomModal({
 
   if (!isOpen) return null
 
+  const modalStyle = {
+    '--create-room-modal-left': `${desktopOffset}px`,
+  } as CSSProperties
+
   function handleOpenTeamDraft() {
     setTeamDraftOpen(true)
     setTeamDraftError('')
@@ -437,9 +550,12 @@ export default function CreateRoomModal({
 
   async function readTeamDraftStream(response: Response): Promise<TeamDraft> {
     if (!response.body) {
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(formatTeamDraftError((data as { error?: string }).error))
-      return normalizeTeamDraft(data as TeamDraft)
+      const text = await response.text().catch(() => '')
+      if (!response.ok) {
+        const data = text ? JSON.parse(text) as { error?: string } : {}
+        throw new Error(formatTeamDraftError(data.error))
+      }
+      return parseTeamDraftPayload(text)
     }
 
     const reader = response.body.getReader()
@@ -675,7 +791,8 @@ export default function CreateRoomModal({
       role="dialog"
       aria-modal="true"
       aria-label="发起任务"
-      className="fixed inset-0 layer-modal flex items-stretch justify-center p-4 pointer-events-none"
+      className={`fixed inset-y-0 left-0 right-0 md:left-[var(--create-room-modal-left)] layer-modal flex items-start justify-center px-4 ${teamDraftOpen ? 'py-9' : 'py-14'} pointer-events-none`}
+      style={modalStyle}
     >
       <div
         role="button"
@@ -685,18 +802,20 @@ export default function CreateRoomModal({
         onClick={onClose}
         onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') onClose() }}
       />
-      <div className="layer-overlay-content app-window-shell rounded-3xl w-full max-w-4xl flex flex-col custom-scrollbar pointer-events-auto overflow-hidden">
+      <div className={`layer-overlay-content app-window-shell w-full ${teamDraftOpen ? 'max-w-[760px]' : 'max-w-[720px]'} ${teamDraftOpen ? 'max-h-[calc(100dvh-4.5rem)]' : 'max-h-[calc(100dvh-7rem)]'} rounded-[14px] flex flex-col custom-scrollbar pointer-events-auto overflow-hidden`}>
 
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto">
 
             {/* Header */}
-            <div className="flex items-start justify-between px-6 md:px-8 pt-6 md:pt-8 pb-5 border-b border-line shrink-0">
+            <div className="flex items-start justify-between px-6 pt-5 pb-3.5 border-b border-line shrink-0">
               <div>
-                <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
-                  <BrainCircuit className="w-6 h-6 text-accent" aria-hidden/> 发起任务
-                </h1>
-                <p className="text-ink-soft mt-1 text-[14px]">选择一支 Team，进入协作现场后再输入这次要做的事。</p>
+                <h1 className="font-display text-[24px] font-medium leading-tight text-ink">发起任务</h1>
+                <p className="text-ink-soft mt-1 text-[14px]">
+                  {teamDraftOpen
+                    ? '描述你想让这支 Team 长期擅长什么，下面会给出一份可审阅的方案。'
+                    : '选择一支 Team，进入协作现场后再输入这次要做的事。'}
+                </p>
               </div>
               <button onClick={onClose} aria-label="关闭" className="p-2 text-ink-soft hover:text-ink hover:bg-surface-muted rounded-full transition-colors">
                 <X className="w-5 h-5" aria-hidden/>
@@ -704,14 +823,15 @@ export default function CreateRoomModal({
             </div>
 
             {/* F052: Team Selection Mode */}
-            <div className="px-6 md:px-8 pt-6 mb-1">
-              <div className="mb-3 grid grid-cols-2 rounded-xl border border-line bg-surface-muted p-1">
+            <div className="px-6 pt-5 mb-1">
+              <div className="flex gap-1 border-b border-line">
                 <button
                   type="button"
                   onClick={handleOpenTeamSelect}
                   aria-pressed={!teamDraftOpen}
-                  className={`rounded-lg px-3 py-2 text-[13px] font-bold transition-colors ${
-                    !teamDraftOpen ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:text-ink'
+                  data-create-room-tab="select-team"
+                  className={`rounded-t-lg border px-3.5 py-2 text-[12.5px] font-semibold transition-colors ${
+                    !teamDraftOpen ? 'border-line border-b-surface-muted bg-surface-muted text-ink' : 'border-transparent text-ink-soft hover:text-ink'
                   }`}
                 >
                   选择已有 Team
@@ -720,17 +840,18 @@ export default function CreateRoomModal({
                   type="button"
                   onClick={handleOpenTeamDraft}
                   aria-pressed={teamDraftOpen}
-                  className={`inline-flex items-center justify-center gap-1 rounded-lg px-3 py-2 text-[13px] font-bold transition-colors ${
-                    teamDraftOpen ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:text-ink'
+                  data-create-room-tab="generate-team"
+                  className={`rounded-t-lg border px-3.5 py-2 text-[12.5px] font-semibold transition-colors ${
+                    teamDraftOpen ? 'border-line border-b-surface-muted bg-surface-muted text-ink' : 'border-transparent text-ink-soft hover:text-ink'
                   }`}
                 >
-                  <Plus className="h-3.5 w-3.5" aria-hidden />
                   生成新 Team
                 </button>
               </div>
               {!teamDraftOpen ? (
-                <div className="rounded-2xl border border-line bg-surface-muted/60 p-4">
+                <div className="rounded-b-[10px] rounded-tr-[10px] border border-line border-t-0 bg-surface-muted/70 p-4">
                   <div>
+                    <p className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-faint">Team</p>
                     {teams.length > 0 ? (
                       <CustomSelect
                         value={teamId}
@@ -757,32 +878,65 @@ export default function CreateRoomModal({
                     )}
                   </div>
                   {!loadingTeams && selectedTeam && (
-                    <div className="mt-3 rounded-xl border border-line bg-surface p-3">
-                      <p className="text-[12px] font-bold text-ink">
-                        当前版本 v{selectedTeam.activeVersion.versionNumber} · {selectedTeam.members.length} 位成员
-                      </p>
+                    <div className="mt-3 rounded-[10px] border border-line bg-surface p-3.5">
+                      <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-soft">
+                        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">当前版本</span>
+                        <span className="font-mono text-ink">v{selectedTeam.activeVersion.versionNumber}</span>
+                        <span>·</span>
+                        <span>{selectedTeam.members.length} 位成员</span>
+                      </div>
                       {selectedTeam.description && (
                         <p className="mt-2 line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
                           适合：{selectedTeam.description}
                         </p>
                       )}
                       {selectedTeam.members.length > 0 && (
-                        <>
-                          <p className="mt-3 text-[11px] font-bold text-ink-faint">主要成员</p>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {selectedTeam.members.slice(0, 4).map(member => (
-                              <span key={member.id} className="rounded-full border border-line bg-surface-muted px-2 py-0.5 text-[11px] text-ink-soft">
-                                {member.name}
+                        <div className="mt-3 flex min-w-0 items-center gap-2">
+                          <p className="shrink-0 text-[11px] font-bold text-ink-faint">主要成员</p>
+                          <div className="flex shrink-0 -space-x-1.5">
+                            {selectedTeamPreviewMembers.map((member, index) => (
+                              <span
+                                key={member.id}
+                                data-create-room-member-avatar="true"
+                                title={`${member.name} · ${member.roleLabel}`}
+                                className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-surface text-[10px] font-bold shadow-sm ${TEAM_MEMBER_AVATAR_CLASSES[index % TEAM_MEMBER_AVATAR_CLASSES.length]}`}
+                              >
+                                {getMemberInitial(member.name)}
                               </span>
                             ))}
                             {selectedTeam.members.length > 4 && (
-                              <span className="rounded-full border border-line bg-surface-muted px-2 py-0.5 text-[11px] text-ink-soft">
+                              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-surface bg-surface-muted px-1.5 text-[10px] font-bold text-ink-soft shadow-sm">
                                 +{selectedTeam.members.length - 4}
                               </span>
                             )}
                           </div>
-                        </>
+                          <span className="min-w-0 truncate text-[11.5px] text-ink-soft">{selectedTeamMemberRoles}</span>
+                        </div>
                       )}
+                    </div>
+                  )}
+                  {!teamDraftOpen && selectedProviderReadiness.length > 0 && (
+                    <div className="mt-3">
+                      <p className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-faint">执行工具</p>
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        {selectedProviderReadiness.map(readiness => {
+                          const meta = PROVIDER_READINESS_META[readiness.status]
+                          return (
+                            <div key={readiness.provider} data-create-room-tool-card="true" className="rounded-[9px] border border-line bg-surface px-2.5 py-2">
+                              <div className="flex min-w-0 items-center justify-between gap-2">
+                                <span className="truncate text-[11.5px] font-semibold text-ink">{readiness.label}</span>
+                                <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${meta.className}`}>
+                                  {meta.label}
+                                </span>
+                              </div>
+                              <p className="mt-1 truncate font-mono text-[10.5px] text-ink-faint">
+                                {getProviderPathLabel(readiness)}
+                              </p>
+                            </div>
+                          )
+                        })}
+                        {loadingProviderReadiness && <span className="text-[11px] text-ink-soft">检查执行工具中…</span>}
+                      </div>
                     </div>
                   )}
                   {!loadingTeams && teamSelectionHint && (
@@ -792,25 +946,35 @@ export default function CreateRoomModal({
                   )}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-line bg-surface-muted/60 p-4">
+                <div data-create-team-generate-panel="true" className="px-6 py-[18px]">
                   <div>
-                    <textarea
-                      value={teamGoal}
-                      onChange={e => { setTeamGoal(e.target.value); setTeamDraftError('') }}
-                      placeholder="想让这支 Team 擅长哪类事？例如：长期帮我做小红书选题、脚本、复盘和账号改进"
-                      className="min-h-[88px] w-full resize-y rounded-xl border border-line bg-surface px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-accent/50"
-                    />
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={handleGenerateTeamDraft}
-                        disabled={teamDraftLoading || teamGoal.trim().length === 0}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-3 py-2 text-[12px] font-bold text-bg disabled:opacity-50"
-                      >
-                        <Wand2 className="h-3.5 w-3.5" aria-hidden />
-                        {teamDraftLoading ? '正在生成 Team 方案…' : teamDraft ? '重新生成' : '生成 Team 方案'}
-                      </button>
-                    </div>
+                    <p className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-faint">这支 Team 擅长哪类事</p>
+                    {teamDraft ? (
+                      <div data-create-team-goal-display="true" className="rounded-lg border border-line bg-surface-muted px-3 py-3 text-[13.5px] leading-6 text-ink">
+                        {teamGoal.trim() || '长期帮我做小红书选题、脚本、复盘和账号改进。'}
+                      </div>
+                    ) : (
+                      <>
+                        <textarea
+                          value={teamGoal}
+                          onChange={e => { setTeamGoal(e.target.value); setTeamDraftError('') }}
+                          placeholder="想让这支 Team 擅长哪类事？例如：长期帮我做小红书选题、脚本、复盘和账号改进"
+                          className="min-h-[96px] w-full resize-y rounded-lg border border-line bg-surface-muted px-3 py-2.5 text-[13.5px] leading-6 text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                        />
+                        <div className="mt-2 flex justify-end">
+                          <button
+                            type="button"
+                            data-create-team-generate-action="true"
+                            onClick={handleGenerateTeamDraft}
+                            disabled={teamDraftLoading || teamGoal.trim().length === 0}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-on-accent disabled:opacity-50"
+                          >
+                            <Wand2 className="h-3.5 w-3.5" aria-hidden />
+                            {teamDraftLoading ? '正在生成 Team 方案…' : '生成 Team 方案'}
+                          </button>
+                        </div>
+                      </>
+                    )}
                     {(teamDraftLoading || teamDraftOutput.trim().length > 0) && (
                       <div className="mt-3 rounded-xl border border-line bg-surface px-3 py-3">
                         <p className="flex items-center gap-1.5 text-[11px] font-bold text-ink-soft">
@@ -829,190 +993,216 @@ export default function CreateRoomModal({
                     {teamDraftError && <p className="tone-danger-text mt-2 text-xs">{teamDraftError}</p>}
                   </div>
 
-                  {!teamDraft && !teamDraftLoading && !teamDraftError && (
-                    <div className="mt-4 rounded-xl border border-dashed border-line bg-surface px-3 py-4 text-center text-[12px] text-ink-soft">
-                      生成后可在这里审阅 Team 方案。
-                    </div>
-                  )}
-
                   {teamDraft && (
-                    <div className="mt-4 space-y-4">
-                    <div>
-                      <div className="mb-1 flex items-center justify-between gap-3">
-                        <label className="text-[11px] font-bold text-ink-soft">Team 名称</label>
+                    <div className="mt-3 rounded-[10px] border border-line bg-surface p-4 [background-image:linear-gradient(var(--surface-muted),var(--surface))]">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">
+                            <Sparkles className="h-3 w-3" aria-hidden />
+                            Team 方案
+                          </span>
+                          <span className="text-[12px] text-ink-soft">
+                            由 Team Architect · {teamDraft.generationSource === 'fallback' ? '本地兜底' : teamArchitectProviderLabel} 生成
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleGenerateTeamDraft}
+                          disabled={teamDraftLoading || teamGoal.trim().length === 0}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent disabled:opacity-50"
+                        >
+                          <RefreshCw className="h-3 w-3" aria-hidden />
+                          重新生成
+                        </button>
                       </div>
-                      <input
-                        value={teamDraft.name}
-                        onChange={e => setTeamDraft(prev => prev ? { ...prev, name: e.target.value } : prev)}
-                        className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-[13px] font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-accent/50"
-                      />
-                      <p className="mt-2 text-[12px] leading-relaxed text-ink-soft">{teamDraft.mission}</p>
-                    </div>
 
-                    <div>
-                      <p className="text-[11px] font-bold text-ink-soft">成员</p>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <div className="mt-2.5">
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={teamDraft.name}
+                            onChange={e => setTeamDraft(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                            className="w-full border-0 bg-transparent p-0 font-display text-[22px] font-medium leading-tight text-ink outline-none focus:ring-0"
+                            aria-label="Team 名称"
+                          />
+                          <Edit2 className="h-3 w-3 shrink-0 text-ink-faint" aria-hidden />
+                        </div>
+                        <p className="mt-2 text-[12.5px] leading-relaxed text-ink-soft">
+                          <span className="text-ink-faint">使命：</span>
+                          {teamDraft.mission}
+                        </p>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
                         {teamDraft.members.map((member, index) => (
-                          <div key={`${member.displayName}-${index}`} className="rounded-xl border border-line bg-surface p-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="truncate text-[13px] font-bold text-ink">{member.displayName}</p>
-                                <p className="mt-1 inline-flex rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent">
-                                  {member.role}
-                                </p>
+                          <DraftMemberCard
+                            key={`${member.displayName}-${index}`}
+                            member={member}
+                            index={index}
+                            onRemove={handleRemoveDraftMember}
+                          />
+                        ))}
+                      </div>
+
+                      <details className="mt-3 rounded-lg border border-line bg-surface-muted/60 px-3 py-2">
+                        <summary className="cursor-pointer text-[12.5px] font-semibold text-ink-soft">协作方式 · 分工规则 · 检查方式</summary>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div>
+                            <p className="text-[11px] font-bold text-ink-soft">协作方式</p>
+                            <p className="mt-1 whitespace-pre-line rounded-xl border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-soft">{teamDraft.workflow}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold text-ink-soft">分工规则</p>
+                            <ul className="mt-1 space-y-1.5 rounded-xl border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-soft">
+                              {draftRoutingRules.length > 0 ? draftRoutingRules.map((rule, index) => (
+                                <li key={`${rule}-${index}`} className="flex gap-2">
+                                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent/70" />
+                                  <span>{rule}</span>
+                                </li>
+                              )) : (
+                                <li>按成员职责自动分配任务。</li>
+                              )}
+                            </ul>
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <p className="text-[11px] font-bold text-ink-soft">检查方式</p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {teamDraft.validationCases.map((validationCase, index) => (
+                              <div key={`${validationCase.title}-${index}`} className="rounded-xl border border-line bg-surface px-3 py-2">
+                                <p className="text-[12px] font-semibold text-ink">{validationCase.title}</p>
+                                <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-ink-soft">{validationCase.expectedBehavior}</p>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveDraftMember(index)}
-                                className="p-1 text-ink-soft hover:text-[color:var(--danger)]"
-                                aria-label={`删除成员 ${member.displayName}`}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                              </button>
-                            </div>
-                            <p className="mt-3 text-[12px] leading-relaxed text-ink-soft">{member.responsibility}</p>
-                            <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-ink-soft/80">
-                              适用：{member.whenToUse.replace(/^触发[:：]\s*/, '')}
-                            </p>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div>
-                        <p className="text-[11px] font-bold text-ink-soft">协作方式</p>
-                        <p className="mt-1 whitespace-pre-line rounded-xl border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-soft">{teamDraft.workflow}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-bold text-ink-soft">分工规则</p>
-                        <ul className="mt-1 space-y-1.5 rounded-xl border border-line bg-surface p-3 text-[12px] leading-relaxed text-ink-soft">
-                          {draftRoutingRules.length > 0 ? draftRoutingRules.map((rule, index) => (
-                            <li key={`${rule}-${index}`} className="flex gap-2">
-                              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent/70" />
-                              <span>{rule}</span>
-                            </li>
-                          )) : (
-                            <li>按成员职责自动分配任务。</li>
-                          )}
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-[11px] font-bold text-ink-soft">检查方式</p>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                        {teamDraft.validationCases.map((validationCase, index) => (
-                          <div key={`${validationCase.title}-${index}`} className="rounded-xl border border-line bg-surface px-3 py-2">
-                            <p className="text-[12px] font-semibold text-ink">{validationCase.title}</p>
-                            <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-ink-soft">{validationCase.expectedBehavior}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => { handleOpenTeamSelect(); setTeamDraft(null); setTeamDraftError('') }}
-                        className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] font-bold text-ink"
-                      >
-                        取消
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCreateTeamFromDraft}
-                        disabled={teamDraftCreating || teamDraft.members.length < 1 || teamDraft.name.trim().length === 0}
-                        className="rounded-lg bg-ink px-3 py-2 text-[12px] font-bold text-bg disabled:opacity-50"
-                      >
-                        {teamDraftCreating ? '创建中…' : '创建 Team 并进入协作现场'}
-                      </button>
-                    </div>
+                        </div>
+                      </details>
                     </div>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="px-6 md:px-8 pt-4 pb-3">
-              {loadingAgents && !selectedTeam && !teamDraftOpen && (
-                <div className="text-center py-5 text-ink-soft text-sm">加载 Team 成员配置…</div>
-              )}
-              {!teamDraftOpen && providerBlockerMessage && (
-                <div className="tone-danger-panel mt-3 rounded-xl border px-3 py-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-[12px] font-semibold">
-                      {providerBlockerMessage}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleManageProviders}
-                      className="rounded-lg bg-ink px-3 py-1.5 text-[12px] font-bold text-bg transition-opacity hover:opacity-90"
-                    >
-                      去设置执行工具
-                    </button>
+            {!teamDraftOpen && (
+              <div className="px-6 md:px-8 pt-4 pb-3">
+                {loadingAgents && !selectedTeam && (
+                  <div className="text-center py-5 text-ink-soft text-sm">加载 Team 成员配置…</div>
+                )}
+                {providerBlockerMessage && (
+                  <div className="tone-danger-panel mt-3 rounded-xl border px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[12px] font-semibold">
+                        {providerBlockerMessage}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleManageProviders}
+                        className="rounded-lg bg-ink px-3 py-1.5 text-[12px] font-bold text-bg transition-opacity hover:opacity-90"
+                      >
+                        去设置执行工具
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
-              {!teamDraftOpen && preflightWarnings.length > 0 && !providerBlockerMessage && (
-                <div className="tone-warning-pill mt-3 rounded-xl border px-3 py-2 text-[12px] font-semibold">
-                  {preflightWarnings.map(warning => warning.message).join('；')}
-                </div>
-              )}
-              {!teamDraftOpen && errors.agents && <p className="tone-danger-text mt-2 text-xs">{errors.agents}</p>}
-            </div>
+                )}
+                {preflightWarnings.length > 0 && !providerBlockerMessage && (
+                  <div className="tone-warning-pill mt-3 rounded-xl border px-3 py-2 text-[12px] font-semibold">
+                    {preflightWarnings.map(warning => warning.message).join('；')}
+                  </div>
+                )}
+                {errors.agents && <p className="tone-danger-text mt-2 text-xs">{errors.agents}</p>}
+              </div>
+            )}
 
             {/* Collapsible Workspace Section */}
-            <div className="px-6 md:px-8 pb-4">
-              <button
-                type="button"
-                onClick={() => setWorkspaceOpen(o => !o)}
-                className="flex items-center gap-2 text-[12px] text-ink-soft hover:text-ink transition-colors"
-              >
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${workspaceOpen ? 'rotate-180' : ''}`} aria-hidden/>
-                工作目录（可选）
-              </button>
-              {workspaceOpen && (
-                <div className="mt-2 p-4 bg-surface-muted rounded-2xl border border-line">
-                  <DirectoryPicker
-                    value={workspacePath}
-                    onChange={setWorkspacePath}
-                    placeholder="/Users/yulong/work/my-project"
-                    inputLabel="工作目录"
-                  />
-                  <p className="text-[11px] text-ink-soft/60 mt-1.5">留空则使用默认临时工作区，Team 将在该目录下读写文件</p>
-                </div>
-              )}
-            </div>
+            {!teamDraftOpen && (
+              <div className="px-6 md:px-8 pb-4">
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceOpen(o => !o)}
+                  className="flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-left text-[12px] text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+                >
+                  <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${workspaceOpen ? 'rotate-90' : ''}`} aria-hidden/>
+                  <Folder className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden />
+                  <span className="shrink-0 font-semibold text-ink-soft">工作目录（可选）</span>
+                  <span className="ml-auto hidden min-w-0 truncate text-[11px] text-ink-faint sm:block">留空则用默认临时工作区</span>
+                </button>
+                {workspaceOpen && (
+                  <div className="mt-2 p-4 bg-surface-muted rounded-2xl border border-line">
+                    <DirectoryPicker
+                      value={workspacePath}
+                      onChange={setWorkspacePath}
+                      placeholder="/Users/yulong/work/my-project"
+                      inputLabel="工作目录"
+                    />
+                    <p className="text-[11px] text-ink-soft/60 mt-1.5">留空则使用默认临时工作区，Team 将在该目录下读写文件</p>
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
 
           {/* Sticky Footer: CTA */}
-          <div className="shrink-0 border-t border-line px-6 md:px-8 py-4 bg-surface">
-            {!teamDraftOpen && selectedProviderReadiness.length > 0 && (
-              <div className="mb-3 flex flex-wrap gap-2">
-                {selectedProviderReadiness.map(readiness => {
-                  const meta = PROVIDER_READINESS_META[readiness.status]
-                  return (
-                    <span key={readiness.provider} className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${meta.className}`}>
-                      {readiness.label} · {meta.label}
-                    </span>
-                  )
-                })}
-                {loadingProviderReadiness && <span className="text-[11px] text-ink-soft">检查执行工具中…</span>}
+          <div className="shrink-0 border-t border-line px-6 py-3.5 bg-surface-muted">
+            {teamDraftOpen ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-[11.5px] text-ink-soft">方案确认后会创建 Team v1，并立即进入协作现场</span>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { handleOpenTeamSelect(); setTeamDraft(null); setTeamDraftError('') }}
+                    className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] font-semibold text-ink-soft transition-colors hover:text-ink"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateTeamFromDraft}
+                    disabled={!teamDraft || teamDraftCreating || teamDraft.members.length < 1 || teamDraft.name.trim().length === 0}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-on-accent transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {teamDraftCreating ? '创建中…' : '创建 Team 并进入现场'}
+                    <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div data-create-room-footer-status="preflight" className="min-w-0 text-[12px] text-ink-soft">
+                    {!errors.agents && selectedWorkers.length >= minimumWorkerCount && selectedCliBlockers.length === 0 ? (
+                      <>
+                        <span className="rounded-full bg-[color:var(--success)]/12 px-2 py-0.5 font-semibold text-[color:var(--success)]">通过</span>
+                        <span className="ml-2">room preflight · 没有阻塞</span>
+                      </>
+                    ) : errors.agents ? (
+                      <span className="tone-danger-text font-semibold">{errors.agents}</span>
+                    ) : selectedCliBlockers.length > 0 ? (
+                      <span className="tone-danger-text font-semibold">{providerBlockerMessage || '执行工具未准备好'}</span>
+                    ) : (
+                      <span>请选择 Team 成员</span>
+                    )}
+                  </div>
+                  <div data-create-room-footer-actions="true" className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] font-semibold text-ink-soft transition-colors hover:text-ink"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-[12px] font-semibold text-on-accent shadow-md transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100"
+                      onClick={handleSubmit}
+                      disabled={submitting || selectedWorkers.length < minimumWorkerCount || selectedCliBlockers.length > 0}
+                    >
+                      {submitting ? '创建中…' : '进入协作现场'}
+                      <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
-
-            {/* CTA */}
-            <button
-              type="button"
-              className="w-full bg-ink text-bg font-bold py-4 rounded-xl hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md active:scale-[0.99] disabled:active:scale-100"
-              onClick={handleSubmit}
-              disabled={teamDraftOpen || submitting || selectedWorkers.length < minimumWorkerCount || selectedCliBlockers.length > 0}
-            >
-              <Play className="w-4 h-4 fill-current" aria-hidden/>
-              {teamDraftOpen ? '先创建 Team' : submitting ? '创建中…' : '进入协作现场'}
-            </button>
 
           </div>
         </div>

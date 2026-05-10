@@ -72,6 +72,7 @@ export const BubbleSection = memo(function BubbleSection({
 
       {effectiveExpanded && (
         <div
+          tabIndex={-1}
           className={`mt-2 ml-2 pl-3.5 border-l-2 text-[14px] leading-relaxed ${
             icon === 'brain'
               ? 'font-mono text-ink-soft bg-surface-muted/50 py-2.5 px-3 rounded-r-lg text-[13px] overflow-x-auto'

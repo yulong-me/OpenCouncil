@@ -92,7 +92,6 @@ assert.deepEqual(
 const overlayContracts = [
   ['components/SettingsModal.tsx', 'layer-modal-scrim', 'layer-modal'],
   ['components/CreateRoomModal.tsx', 'layer-modal-scrim', 'layer-modal'],
-  ['components/AgentInviteDrawer.tsx', 'layer-drawer', 'layer-overlay-content'],
   ['components/DirectoryBrowser.tsx', 'layer-drawer', 'layer-overlay-content'],
   ['components/WorkspacePreviewDialog.tsx', 'layer-fullscreen-preview', 'layer-overlay-content'],
   ['components/AgentPanel.tsx', 'layer-app-panel', 'layer-popover', 'layer-drawer'],

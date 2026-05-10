@@ -1,3 +1,4 @@
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import type { ProviderConfig } from '../src/config/providerConfig.js';
@@ -137,6 +138,10 @@ describe('provider tool_use parsing', () => {
       PATH: '/usr/bin',
       ANTHROPIC_API_KEY: 'test-key',
       ANTHROPIC_BASE_URL: 'https://provider.example.com',
+      GIT_CEILING_DIRECTORIES: [
+        path.dirname(workspace),
+        workspace,
+      ].join(path.delimiter),
     });
   });
 
@@ -152,7 +157,7 @@ describe('provider tool_use parsing', () => {
     expect(launch.cliPath).toBe('/Users/tester/bin/opencode');
     expect(launch.args).toEqual(expect.arrayContaining(['run', '--dir', workspace, '--format', 'json', '--', 'hello from opencode']));
     expect(launch.args).toEqual(expect.arrayContaining(['-m', 'google/gemini-2.5-pro']));
-    expect(launch.args).toContain('--dangerously-skip-permissions');
+    expect(launch.args).not.toContain('--dangerously-skip-permissions');
     expect(launch.args).not.toContain('--thinking');
     expect(launch.cwd).toBe(workspace);
     expect(launch.spawnOptions).toMatchObject({
@@ -160,6 +165,10 @@ describe('provider tool_use parsing', () => {
       timeout: 90000,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    expect(launch.env.GIT_CEILING_DIRECTORIES).toBe([
+      path.dirname(workspace),
+      workspace,
+    ].join(path.delimiter));
   });
 
   it('builds Codex launch config with json output and provider runtime workspace', () => {
@@ -198,7 +207,34 @@ describe('provider tool_use parsing', () => {
       PATH: '/usr/bin',
       OPENAI_API_KEY: 'test-key',
       OPENAI_BASE_URL: 'https://provider.example.com',
+      GIT_CEILING_DIRECTORIES: [
+        providerRuntimeDir,
+        `${providerRuntimeDir}/workspace`,
+        path.dirname(workspace),
+        workspace,
+      ].join(path.delimiter),
     });
+  });
+
+  it('preserves existing Git ceiling entries after the room workspace', () => {
+    const workspace = '/Users/yulong/work/sample-project';
+    const launch = buildOpenCodeProviderLaunch(
+      'hello from opencode',
+      { workspace },
+      { ...baseProviderConfig, name: 'opencode', cliPath: '~/bin/opencode' },
+      {
+        HOME: '/Users/tester',
+        PATH: '/usr/bin',
+        GIT_CEILING_DIRECTORIES: '/var/existing',
+      },
+    );
+
+    expect(launch.env.GIT_CEILING_DIRECTORIES).toBe([
+      path.dirname(workspace),
+      workspace,
+      '/var/existing',
+    ].join(path.delimiter));
+    expect(launch.spawnOptions.env.GIT_CEILING_DIRECTORIES).toBe(launch.env.GIT_CEILING_DIRECTORIES);
   });
 
   it('builds Codex resume launch config when a session id exists', () => {
@@ -334,7 +370,7 @@ describe('provider tool_use parsing', () => {
 
     expect(launch.args).not.toContain('-m');
     expect(launch.args).not.toContain('MiniMax-M2.7');
-    expect(launch.args).toContain('--dangerously-skip-permissions');
+    expect(launch.args).not.toContain('--dangerously-skip-permissions');
   });
 
   it('falls back to the default cwd when room workspace is absent', () => {
@@ -356,6 +392,8 @@ describe('provider tool_use parsing', () => {
     expect(opencodeLaunch.cwd).toBe('/tmp');
     expect(opencodeLaunch.args).not.toContain('--dir');
     expect(opencodeLaunch.args).not.toContain('-m');
-    expect(opencodeLaunch.args).toContain('--dangerously-skip-permissions');
+    expect(opencodeLaunch.args).not.toContain('--dangerously-skip-permissions');
+    expect(claudeLaunch.env.GIT_CEILING_DIRECTORIES).toBeUndefined();
+    expect(opencodeLaunch.env.GIT_CEILING_DIRECTORIES).toBeUndefined();
   });
 });

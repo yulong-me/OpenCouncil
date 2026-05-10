@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type MutableRefObject, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clock3, Copy, Crown, GripVertical, Users, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clock3, Copy, Crown, GripVertical, RefreshCw, Users, X } from 'lucide-react'
 import { AgentAvatar } from './AgentAvatar'
 import { getAgentColor, type Agent, type SessionTelemetry } from '../lib/agents'
-import { formatCompactTokenCount, formatLatencyMs, getRemainingContextRatio } from '../lib/telemetry'
+import { formatCompactTokenCount, formatInvocationTokenFlow, formatLatencyMs, getRemainingContextRatio } from '../lib/telemetry'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 
 interface RoomSkillSummary {
@@ -21,6 +21,8 @@ interface RoomSkillSummary {
 interface AgentPanelProps {
   roomId?: string
   agents: Agent[]
+  teamName?: string
+  teamVersionNumber?: number
   workspace?: string
   skillSummary?: RoomSkillSummary
   sessionTelemetryByAgent?: Record<string, SessionTelemetry>
@@ -34,6 +36,13 @@ interface AgentPanelProps {
 }
 
 // ── Section 1: Compact agent card ─────────────────────────────────────────────
+function formatAgentRoleLabel(label?: string) {
+  const trimmed = label?.trim()
+  if (!trimmed) return ''
+  if (/[\u4e00-\u9fff]/.test(trimmed)) return trimmed
+  return trimmed.replace(/[_-]+/g, ' ')
+}
+
 function AgentItem({
   agent,
   sessionTelemetry,
@@ -57,61 +66,66 @@ function AgentItem({
   const isManager = agent.role === 'MANAGER'
   const avatarColors = getAgentColor(agent.name)
   const hasSessionTelemetry = Boolean(sessionTelemetry)
-  const contextHealth = sessionTelemetry?.contextHealth
-  const headerStatusLabel = contextHealth
-    ? '有上下文快照'
-    : hasSessionTelemetry
-      ? '会话中'
-      : statusMeta.label
-  const headerStatusDotClassName = contextHealth
-    ? 'bg-[color:var(--success)]'
-    : hasSessionTelemetry
-      ? 'bg-[color:var(--accent)]'
-      : statusMeta.dotClassName
+  const roleLabel = formatAgentRoleLabel(agent.domainLabel)
+  const tokenFlow = formatInvocationTokenFlow(sessionTelemetry?.invocationUsage)
 
   return (
-    <div className={`app-window-surface rounded-2xl border px-2.5 py-2.5 transition-all ${
-      isBusy ? 'shadow-[0_12px_24px_rgba(0,0,0,0.12)]' : 'shadow-sm'
-    }`}>
-      <div className="flex items-start gap-2.5">
-        <div className="relative mt-0.5 h-9 w-9 shrink-0 overflow-hidden rounded-xl shadow-sm">
+    <div
+      className={`team-member-card relative overflow-hidden rounded-[10px] border px-[10px] py-[10px] shadow-sm ${
+        isBusy ? 'border-[color:var(--line-strong)] bg-surface' : 'border-line bg-surface'
+      }`}
+    >
+      <span
+        className="team-member-card-accent absolute inset-y-2 left-0 w-[3px] rounded-r-full opacity-80"
+        style={{ backgroundColor: avatarColors.bg }}
+        aria-hidden
+      />
+      <div className="flex items-start gap-[10px] pl-0.5">
+        <div className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full">
           <AgentAvatar
             name={agent.name}
             color={avatarColors.bg}
             textColor={avatarColors.text}
-            size={36}
-            className="h-full w-full rounded-xl"
+            size={32}
+            className="h-full w-full rounded-full"
           />
           <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface ${statusMeta.dotClassName}`} />
         </div>
 
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-semibold text-ink">{agent.name}</p>
-              <div className="mt-1 inline-flex max-w-full items-center gap-1.5 text-[11px] text-ink-soft/72">
-                <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${headerStatusDotClassName}`} />
-                <span className="truncate">{headerStatusLabel}</span>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <p className="truncate text-[13px] font-semibold text-ink">{agent.name}</p>
+                {isManager ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium tone-warning-pill border">
+                    <Crown className="h-3 w-3" />
+                    主持
+                  </span>
+                ) : null}
               </div>
+              {roleLabel ? (
+                <p className="mt-1 truncate text-[11.5px] text-ink-soft/72">{roleLabel}</p>
+              ) : null}
             </div>
-            {sessionTelemetry ? (
-              <div className="shrink-0">
-                <TelemetryRingTrigger telemetry={sessionTelemetry} />
-              </div>
-            ) : isManager ? (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium tone-warning-pill border">
-                <Crown className="h-3 w-3" />
-                主持
-              </span>
-            ) : null}
           </div>
 
-          {((isBusy && !isManager && onStopAgent) || (agent.domainLabel && !hasSessionTelemetry)) ? (
-            <div className="flex items-center gap-2 flex-wrap">
-              {agent.domainLabel && !hasSessionTelemetry ? (
-                <span className="truncate text-[10px] text-ink-soft/58">{agent.domainLabel}</span>
-              ) : null}
-              {isBusy && !isManager && onStopAgent ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-medium ${statusMeta.className}`}>
+              {statusMeta.label}
+            </span>
+            {hasSessionTelemetry ? (
+              <TelemetryRingTrigger telemetry={sessionTelemetry} />
+            ) : null}
+            {tokenFlow ? (
+              <span
+                className="font-mono text-[10.5px] text-ink-faint"
+                title="最近一次调用的输入 / 输出 tokens"
+              >
+                {tokenFlow}
+              </span>
+            ) : null}
+            {isBusy && !isManager && onStopAgent ? (
                 <button
                   type="button"
                   onClick={() => { void onStopAgent(agent) }}
@@ -120,17 +134,8 @@ function AgentItem({
                 >
                   {stopping ? '停止中…' : '停止'}
                 </button>
-              ) : null}
-            </div>
-          ) : null}
-
-          {!sessionTelemetry ? (
-            <div className="border-t border-line/70 pt-2">
-              <div className="rounded-2xl border border-dashed border-line bg-surface-muted/45 px-3 py-2 text-[11px] text-ink-soft/70">
-                等待首轮上下文遥测…
-              </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
@@ -146,7 +151,7 @@ function ContextRing({
   size?: number
   label?: boolean
 }) {
-  const strokeWidth = size >= 60 ? 6 : 5
+  const strokeWidth = size >= 48 ? 5 : 2.5
   const radius = (size - strokeWidth) / 2
   const circumference = 2 * Math.PI * radius
   const remainingRatio = getRemainingContextRatio(contextHealth)
@@ -180,12 +185,12 @@ function ContextRing({
           strokeDashoffset={strokeDashoffset}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className={`${size >= 60 ? 'text-[13px]' : 'text-[12px]'} font-semibold text-ink`}>{contextHealth.leftPct}%</span>
-        {label ? (
+      {label ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className={`${size >= 60 ? 'text-[13px]' : 'text-[12px]'} font-semibold text-ink`}>{contextHealth.leftPct}%</span>
           <span className="text-[9px] uppercase tracking-[0.16em] text-ink-soft/70">left</span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -283,13 +288,7 @@ function TelemetryRingTrigger({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [detailsPinned])
 
-  if (!telemetry) {
-    return (
-      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface-muted text-[10px] font-semibold text-ink-soft/70">
-        --
-      </div>
-    )
-  }
+  if (!telemetry) return null
 
   const detailsVisible = detailsPinned || hoverActive
 
@@ -313,15 +312,19 @@ function TelemetryRingTrigger({
         }}
         onMouseEnter={handleHoverEnter}
         onMouseLeave={handleHoverLeave}
-        className="group relative inline-flex h-[60px] w-[60px] items-center justify-center rounded-full transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+        className="group inline-flex h-[22px] items-center gap-1 rounded-full border border-line bg-surface px-1.5 text-[10px] font-medium text-ink-soft transition-colors hover:border-accent/35 hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/45"
         title={contextHealth ? `Context left ${contextHealth.leftPct}%` : 'Context telemetry pending'}
       >
         {contextHealth ? (
-          <ContextRing contextHealth={contextHealth} size={56} />
+          <>
+            <ContextRing contextHealth={contextHealth} size={18} label={false} />
+            <span className="font-mono">{contextHealth.leftPct}%</span>
+          </>
         ) : (
-          <div className="flex h-[56px] w-[56px] items-center justify-center rounded-full border border-dashed border-line bg-surface text-[13px] font-semibold text-ink-soft/60 shadow-sm">
-            --
-          </div>
+          <>
+            <span className="h-1.5 w-1.5 rounded-full bg-ink-soft/35" />
+            <span>会话中</span>
+          </>
         )}
       </button>
       <TelemetryPopover
@@ -487,21 +490,21 @@ function TelemetryPopover({
               />
               {typeof invocationUsage?.inputTokens === 'number' && invocationUsage.inputTokens > 0 ? (
                 <TelemetryInfoCard
-                  label="Last In"
+                  label="输入"
                   value={formatCompactTokenCount(invocationUsage.inputTokens)}
                   icon={<ArrowDown className="h-3.5 w-3.5" />}
                 />
               ) : null}
               {typeof invocationUsage?.outputTokens === 'number' && invocationUsage.outputTokens > 0 ? (
                 <TelemetryInfoCard
-                  label="Last Out"
+                  label="输出"
                   value={formatCompactTokenCount(invocationUsage.outputTokens)}
                   icon={<ArrowUp className="h-3.5 w-3.5" />}
                 />
               ) : null}
               {typeof invocationUsage?.latencyMs === 'number' && invocationUsage.latencyMs > 0 ? (
                 <TelemetryInfoCard
-                  label="Latency"
+                  label="耗时"
                   value={formatLatencyMs(invocationUsage.latencyMs)}
                   icon={<Clock3 className="h-3.5 w-3.5" />}
                 />
@@ -577,6 +580,8 @@ function TelemetryInfoCard({
 export function AgentPanel({
   roomId,
   agents,
+  teamName,
+  teamVersionNumber,
   workspace,
   skillSummary,
   sessionTelemetryByAgent,
@@ -589,6 +594,72 @@ export function AgentPanel({
   onDesktopWidthChange,
 }: AgentPanelProps) {
   const dragStartRef = useRef<{ x: number; width: number } | null>(null)
+  const mobileDrawerRef = useRef<HTMLDivElement>(null)
+  const mobileCloseButtonRef = useRef<HTMLButtonElement>(null)
+  const mobileSubtitle = teamName
+    ? `${teamName}${teamVersionNumber ? ` · v${teamVersionNumber}` : ''} · ${agents.length} 人`
+    : `${agents.length} 位成员`
+
+  useEffect(() => {
+    if (!isMobileOpen) return
+
+    const frameId = window.requestAnimationFrame(() => {
+      mobileCloseButtonRef.current?.focus()
+    })
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onMobileClose?.()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+
+      const root = mobileDrawerRef.current
+      if (!root) return
+
+      const focusable = Array.from(root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      )).filter(element => element.offsetParent !== null || element === document.activeElement)
+
+      if (focusable.length === 0) {
+        event.preventDefault()
+        root.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const activeElement = document.activeElement
+
+      if (!activeElement || !root.contains(activeElement)) {
+        event.preventDefault()
+        first.focus()
+        return
+      }
+
+      if (activeElement === root) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+        return
+      }
+
+      if (event.shiftKey && activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isMobileOpen, onMobileClose])
 
   const handleResizeStart = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
     if (!onDesktopWidthChange) return
@@ -635,7 +706,7 @@ export function AgentPanel({
             >
               <GripVertical className="h-4 w-4 rounded-full bg-bg" />
             </button>
-            <div className="app-islands-panel h-full flex flex-col">
+            <div className="app-islands-panel oc-rail-panel h-full flex flex-col">
               <PanelContent
                 roomId={roomId}
                 agents={agents}
@@ -654,15 +725,28 @@ export function AgentPanel({
       {isMobileOpen && (
         <div className="lg:hidden fixed inset-0 layer-drawer flex">
           <div className="absolute inset-0 layer-modal-scrim bg-[color:var(--overlay-scrim)]" onClick={onMobileClose} />
-          <div className="layer-overlay-content ml-auto flex h-full w-[280px] flex-col border-l border-line bg-surface shadow-2xl">
-            <div className="flex items-center justify-end border-b border-line px-3 py-3">
+          <div
+            ref={mobileDrawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-agent-panel-title"
+            tabIndex={-1}
+            className="layer-overlay-content ml-auto flex h-full w-[min(320px,calc(100vw-3rem))] flex-col border-l border-line bg-nav-bg shadow-2xl"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
+              <div className="min-w-0">
+                <h2 id="mobile-agent-panel-title" className="truncate font-display text-[16px] font-normal leading-5 text-ink">Team 成员</h2>
+                <p className="mt-1 truncate font-mono text-[10.5px] text-ink-faint">{mobileSubtitle}</p>
+              </div>
               <button
+                ref={mobileCloseButtonRef}
                 type="button"
                 onClick={onMobileClose}
-                className="p-1.5 text-ink-soft hover:text-ink hover:bg-surface-muted rounded-lg transition-colors"
-                aria-label="关闭"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-muted hover:text-ink"
+                aria-label="关闭 Team 成员"
+                title="关闭"
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </button>
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
@@ -674,6 +758,8 @@ export function AgentPanel({
                 sessionTelemetryByAgent={sessionTelemetryByAgent}
                 stoppingAgentIds={stoppingAgentIds}
                 onStopAgent={onStopAgent}
+                showHeader={false}
+                showExtras={false}
               />
             </div>
           </div>
@@ -691,6 +777,8 @@ function PanelContent({
   sessionTelemetryByAgent,
   stoppingAgentIds,
   onStopAgent,
+  showHeader = true,
+  showExtras = true,
 }: {
   roomId?: string
   agents: Agent[]
@@ -699,42 +787,42 @@ function PanelContent({
   sessionTelemetryByAgent?: Record<string, SessionTelemetry>
   stoppingAgentIds?: Set<string>
   onStopAgent?: (agent: Agent) => Promise<void> | void
+  showHeader?: boolean
+  showExtras?: boolean
 }) {
   const [skillsCollapsed, setSkillsCollapsed] = useState(true)
-  const hasSkills = Boolean(
-    skillSummary &&
-    (
-      skillSummary.effectiveSkills.length > 0 ||
-      skillSummary.globalSkillCount > 0 ||
-      skillSummary.workspaceDiscoveredCount > 0
-    ),
-  )
+  const hasEffectiveSkills = Boolean(skillSummary?.effectiveSkills.length)
 
   return (
     <>
-      <div className="border-b border-line px-3 py-3 space-y-1.5">
-        {roomId && (
+      {showHeader && (
+        <div className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-[14px]">
+          <h2 className="font-mono text-[12px] font-medium uppercase tracking-[0.08em] text-ink-soft">
+            TEAM 成员 · {agents.length}
+          </h2>
           <button
             type="button"
-            onClick={() => navigator.clipboard.writeText(roomId)}
-            title="点击复制对话 ID"
-            className="flex items-center gap-1.5 rounded-lg border border-line bg-surface-muted px-2 py-1.5 text-[11px] text-ink-soft transition-colors cursor-pointer group w-full hover:border-accent/30 hover:text-accent"
+            className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-muted hover:text-accent"
+            aria-label="刷新遥测"
+            title={roomId ? `刷新遥测 · ${roomId.slice(0, 8)}` : '刷新遥测'}
           >
-            <span className="opacity-60 group-hover:opacity-100 shrink-0">ID:</span>
-            <span className="font-mono truncate group-hover:text-accent">{roomId.slice(0, 8)}…</span>
-            <Copy className="ml-auto h-3 w-3 opacity-40 transition-opacity group-hover:opacity-80" aria-hidden />
+            <RefreshCw className="h-3 w-3" aria-hidden />
           </button>
-        )}
-        <h2 className="pt-0.5 text-title text-ink">Team 成员</h2>
-      </div>
+        </div>
+      )}
 
-      <div className="flex-1 overflow-y-auto px-2.5 py-2.5 space-y-2.5 custom-scrollbar">
+      <div className="right-panel-section flex-1 overflow-y-auto px-[10px] py-2 custom-scrollbar">
         {agents.length === 0 ? (
-          <div className="app-window-surface rounded-2xl border border-dashed px-3 py-5 text-center">
-            <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-surface text-ink-soft/60">
+          <div className="app-window-surface rounded-2xl border border-line bg-surface px-3.5 py-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-surface-muted text-ink-soft/60">
               <Users className="h-4 w-4" />
             </div>
-            <p className="text-[12px] font-medium text-ink-soft">选择任务记录后显示 Team 成员</p>
+            <p className="mt-3 font-display text-[17px] leading-6 text-ink">
+              暂无 Team 成员
+            </p>
+            <p className="mt-2 text-[11px] leading-5 text-ink-faint">
+              成员载入后会显示职责、状态和上下文遥测。
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -750,7 +838,11 @@ function PanelContent({
           </div>
         )}
 
-        {hasSkills && skillSummary && (
+        {showExtras && workspace && (
+          <WorkspaceSidebar workspacePath={workspace} />
+        )}
+
+        {showExtras && hasEffectiveSkills && skillSummary && (
           <section className="rounded-2xl border border-line bg-surface-muted px-2.5 py-2.5 space-y-2">
             <button
               type="button"
@@ -800,9 +892,6 @@ function PanelContent({
           </section>
         )}
 
-        {workspace && (
-          <WorkspaceSidebar workspacePath={workspace} />
-        )}
       </div>
     </>
   )

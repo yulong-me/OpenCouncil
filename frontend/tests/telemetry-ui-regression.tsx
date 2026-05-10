@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { AgentPanel } from '../components/AgentPanel'
 import { MetadataBadge } from '../components/MetadataBadge'
-import { formatSessionSnapshotLabel, getRemainingContextRatio, mergeSessionTelemetryMaps } from '../lib/telemetry'
+import { formatLatencyMs, formatSessionSnapshotLabel, getRemainingContextRatio, mergeSessionTelemetryMaps } from '../lib/telemetry'
+
+assert.equal(formatLatencyMs(10000), '10.0s')
 
 assert.equal(
   formatSessionSnapshotLabel({
@@ -36,12 +38,19 @@ const markup = renderToStaticMarkup(
 
 assert.match(markup, /Claude Code/)
 assert.doesNotMatch(markup, /Session ID/)
-assert.match(markup, /ArrowDown|svg/)
+assert.doesNotMatch(markup, /ArrowDown|ArrowUp|Clock3/)
+assert.doesNotMatch(markup, /<svg/)
 assert.match(markup, /43k/)
 assert.match(markup, /86/)
 assert.match(markup, /title="Claude Code · MiniMax-M2\.7-highspeed-long-model-name-for-wrap-check"/)
 assert.match(markup, /2\.4s/)
-assert.match(markup, /\$0\.010/)
+assert.match(markup, /已结束[\s\S]*↑43k ↓86[\s\S]*2\.4s/)
+assert.match(markup, /aria-label="运行摘要：Claude Code，已结束，输入 43k，输出 86，耗时 2\.4s，费用 \$0\.010"/)
+assert.doesNotMatch(markup, />运行</)
+assert.doesNotMatch(markup, />输入</)
+assert.doesNotMatch(markup, />输出</)
+assert.doesNotMatch(markup, />耗时</)
+assert.doesNotMatch(markup, /\$0\.010/)
 
 const agentPanelMarkup = renderToStaticMarkup(
   <AgentPanel
@@ -86,8 +95,7 @@ assert.doesNotMatch(agentPanelMarkup, /145k left/)
 assert.doesNotMatch(agentPanelMarkup, /54\.9k/)
 assert.doesNotMatch(agentPanelMarkup, /Session ID/)
 assert.doesNotMatch(agentPanelMarkup, />OpenCode</)
-assert.doesNotMatch(agentPanelMarkup, />119</)
-assert.doesNotMatch(agentPanelMarkup, />511</)
+assert.match(agentPanelMarkup, /↑119 ↓511/)
 assert.doesNotMatch(agentPanelMarkup, /19s/)
 
 const partialTelemetryMarkup = renderToStaticMarkup(

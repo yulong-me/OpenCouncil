@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, BrainCircuit, Code2, FileText, Loader2, MessagesSquare, Scale, Search } from 'lucide-react'
+import { ArrowRight, Loader2, Wand2 } from 'lucide-react'
 import { API_URL } from '../../lib/api'
 import { AgentAvatar } from '../AgentAvatar'
+
+type ReadinessKey = 'ready' | 'cli_missing' | 'untested' | 'test_failed' | 'unknown'
 
 export interface QuickStartTemplate {
   id: string
@@ -12,7 +14,8 @@ export interface QuickStartTemplate {
   topic: string
   teamId: string
   agentIds: string[]
-  icon: 'litigation' | 'competitor' | 'paper' | 'roundtable' | 'software'
+  toolLabel: string
+  fallbackReadiness: Exclude<ReadinessKey, 'unknown'>
 }
 
 interface AgentSummary {
@@ -40,7 +43,11 @@ interface RecentRoomSummary {
   teamVersionNumber?: number
 }
 
-const READINESS_META = {
+const READINESS_META: Record<ReadinessKey, {
+  label: string
+  dotClassName: string
+  className: string
+}> = {
   ready: { label: '可用', dotClassName: 'bg-emerald-500', className: 'tone-success-pill border' },
   cli_missing: { label: 'CLI 未配置', dotClassName: 'bg-red-500', className: 'tone-danger-panel border' },
   untested: { label: '待测试', dotClassName: 'bg-amber-500', className: 'tone-warning-pill border' },
@@ -61,7 +68,8 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
       'litigation-opposing-counsel',
       'litigation-risk-controller',
     ],
-    icon: 'litigation',
+    toolLabel: 'OpenCode CLI',
+    fallbackReadiness: 'cli_missing',
   },
   {
     id: 'competitor-analysis',
@@ -75,7 +83,8 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
       'competitor-product-skeptic',
       'competitor-gtm-operator',
     ],
-    icon: 'competitor',
+    toolLabel: 'Claude Code',
+    fallbackReadiness: 'ready',
   },
   {
     id: 'paper-revision',
@@ -89,7 +98,8 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
       'paper-rebuttal-writer',
       'paper-hostile-reviewer',
     ],
-    icon: 'paper',
+    toolLabel: 'Codex CLI',
+    fallbackReadiness: 'untested',
   },
   {
     id: 'roundtable-forum',
@@ -98,7 +108,8 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
     topic: '',
     teamId: 'roundtable-forum',
     agentIds: ['paul-graham', 'steve-jobs', 'zhang-yiming', 'munger', 'taleb'],
-    icon: 'roundtable',
+    toolLabel: 'OpenCode',
+    fallbackReadiness: 'ready',
   },
   {
     id: 'software-development',
@@ -107,17 +118,10 @@ export const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
     topic: '',
     teamId: 'software-development',
     agentIds: ['dev-architect', 'dev-challenge-architect', 'dev-implementer', 'dev-reviewer'],
-    icon: 'software',
+    toolLabel: 'Claude Code · OpenCode · Codex CLI',
+    fallbackReadiness: 'ready',
   },
 ]
-
-const TEMPLATE_ICONS = {
-  litigation: Scale,
-  competitor: Search,
-  paper: FileText,
-  roundtable: MessagesSquare,
-  software: Code2,
-}
 
 interface EmptyRoomQuickStartProps {
   onStartBlank: () => void
@@ -139,6 +143,57 @@ function ReadinessDot({ readiness }: { readiness: TemplateReadiness }) {
     >
       <span className={`h-1.5 w-1.5 rounded-full ${readiness.dotClassName}`} aria-hidden />
       {readiness.label}
+    </span>
+  )
+}
+
+const HOME_AVATAR_COLORS = ['#b25530', '#6b6c2f', '#3f5c70', '#7a3d6a', '#c08a1f']
+
+function HomeAvatarStack({
+  names,
+  count,
+  size = 22,
+  dataAttribute,
+}: {
+  names?: string[]
+  count: number
+  size?: number
+  dataAttribute?: string
+}) {
+  const visibleCount = Math.min(count, 4)
+  const overflow = Math.max(count - visibleCount, 0)
+
+  return (
+    <span className="flex" aria-label={`${count} 成员`}>
+      {Array.from({ length: visibleCount }).map((_, index) => {
+        const name = names?.[index] ?? String(index + 1)
+        return (
+          <span
+            key={`${name}-${index}`}
+            data-quick-start-room-avatar={dataAttribute === 'room' ? 'true' : undefined}
+            className="inline-flex items-center justify-center rounded-full border-2 border-surface text-[10px] font-semibold shadow-sm"
+            style={{
+              width: size,
+              height: size,
+              marginLeft: index ? -6 : 0,
+              color: HOME_AVATAR_COLORS[index % HOME_AVATAR_COLORS.length],
+              backgroundColor: `color-mix(in srgb, ${HOME_AVATAR_COLORS[index % HOME_AVATAR_COLORS.length]} 18%, var(--surface))`,
+            }}
+            aria-hidden
+          >
+            {name.slice(0, 1).toUpperCase()}
+          </span>
+        )
+      })}
+      {overflow > 0 && (
+        <span
+          className="inline-flex items-center justify-center rounded-full border-2 border-surface bg-surface-muted text-[10px] font-semibold text-ink-soft shadow-sm"
+          style={{ width: size, height: size, marginLeft: -6 }}
+          aria-hidden
+        >
+          +{overflow}
+        </span>
+      )}
     </span>
   )
 }
@@ -188,7 +243,7 @@ export function EmptyRoomQuickStart({
     if (statuses.some(readiness => readiness.status === 'ready')) {
       return READINESS_META.ready
     }
-    return READINESS_META.unknown
+    return READINESS_META[template.fallbackReadiness]
   }
 
   function getAgentName(agentId: string) {
@@ -201,53 +256,62 @@ export function EmptyRoomQuickStart({
   )
 
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center px-5 py-8 md:px-10">
-      <div className="w-full max-w-6xl">
-        <div className="mb-7 flex items-start gap-4">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-line bg-surface shadow-sm">
-            <BrainCircuit className="h-5 w-5 text-accent" aria-hidden />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[12px] font-bold uppercase tracking-[0.18em] text-accent">OpenCouncil</p>
-            <h2 className="mt-2 text-2xl font-bold leading-tight text-ink md:text-3xl">
-              发起一个任务，交给 Team 协作。
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-5 pt-5 pb-24 md:pb-0 md:px-10 md:pt-8 lg:px-14 lg:py-12">
+        <div className="w-full max-w-6xl">
+          <div className="max-w-3xl">
+            <p className="sr-only">OpenCouncil</p>
+            <p className="sr-only">发起一个任务，交给 Team 协作。</p>
+            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-ink-faint">
+              主线 · 任务 → Team → 现场 → 记录 → 改进
+            </p>
+            <h2 className="mt-3 font-display text-[30px] font-normal leading-[1.08] text-ink md:text-[52px] md:leading-[1.06]">
+              发起一个任务，<br />
+              <span className="italic text-accent">交给 Team</span> 协作。
             </h2>
-            <p className="mt-3 max-w-2xl text-[14px] leading-6 text-ink-soft">
-              先选择一支 Team，进入协作现场后再告诉它这次要做什么。
-            </p>
-            <p className="mt-1.5 max-w-2xl text-[13px] leading-5 text-ink-soft">
-              让 4-5 位专家 Agent 在同一间房里讨论、质疑、收敛，比单 Agent 多一层把关。
+            <p className="mt-4 max-w-xl text-[15px] leading-7 text-ink-soft">
+              先选择一支 Team，进入协作现场后再告诉它这次要做什么。已有任务记录仍在左侧，这里始终保留给下一次协作。
             </p>
           </div>
-        </div>
 
         {recentTeamRooms.length > 0 && onContinueRoom && (
-          <div className="mb-5">
-            <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.18em] text-ink-soft">继续上次的协作</p>
+          <div className="mt-9">
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <p className="text-[12px] font-semibold text-ink">继续上次的协作</p>
+              <p className="text-[11px] text-ink-faint">{recentTeamRooms.length} 条进行中</p>
+            </div>
             <div className="grid gap-2 md:grid-cols-3">
               {recentTeamRooms.map(room => (
                 <button
                   key={room.id}
                   type="button"
                   onClick={() => onContinueRoom(room.id)}
-                  className="group flex min-w-0 items-center justify-between gap-3 rounded-lg border border-line bg-surface px-3 py-2.5 text-left shadow-sm transition-colors hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                  className="group flex min-w-0 flex-col gap-3 rounded-[10px] border border-line bg-surface px-3.5 py-3 text-left shadow-sm transition-colors hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45"
                 >
+                  <span className="flex w-full items-center justify-between gap-3">
+                    <span className="rounded-full border border-transparent bg-[color:var(--panel-muted)] px-2 py-0.5 text-[10px] font-medium text-ink-soft">待续</span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-ink-faint transition-transform group-hover:translate-x-0.5" aria-hidden />
+                  </span>
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-bold text-ink">{room.topic}</span>
                     <span className="mt-0.5 block truncate text-[11px] text-ink-soft">
-                      {room.teamName}{room.teamVersionNumber ? ` · v${room.teamVersionNumber}` : ''} · {room.agentCount} 位成员
+                      {room.teamName}{room.teamVersionNumber ? ` · v${room.teamVersionNumber}` : ''} · {room.agentCount} 成员
                     </span>
                   </span>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-ink-soft transition-transform group-hover:translate-x-0.5" aria-hidden />
+                  <HomeAvatarStack count={room.agentCount} dataAttribute="room" />
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-8">
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <p className="text-[12px] font-semibold text-ink">快速 Team 模板</p>
+            <p className="text-[11px] text-ink-faint">点选直接进入协作现场</p>
+          </div>
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-2 xl:grid-cols-3">
           {QUICK_START_TEMPLATES.map(template => {
-            const Icon = TEMPLATE_ICONS[template.icon]
             const readiness = getTemplateReadiness(template)
             const creating = creatingTemplateId === template.id
             return (
@@ -256,11 +320,30 @@ export function EmptyRoomQuickStart({
                 type="button"
                 onClick={() => onStartTemplate(template)}
                 disabled={Boolean(creatingTemplateId)}
-                className="group flex min-h-40 flex-col justify-between rounded-lg border border-line bg-surface px-4 py-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-wait disabled:opacity-70"
+                className="group flex min-h-[132px] flex-col rounded-[10px] border border-line bg-surface px-3 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:cursor-wait disabled:opacity-70 sm:min-h-36 sm:px-4 sm:py-4"
               >
-                <span className="flex items-center justify-between gap-3">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-muted text-accent">
-                    <Icon className="h-4 w-4" aria-hidden />
+                <span className="min-w-0">
+                  <span className="block truncate font-display text-[17px] font-medium text-ink">{template.title}</span>
+                  <span className="mt-1.5 block text-[12px] leading-5 text-ink-soft">{template.description}</span>
+                </span>
+                <span data-template-card-footer="true" className="mt-auto flex items-center justify-between gap-3 pt-3">
+                  <span className="flex -space-x-1">
+                    {template.agentIds.slice(0, 4).map(agentId => {
+                      const name = getAgentName(agentId)
+                      return (
+                        <AgentAvatar
+                          key={agentId}
+                          name={name}
+                          size={22}
+                          className="rounded-full border-2 border-surface shadow-sm"
+                        />
+                      )
+                    })}
+                    {template.agentIds.length > 4 && (
+                      <span className="-ml-1.5 inline-flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 border-surface bg-surface-muted text-[10px] font-semibold text-ink-soft shadow-sm">
+                        +{template.agentIds.length - 4}
+                      </span>
+                    )}
                   </span>
                   {creating ? (
                     <Loader2 className="h-4 w-4 animate-spin text-accent" aria-hidden />
@@ -268,31 +351,24 @@ export function EmptyRoomQuickStart({
                     <ReadinessDot readiness={readiness} />
                   )}
                 </span>
-                <span>
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="block text-[15px] font-bold text-ink">{template.title}</span>
-                  </span>
-                  <span className="mt-1.5 block text-[12px] leading-5 text-ink-soft">{template.description}</span>
-                  <span className="mt-3 flex items-center gap-1.5">
-                    <span className="flex -space-x-1">
-                      {template.agentIds.slice(0, 4).map(agentId => {
-                        const name = getAgentName(agentId)
-                        return (
-                          <AgentAvatar
-                            key={agentId}
-                            name={name}
-                            size={18}
-                            className="rounded-full border border-surface shadow-sm"
-                          />
-                        )
-                      })}
-                    </span>
-                    <span className="whitespace-nowrap text-[11px] text-ink-faint">{template.agentIds.length} 位专家</span>
-                  </span>
+                <span className="mt-2 border-t border-dashed border-line pt-2 font-mono text-[10.5px] leading-4 tracking-[0.02em] text-ink-faint">
+                  {template.toolLabel}
                 </span>
               </button>
             )
           })}
+          <button
+            type="button"
+            onClick={onStartBlank}
+            className="flex min-h-[118px] flex-col items-center justify-center gap-2 rounded-[10px] border border-dashed border-line bg-transparent px-3 py-3 text-center text-ink-soft transition-colors hover:border-accent/45 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 sm:min-h-36 sm:px-4 sm:py-4"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-muted text-accent">
+              <Wand2 className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="font-display text-[16px] font-medium text-ink">生成新 Team</span>
+            <span className="text-[11px] leading-4 text-ink-faint">描述长期擅长的任务类型</span>
+          </button>
+        </div>
         </div>
 
         {error && (
@@ -301,11 +377,11 @@ export function EmptyRoomQuickStart({
           </div>
         )}
 
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="mt-8 hidden flex-col gap-3 md:flex md:flex-row md:items-center">
           <button
             type="button"
             onClick={onStartBlank}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-ink px-5 py-3 text-[14px] font-bold text-bg shadow-sm transition-opacity hover:opacity-90"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-3 text-[14px] font-semibold text-on-accent shadow-sm transition-opacity hover:opacity-90"
           >
             发起任务
             <ArrowRight className="h-4 w-4" aria-hidden />
@@ -314,6 +390,17 @@ export function EmptyRoomQuickStart({
             已有任务记录仍在左侧；这里始终保留给下一次协作。
           </p>
         </div>
+      </div>
+      </div>
+      <div className="shrink-0 border-t border-line bg-surface-muted px-4 py-3 md:hidden">
+        <button
+          type="button"
+          onClick={onStartBlank}
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-accent px-5 text-[14px] font-semibold text-on-accent shadow-sm transition-opacity hover:opacity-90"
+        >
+          发起任务
+          <ArrowRight className="h-4 w-4" aria-hidden />
+        </button>
       </div>
     </div>
   )

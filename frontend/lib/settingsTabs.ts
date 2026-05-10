@@ -1,9 +1,10 @@
-export type SettingsTab = 'team' | 'provider' | 'skill'
+export type SettingsTab = 'team' | 'provider' | 'team-architect' | 'skill'
 
 export function resolveSettingsTab(value?: string | null): SettingsTab {
   if (value === 'team' || value === 'teams') return 'team'
   if (value === 'skill' || value === 'skills') return 'skill'
   if (value === 'provider' || value === 'providers') return 'provider'
+  if (value === 'team-architect' || value === 'team-architect-provider' || value === 'architect') return 'team-architect'
   return 'team'
 }
 

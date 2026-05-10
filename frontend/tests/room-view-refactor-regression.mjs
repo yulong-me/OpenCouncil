@@ -33,7 +33,7 @@ assert.match(roomView, /initialTab="team"/)
 
 assert.match(feedbackModal, /export function EvolutionFeedbackModal/)
 assert.match(feedbackModal, /改进这支 Team/)
-assert.match(feedbackModal, /这支 Team 下次怎么做会更好？/)
+assert.match(feedbackModal, /这支 Team <em>下次怎么做<\/em> 会更好？/)
 assert.match(feedbackModal, /Team Architect/)
 assert.match(feedbackModal, /layer-modal/)
 

@@ -5,12 +5,11 @@ import { useTheme } from 'next-themes'
 
 import { API_URL } from '@/lib/api'
 import { debug, info, warn } from '@/lib/logger'
-import type { Agent } from '@/lib/agents'
+import type { Agent, TeamListItem } from '@/lib/agents'
 import CreateRoomModal from './CreateRoomModal'
 import SettingsModal from './SettingsModal'
 import { RoomListSidebarDesktop, RoomListSidebarMobile } from './RoomListSidebar'
 import { AgentPanel } from './AgentPanel'
-import { AgentInviteDrawer } from './AgentInviteDrawer'
 import { MessageList } from './MessageList'
 import type { RoomComposerHandle } from './RoomComposer'
 import { EmptyRoomQuickStart, type QuickStartTemplate } from './room-view/EmptyRoomQuickStart'
@@ -57,8 +56,8 @@ interface CreatedRoomResponse {
   updatedAt?: number
 }
 
-const AGENT_PANEL_DEFAULT_WIDTH = 240
-const AGENT_PANEL_MIN_WIDTH = 220
+const AGENT_PANEL_DEFAULT_WIDTH = 308
+const AGENT_PANEL_MIN_WIDTH = 280
 const AGENT_PANEL_MAX_WIDTH = 360
 const AGENT_PANEL_WIDTH_KEY = 'opencouncil.agent-panel-width'
 const AGENT_PANEL_COLLAPSED_KEY = 'opencouncil.agent-panel-collapsed'
@@ -96,7 +95,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const [showInviteDrawer, setShowInviteDrawer] = useState(false)
   const [taskPanelWidth, setTaskPanelWidth] = useState(TASK_PANEL_DEFAULT_WIDTH)
   const [taskPanelCollapsed, setTaskPanelCollapsed] = useState(false)
   const [agentPanelWidth, setAgentPanelWidth] = useState(AGENT_PANEL_DEFAULT_WIDTH)
@@ -104,6 +102,12 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null)
   const [quickStartError, setQuickStartError] = useState<string | null>(null)
   const [stoppingForEvolution, setStoppingForEvolution] = useState(false)
+  const [settingsInitialTeamId, setSettingsInitialTeamId] = useState<string | undefined>(undefined)
+  const [teamLabelOverride, setTeamLabelOverride] = useState<{
+    teamId: string
+    name?: string
+    versionNumber?: number
+  } | null>(null)
 
   const { theme, resolvedTheme, setTheme } = useTheme()
   const currentTheme = resolvedTheme ?? theme
@@ -133,6 +137,9 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     workspaceDiscoveredCount,
     sessionTelemetryByAgent,
   } = useRoomRealtime({ roomId: activeRoomId, queuedDispatchPendingRef })
+  const activeTeamLabelOverride = teamLabelOverride?.teamId === teamId ? teamLabelOverride : null
+  const displayTeamName = activeTeamLabelOverride?.name ?? teamName
+  const displayTeamVersionNumber = activeTeamLabelOverride?.versionNumber ?? teamVersionNumber
   const {
     sending,
     sendError,
@@ -185,7 +192,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     setSelectedEvolutionId,
   } = useEvolutionProposals({ roomId: activeRoomId })
 
-  const displayMaxDepth = maxA2ADepth !== null ? maxA2ADepth : effectiveMaxDepth
+  const displayMaxDepth = effectiveMaxDepth
   const currentAgentConfigIds = useMemo(
     () => agents.map(agent => agent.configId ?? ''),
     [agents],
@@ -257,7 +264,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     setTaskPanelCollapsed(localStorage.getItem(TASK_PANEL_COLLAPSED_KEY) === '1')
 
     const storedWidth = Number.parseInt(localStorage.getItem(AGENT_PANEL_WIDTH_KEY) ?? '', 10)
-    if (Number.isFinite(storedWidth)) {
+    if (Number.isFinite(storedWidth) && storedWidth !== 240) {
       setAgentPanelWidth(clampAgentPanelWidth(storedWidth))
     }
     setAgentPanelCollapsed(localStorage.getItem(AGENT_PANEL_COLLAPSED_KEY) === '1')
@@ -307,8 +314,38 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
 
   const openSystemSettings = useCallback(() => {
     debug('ui:settings:open', { tab: 'team' })
+    setSettingsInitialTeamId(undefined)
     setSettingsOpen(true)
   }, [])
+
+  const openCurrentTeamSettings = useCallback(() => {
+    if (!teamId) {
+      openSystemSettings()
+      return
+    }
+    debug('ui:team_settings:open_current', { teamId, roomId: activeRoomId })
+    setSettingsInitialTeamId(teamId)
+    setSettingsOpen(true)
+  }, [activeRoomId, openSystemSettings, teamId])
+
+  const handleSettingsTeamUpdated = useCallback((updated: TeamListItem) => {
+    const versionNumber = updated.activeVersion?.versionNumber
+    setRooms(previous => previous.map(room => room.teamId === updated.id
+      ? {
+          ...room,
+          teamName: updated.name,
+          teamVersionNumber: versionNumber ?? room.teamVersionNumber,
+        }
+      : room,
+    ))
+    if (updated.id === teamId) {
+      setTeamLabelOverride({
+        teamId: updated.id,
+        name: updated.name,
+        versionNumber,
+      })
+    }
+  }, [setRooms, teamId])
 
   const navigateToRoom = useCallback((nextRoomId?: string) => {
     setActiveRoomId(nextRoomId)
@@ -480,11 +517,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
     setAgentDrawerOpen(true)
   }, [activeRoomId])
 
-  const openInviteDrawer = useCallback(() => {
-    debug('ui:agent_invite:open', { roomId: activeRoomId })
-    setShowInviteDrawer(true)
-  }, [activeRoomId])
-
   const handleGenerateTitleSuggestions = useCallback(async () => {
     if (!activeRoomId) return []
 
@@ -584,6 +616,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
         initialTopic={createInitialTopic}
         initialTeamId={createInitialTeamId}
         initialWorkerIds={createInitialWorkerIds}
+        desktopOffset={taskPanelCollapsed ? 0 : taskPanelWidth}
       />
       <div className="app-islands-shell h-[100dvh] flex overflow-hidden text-ink font-sans">
         <RoomListSidebarDesktop
@@ -605,7 +638,6 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           desktopWidth={taskPanelWidth}
           desktopCollapsed={taskPanelCollapsed}
           onDesktopWidthChange={handleTaskPanelWidthChange}
-          onDesktopToggleCollapsed={toggleTaskPanel}
         />
 
         <RoomListSidebarMobile
@@ -629,20 +661,23 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           onCloseMobileMenu={() => setMobileMenuOpen(false)}
         />
 
-        <div className="app-islands-panel flex-1 flex flex-col relative min-w-0">
+        <div className="app-islands-panel oc-main-panel flex-1 flex flex-col relative min-w-0">
           <RoomHeader
             roomId={activeRoomId}
             currentRoomTopic={currentRoomTopic}
             isTeamRoom={Boolean(teamId && teamVersionId)}
-            teamName={teamName}
-            teamVersionNumber={teamVersionNumber}
+            teamName={displayTeamName}
+            teamVersionNumber={displayTeamVersionNumber}
             maxA2ADepth={maxA2ADepth}
             currentA2ADepth={currentA2ADepth}
             displayMaxDepth={displayMaxDepth}
             onChangeDepth={newDepth => { void handleChangeDepth(newDepth) }}
             onToggleMobileMenu={toggleMobileMenu}
             onOpenAgentDrawer={openAgentDrawer}
-            onOpenInviteDrawer={openInviteDrawer}
+            onOpenSystemSettings={openSystemSettings}
+            onOpenTeamSettings={teamId ? openCurrentTeamSettings : undefined}
+            taskPanelCollapsed={taskPanelCollapsed}
+            onToggleTaskPanel={toggleTaskPanel}
             agentPanelCollapsed={agentPanelCollapsed}
             onToggleAgentPanel={toggleAgentPanel}
             onGenerateTitleSuggestions={handleGenerateTitleSuggestions}
@@ -664,7 +699,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
                 agents={agents}
                 state={state}
                 teamId={teamId}
-                teamName={teamName}
+                teamName={displayTeamName}
                 loading={roomLoading}
                 sending={sending}
                 messageErrorMap={messageErrorMap}
@@ -726,40 +761,37 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           )}
         </div>
 
-        <AgentPanel
-          roomId={activeRoomId}
-          agents={agents}
-          workspace={workspace}
-          skillSummary={{
-            effectiveSkills,
-            globalSkillCount,
-            workspaceDiscoveredCount,
-          }}
-          sessionTelemetryByAgent={sessionTelemetryByAgent}
-          stoppingAgentIds={stoppingAgentIds}
-          onStopAgent={handleStopAgent}
-          isMobileOpen={agentDrawerOpen}
-          onMobileClose={() => setAgentDrawerOpen(false)}
-          desktopWidth={agentPanelWidth}
-          desktopCollapsed={agentPanelCollapsed}
-          onDesktopWidthChange={handleAgentPanelWidthChange}
-        />
+        {activeRoomId && (
+          <AgentPanel
+            roomId={activeRoomId}
+            agents={agents}
+            teamName={displayTeamName}
+            teamVersionNumber={displayTeamVersionNumber}
+            workspace={workspace}
+            skillSummary={{
+              effectiveSkills,
+              globalSkillCount,
+              workspaceDiscoveredCount,
+            }}
+            sessionTelemetryByAgent={sessionTelemetryByAgent}
+            stoppingAgentIds={stoppingAgentIds}
+            onStopAgent={handleStopAgent}
+            isMobileOpen={agentDrawerOpen}
+            onMobileClose={() => setAgentDrawerOpen(false)}
+            desktopWidth={agentPanelWidth}
+            desktopCollapsed={agentPanelCollapsed}
+            onDesktopWidthChange={handleAgentPanelWidthChange}
+          />
+        )}
       </div>
 
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         initialTab="team"
+        initialTeamId={settingsInitialTeamId}
+        onTeamUpdated={handleSettingsTeamUpdated}
       />
-
-      {showInviteDrawer && activeRoomId && (
-        <AgentInviteDrawer
-          roomId={activeRoomId}
-          currentAgentIds={currentAgentConfigIds}
-          onClose={() => setShowInviteDrawer(false)}
-          onInvited={() => {}}
-        />
-      )}
 
       {evolutionFeedbackOpen && (
         <EvolutionFeedbackModal
@@ -767,6 +799,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           output={evolutionOutput}
           error={evolutionError}
           creating={creatingEvolutionProposal}
+          teamName={displayTeamName}
+          currentVersionNumber={displayTeamVersionNumber}
           busyAgents={busyAgents}
           stoppingAndSubmitting={stoppingForEvolution}
           onDraftChange={setEvolutionFeedbackDraft}
@@ -779,8 +813,8 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
       {activeEvolutionProposal && selectedEvolutionId && (
         <EvolutionReviewModal
           proposal={activeEvolutionProposal}
-          teamName={teamName}
-          currentVersionNumber={teamVersionNumber}
+          teamName={displayTeamName}
+          currentVersionNumber={displayTeamVersionNumber}
           decidingChangeId={decidingEvolutionChangeId}
           merging={mergingEvolutionProposal}
           rejecting={rejectingEvolutionProposal}

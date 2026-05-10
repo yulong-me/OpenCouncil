@@ -273,7 +273,7 @@ export function DirectoryBrowser({ initialPath, onSelect, onCancel }: DirectoryB
                   type="button"
                   onClick={handleCreateDir}
                   disabled={!newDirName.trim()}
-                  className="text-xs px-2.5 py-1 rounded bg-accent text-white hover:bg-accent/80 disabled:opacity-40 transition-colors"
+                  className="text-xs px-2.5 py-1 rounded bg-accent text-on-accent hover:bg-accent/80 disabled:opacity-40 transition-colors"
                 >
                   创建
                 </button>
@@ -412,7 +412,7 @@ export function DirectoryBrowser({ initialPath, onSelect, onCancel }: DirectoryB
                 onSelect(browseResult.current)
               }}
               disabled={!browseResult}
-              className="px-5 py-2 rounded-xl bg-accent hover:bg-accent-deep text-white text-sm font-medium transition-colors disabled:opacity-40"
+              className="px-5 py-2 rounded-xl bg-accent hover:bg-accent-deep text-on-accent text-sm font-medium transition-colors disabled:opacity-40"
             >
               选择此目录
             </button>
