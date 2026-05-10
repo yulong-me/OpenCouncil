@@ -28,6 +28,17 @@ export function formatLatencyMs(value?: number): string {
   return `${Math.round(value / 1000)}s`
 }
 
+export function formatInvocationTokenFlow(usage?: Pick<InvocationUsage, 'inputTokens' | 'outputTokens'>): string | undefined {
+  const parts: string[] = []
+  if (isFiniteNonNegative(usage?.inputTokens) && usage.inputTokens > 0) {
+    parts.push(`↑${formatCompactTokenCount(usage.inputTokens)}`)
+  }
+  if (isFiniteNonNegative(usage?.outputTokens) && usage.outputTokens > 0) {
+    parts.push(`↓${formatCompactTokenCount(usage.outputTokens)}`)
+  }
+  return parts.length > 0 ? parts.join(' ') : undefined
+}
+
 export function formatUsd(value?: number): string {
   if (!isFiniteNonNegative(value) || value <= 0) return '$0'
   if (value >= 1) return `$${value.toFixed(2)}`

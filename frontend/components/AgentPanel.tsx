@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, Check, ChevronDown, Clock3, Copy, Crown, GripVertical, RefreshCw, Users, X } from 'lucide-react'
 import { AgentAvatar } from './AgentAvatar'
 import { getAgentColor, type Agent, type SessionTelemetry } from '../lib/agents'
-import { formatCompactTokenCount, formatLatencyMs, getRemainingContextRatio } from '../lib/telemetry'
+import { formatCompactTokenCount, formatInvocationTokenFlow, formatLatencyMs, getRemainingContextRatio } from '../lib/telemetry'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 
 interface RoomSkillSummary {
@@ -67,12 +67,20 @@ function AgentItem({
   const avatarColors = getAgentColor(agent.name)
   const hasSessionTelemetry = Boolean(sessionTelemetry)
   const roleLabel = formatAgentRoleLabel(agent.domainLabel)
+  const tokenFlow = formatInvocationTokenFlow(sessionTelemetry?.invocationUsage)
 
   return (
-    <div className={`rounded-[9px] border px-[10px] py-[10px] transition-all ${
-      isBusy ? 'border-line bg-surface shadow-sm' : 'border-line bg-surface/70'
-    }`}>
-      <div className="flex items-start gap-[10px]">
+    <div
+      className={`team-member-card relative overflow-hidden rounded-[10px] border px-[10px] py-[10px] shadow-sm ${
+        isBusy ? 'border-[color:var(--line-strong)] bg-surface' : 'border-line bg-surface'
+      }`}
+    >
+      <span
+        className="team-member-card-accent absolute inset-y-2 left-0 w-[3px] rounded-r-full opacity-80"
+        style={{ backgroundColor: avatarColors.bg }}
+        aria-hidden
+      />
+      <div className="flex items-start gap-[10px] pl-0.5">
         <div className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full">
           <AgentAvatar
             name={agent.name}
@@ -108,6 +116,14 @@ function AgentItem({
             </span>
             {hasSessionTelemetry ? (
               <TelemetryRingTrigger telemetry={sessionTelemetry} />
+            ) : null}
+            {tokenFlow ? (
+              <span
+                className="font-mono text-[10.5px] text-ink-faint"
+                title="最近一次调用的输入 / 输出 tokens"
+              >
+                {tokenFlow}
+              </span>
             ) : null}
             {isBusy && !isManager && onStopAgent ? (
                 <button
@@ -474,21 +490,21 @@ function TelemetryPopover({
               />
               {typeof invocationUsage?.inputTokens === 'number' && invocationUsage.inputTokens > 0 ? (
                 <TelemetryInfoCard
-                  label="Last In"
+                  label="输入"
                   value={formatCompactTokenCount(invocationUsage.inputTokens)}
                   icon={<ArrowDown className="h-3.5 w-3.5" />}
                 />
               ) : null}
               {typeof invocationUsage?.outputTokens === 'number' && invocationUsage.outputTokens > 0 ? (
                 <TelemetryInfoCard
-                  label="Last Out"
+                  label="输出"
                   value={formatCompactTokenCount(invocationUsage.outputTokens)}
                   icon={<ArrowUp className="h-3.5 w-3.5" />}
                 />
               ) : null}
               {typeof invocationUsage?.latencyMs === 'number' && invocationUsage.latencyMs > 0 ? (
                 <TelemetryInfoCard
-                  label="Latency"
+                  label="耗时"
                   value={formatLatencyMs(invocationUsage.latencyMs)}
                   icon={<Clock3 className="h-3.5 w-3.5" />}
                 />
@@ -690,7 +706,7 @@ export function AgentPanel({
             >
               <GripVertical className="h-4 w-4 rounded-full bg-bg" />
             </button>
-            <div className="app-islands-panel h-full flex flex-col">
+            <div className="app-islands-panel oc-rail-panel h-full flex flex-col">
               <PanelContent
                 roomId={roomId}
                 agents={agents}
@@ -795,7 +811,7 @@ function PanelContent({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-[10px] py-1.5 custom-scrollbar">
+      <div className="right-panel-section flex-1 overflow-y-auto px-[10px] py-2 custom-scrollbar">
         {agents.length === 0 ? (
           <div className="app-window-surface rounded-2xl border border-line bg-surface px-3.5 py-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-surface-muted text-ink-soft/60">
@@ -809,7 +825,7 @@ function PanelContent({
             </p>
           </div>
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {agents.map(agent => (
               <AgentItem
                 key={agent.id}

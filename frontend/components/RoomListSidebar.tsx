@@ -863,7 +863,7 @@ export function RoomListSidebarDesktop({
           >
             <GripVertical className="h-4 w-4 rounded-full bg-bg" />
           </button>
-          <div className="app-islands-panel flex h-full flex-col border-r border-line bg-surface">
+          <div className="app-islands-panel oc-rail-panel flex h-full flex-col border-r border-line">
             <div className="shrink-0 border-b border-line px-4 py-3">
               <div className="flex items-center gap-2">
                 <SidebarBrand />
@@ -912,7 +912,7 @@ export function RoomListSidebarMobile({
   return (
     <div className="fixed inset-0 layer-drawer bg-[color:var(--overlay-scrim)] md:hidden" onClick={onCloseMobileMenu}>
       <div
-        className="absolute bottom-0 left-0 top-0 flex w-[82%] max-w-[300px] flex-col border-r border-line bg-surface shadow-2xl"
+        className="oc-rail-panel absolute bottom-0 left-0 top-0 flex w-[82%] max-w-[300px] flex-col border-r border-line shadow-2xl"
         onClick={event => event.stopPropagation()}
       >
         <div className="shrink-0 border-b border-line px-4 py-3">

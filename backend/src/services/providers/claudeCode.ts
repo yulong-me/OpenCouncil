@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { ClaudeEvent } from './index.js';
+import { withWorkspaceGitCeiling } from './gitEnv.js';
 import { getProvider } from '../../config/providerConfig.js';
 import type { ProviderConfig } from '../../config/providerConfig.js';
 import { debug, error } from '../../lib/logger.js';
@@ -48,9 +49,10 @@ export function buildClaudeProviderLaunch(
   const cliPath = (providerCfg?.cliPath ?? 'claude').replace(/^~/, baseEnv.HOME || '/root');
   const cwd = providerRuntimeDir ?? workspace ?? process.cwd();
 
-  const env: Record<string, string> = { ...(baseEnv as Record<string, string>) };
-  if (providerCfg?.apiKey) env.ANTHROPIC_API_KEY = providerCfg.apiKey;
-  if (providerCfg?.baseUrl) env.ANTHROPIC_BASE_URL = providerCfg.baseUrl;
+  const rawEnv: Record<string, string> = { ...(baseEnv as Record<string, string>) };
+  if (providerCfg?.apiKey) rawEnv.ANTHROPIC_API_KEY = providerCfg.apiKey;
+  if (providerCfg?.baseUrl) rawEnv.ANTHROPIC_BASE_URL = providerCfg.baseUrl;
+  const env = withWorkspaceGitCeiling(rawEnv, workspace);
 
   const args = ['-p', prompt, '--verbose', '--output-format=stream-json', '--include-partial-messages'];
   args.push('--dangerously-skip-permissions');

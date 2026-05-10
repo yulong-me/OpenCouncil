@@ -59,19 +59,43 @@ assert.match(
 )
 assert.match(teamSettings, /getAgentColor/)
 assert.match(teamSettings, /member-card/)
+assert.match(teamSettings, /member-card-refined/)
+assert.match(teamSettings, /member-card-accent/)
+assert.match(teamSettings, /member-field-panel/)
+assert.match(teamSettings, /role-soul-field/)
 assert.match(teamSettings, /member-provider-select/)
 assert.match(teamSettings, /member-toolbar/)
 assert.match(teamSettings, /member-action-bar/)
 assert.match(teamSettings, /role-soul-edit/)
 assert.match(teamSettings, /member-field-grid/)
 assert.match(teamSettings, /member-field-label/)
-assert.match(teamSettings, /border-l-\[3px\]/)
+assert.doesNotMatch(teamSettings, /border-y border-r border-l-\[3px\]/)
 assert.match(teamSettings, /w-\[8\.75rem\]/)
 assert.doesNotMatch(teamSettings, /member-focus-field/)
 assert.doesNotMatch(teamSettings, /rounded-full border border-line bg-surface-muted px-1\.5 py-1/)
-assert.match(teamSettings, /displayLabel="角色灵魂"/)
+assert.doesNotMatch(teamSettings, /displayLabel="角色灵魂"/)
 assert.match(teamSettings, /alwaysUseDialog/)
+assert.match(teamSettings, /line-clamp-3/)
+assert.match(teamSettings, /member-field-grid[^"]*lg:grid-cols-2/)
+assert.match(teamSettings, /role-soul-field[^"]*lg:col-span-2/)
+assert.match(
+  teamSettings,
+  /placeholder="负责什么"[\s\S]*?alwaysUseDialog[\s\S]*?longTextDialogTitle="编辑负责什么"/,
+  'Responsibility should use the same three-line preview and click-to-edit dialog pattern.',
+)
+assert.match(
+  teamSettings,
+  /placeholder="什么时候用它"[\s\S]*?alwaysUseDialog[\s\S]*?longTextDialogTitle="编辑什么时候用它"/,
+  'When-to-use should use the same three-line preview and click-to-edit dialog pattern.',
+)
 assert.match(teamSettings, /角色灵魂/)
+assert.ok(
+  teamSettings.indexOf('role-soul-field') > teamSettings.indexOf('member-field-grid'),
+  'Role soul should live with the member detail fields, not in the header action strip.',
+)
+assert.doesNotMatch(teamSettings, /member-edit-strip/)
+assert.doesNotMatch(teamSettings, /group-hover:(?:opacity|text)/)
+assert.doesNotMatch(teamSettings, /hover:shadow-\[/)
 assert.doesNotMatch(teamSettings, /详细工作说明/)
 assert.doesNotMatch(teamSettings, /移除成员建设中/)
 assert.match(teamSettings, /负责什么/)

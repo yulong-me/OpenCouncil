@@ -451,7 +451,7 @@ export function SkillSettingsTab({
   const selectedGlobalSkill = globalSkills.find(skill => globalSkillKey(skill) === selectedSkillKey)
 
   return (
-    <div className="grid h-full min-h-0 overflow-hidden bg-surface lg:grid-cols-[250px_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 overflow-hidden bg-bg lg:grid-cols-[250px_minmax(0,1fr)]">
       <aside className="border-b border-line bg-bg p-3 lg:border-b-0 lg:border-r">
         <div className="mb-3 flex items-center justify-between gap-2 px-1">
           <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">Managed · {skills.length}</p>
@@ -517,7 +517,7 @@ export function SkillSettingsTab({
         ) : selectedGlobalSkill ? (
           <GlobalSkillDetail skill={selectedGlobalSkill} />
         ) : (
-          <div className="rounded-xl border border-line bg-surface-muted p-5 text-[13px] text-ink-soft">请选择一个 Skill。</div>
+          <div className="rounded-xl border border-line bg-nav-bg p-5 text-[13px] text-ink-soft">请选择一个 Skill。</div>
         )}
       </section>
     </div>

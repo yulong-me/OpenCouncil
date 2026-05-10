@@ -661,7 +661,7 @@ export default function RoomView({ roomId, defaultCreateOpen = false }: RoomView
           onCloseMobileMenu={() => setMobileMenuOpen(false)}
         />
 
-        <div className="app-islands-panel flex-1 flex flex-col relative min-w-0">
+        <div className="app-islands-panel oc-main-panel flex-1 flex flex-col relative min-w-0">
           <RoomHeader
             roomId={activeRoomId}
             currentRoomTopic={currentRoomTopic}

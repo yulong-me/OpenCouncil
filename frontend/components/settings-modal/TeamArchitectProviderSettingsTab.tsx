@@ -61,7 +61,7 @@ export function TeamArchitectProviderSettingsTab({
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-surface p-6 custom-scrollbar lg:p-8">
+    <div className="h-full overflow-y-auto bg-bg p-6 custom-scrollbar lg:p-8">
       <div className="max-w-3xl space-y-5">
         <div className="border-b border-line pb-4">
           <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">Team 方案生成</p>

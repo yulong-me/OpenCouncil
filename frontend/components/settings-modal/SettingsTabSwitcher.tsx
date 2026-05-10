@@ -24,7 +24,7 @@ export function SettingsTabSwitcher({
   onChange: (tab: SettingsTab) => void
 }) {
   return (
-    <aside className="flex w-[220px] shrink-0 flex-col border-r border-line bg-bg px-3.5 py-5">
+    <aside className="flex w-[220px] shrink-0 flex-col border-r border-line bg-nav-bg px-3.5 py-5">
       <div className="px-1.5 pb-3.5 font-display text-[22px] font-medium leading-tight text-ink">设置</div>
       <nav className="space-y-0.5" aria-label="设置导航">
         {SETTINGS_NAV_ITEMS.map(item => {

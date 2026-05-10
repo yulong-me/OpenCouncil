@@ -56,7 +56,7 @@ export function RoomActionArea({
 }: RoomActionAreaProps) {
   if (state === 'DONE') {
     return (
-      <div className="border-t border-line bg-nav-bg px-4 py-4 md:px-8">
+      <div className="border-t border-line bg-bg px-4 py-4 md:px-8">
         <div
           className="rounded-[12px] border border-line bg-surface px-5 py-4 shadow-sm"
           style={{

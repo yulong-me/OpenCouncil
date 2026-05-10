@@ -25,7 +25,7 @@
     --ink-faint: #8A8074;
     --line: #D8D2C1;
     --line-strong: #C8BEA9;
-    --nav-bg: rgba(236, 230, 212, 0.96);
+    --nav-bg: #EFEADC;
     --accent: #B25530;
     --accent-contrast: #FFFFFF;
     --accent-deep: #7A3617;
@@ -75,7 +75,7 @@
     --ink-faint: #8C8472;
     --line: #2C2A21;
     --line-strong: #3A372C;
-    --nav-bg: rgba(26, 25, 19, 0.96);
+    --nav-bg: #1B1A14;
     --accent: #D27244;
     --accent-contrast: #15140F;
     --accent-deep: #F0C9AB;
@@ -192,22 +192,16 @@ textarea {
   min-height: 100dvh;
   padding: var(--islands-panel-top);
   gap: var(--islands-panel-gap);
-  background:
-    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 26%),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 62%, var(--bg)) 0%, var(--bg) 30%, var(--bg) 100%);
+  background: var(--bg);
 }
 
 .ambient-canvas {
-  background:
-    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 28%),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 58%, var(--bg)) 0%, var(--bg) 24%, var(--bg) 100%);
+  background: var(--bg);
 }
 
 .dark .app-islands-shell,
 .dark .ambient-canvas {
-  background:
-    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-muted) 28%, var(--bg)) 0%, var(--bg) 48%, #06080D 100%);
+  background: var(--bg);
 }
 
 .app-islands-panel,
@@ -228,6 +222,22 @@ textarea {
 
 .app-islands-panel {
   border-radius: var(--islands-panel-radius);
+}
+
+.oc-main-panel {
+  background: var(--bg) !important;
+}
+
+.oc-rail-panel {
+  background: var(--nav-bg) !important;
+}
+
+.oc-card-panel {
+  background: var(--surface) !important;
+}
+
+.oc-sunk-panel {
+  background: var(--surface-muted) !important;
 }
 
 .layer-app-panel {

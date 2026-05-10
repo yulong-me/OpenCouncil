@@ -154,7 +154,7 @@ export function RoomHeader({
   }
 
   const headerTitle = !roomId ? 'OpenCouncil' : (currentRoomTopic || '新任务记录')
-  const taskActionButtonClassName = 'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-surface px-2.5 text-[12px] font-semibold text-ink-soft shadow-sm transition-colors hover:bg-nav-bg hover:text-accent disabled:cursor-not-allowed disabled:opacity-60'
+  const taskActionButtonClassName = 'inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-surface px-2.5 text-[12px] font-semibold text-ink-soft shadow-sm transition-colors hover:bg-surface-muted hover:text-accent disabled:cursor-not-allowed disabled:opacity-60'
   const mobileTaskButtonClassName = 'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:bg-surface-muted hover:text-accent disabled:cursor-not-allowed disabled:opacity-60'
   const layoutPanelButtonClassName = (active: boolean, display = 'inline-flex') =>
     `${display} h-8 w-8 items-center justify-center rounded-md transition-colors ${
@@ -165,7 +165,7 @@ export function RoomHeader({
 
   return (
     <div
-      className="h-[60px] md:h-16 layer-sticky-header bg-nav-bg border-b border-line px-4 md:px-6 flex items-center justify-between sticky top-0"
+      className="h-[60px] md:h-16 layer-sticky-header bg-bg border-b border-line px-4 md:px-6 flex items-center justify-between sticky top-0"
     >
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         <button
@@ -248,7 +248,7 @@ export function RoomHeader({
             </div>
           )}
           {renaming && roomId && suggestionsOpen && (
-            <div className="absolute left-0 top-full layer-popover mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-line bg-nav-bg p-3 shadow-xl">
+            <div className="absolute left-0 top-full layer-popover mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-line bg-surface p-3 shadow-xl">
               <div className="mb-2">
                 <p className="text-label uppercase text-accent">为这次任务记录起个标题</p>
                 <p className="mt-1 text-[12px] text-ink-soft">点任意标题，直接替换当前任务记录名。</p>

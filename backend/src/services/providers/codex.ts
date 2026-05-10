@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { createInterface } from 'readline';
 import { ClaudeEvent } from './index.js';
+import { withWorkspaceGitCeiling } from './gitEnv.js';
 import { getProvider } from '../../config/providerConfig.js';
 import type { ProviderConfig } from '../../config/providerConfig.js';
 import { debug, error } from '../../lib/logger.js';
@@ -63,9 +64,10 @@ export function buildCodexProviderLaunch(
   const cliPath = (providerCfg?.cliPath ?? 'codex').replace(/^~/, baseEnv.HOME || '/root');
   const cwd = providerRuntimeDir ?? workspace ?? process.cwd();
 
-  const env: Record<string, string> = { ...(baseEnv as Record<string, string>) };
-  if (providerCfg?.apiKey) env.OPENAI_API_KEY = providerCfg.apiKey;
-  if (providerCfg?.baseUrl) env.OPENAI_BASE_URL = providerCfg.baseUrl;
+  const rawEnv: Record<string, string> = { ...(baseEnv as Record<string, string>) };
+  if (providerCfg?.apiKey) rawEnv.OPENAI_API_KEY = providerCfg.apiKey;
+  if (providerCfg?.baseUrl) rawEnv.OPENAI_BASE_URL = providerCfg.baseUrl;
+  const env = withWorkspaceGitCeiling(rawEnv, providerWorkspacePath, workspace);
 
   const args = [
     'exec',

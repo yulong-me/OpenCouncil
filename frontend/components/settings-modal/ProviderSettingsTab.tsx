@@ -363,7 +363,7 @@ function ProviderDetail({
         data-testid="provider-test-stack"
         className="mt-5 space-y-4"
       >
-        <section className="rounded-xl border border-line bg-surface-muted p-4">
+        <section className="rounded-xl border border-line bg-nav-bg p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h3 className="font-display text-[16px] font-bold text-ink">1. 命令是否存在</h3>
@@ -396,7 +396,7 @@ function ProviderDetail({
           )}
         </section>
 
-        <section className="rounded-xl border border-line bg-surface-muted p-4">
+        <section className="rounded-xl border border-line bg-nav-bg p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h3 className="font-display text-[16px] font-bold text-ink">2. 命令能否运行实际的 Prompt</h3>
@@ -452,7 +452,7 @@ export function ProviderSettingsTab({
   const currentProvider = selectedProvider ? providers[selectedProvider] : null
 
   return (
-    <div className="grid h-full min-h-0 overflow-hidden bg-surface lg:grid-cols-[250px_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 overflow-hidden bg-bg lg:grid-cols-[250px_minmax(0,1fr)]">
       <aside className="border-b border-line bg-bg p-3 lg:border-b-0 lg:border-r">
         <div className="mb-3 flex items-center justify-between gap-2 px-1">
           <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">Provider · {providerList.length}</p>
@@ -504,7 +504,7 @@ export function ProviderSettingsTab({
               onRefreshReadiness={onRefreshReadiness}
             />
           ) : (
-            <div className="rounded-xl border border-line bg-surface-muted p-4 text-[13px] text-ink-soft">没有可配置的 Provider。</div>
+            <div className="rounded-xl border border-line bg-nav-bg p-4 text-[13px] text-ink-soft">没有可配置的 Provider。</div>
           )}
         </div>
       </section>

@@ -234,10 +234,10 @@ function EditableText({
         }}
         className={`min-h-7 w-full rounded-lg px-2 py-1.5 text-left text-[12px] leading-5 text-ink transition-colors hover:bg-surface focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/20 ${monospace ? 'font-mono' : ''} ${className}`}
       >
-        <span className={visibleText ? `${useDialogEditor && !displayLabel ? 'line-clamp-4' : 'whitespace-pre-line'}` : 'text-ink-faint'}>
+        <span className={visibleText ? `${useDialogEditor && !displayLabel ? 'line-clamp-3' : 'whitespace-pre-line'}` : 'text-ink-faint'}>
           {visibleText || placeholder}
         </span>
-        {useDialogEditor && !displayLabel && (
+        {useDialogEditor && !displayLabel && !alwaysUseDialog && (
           <span className="mt-1 block text-[11px] font-medium text-accent">内容较长，点击弹窗编辑</span>
         )}
       </button>
@@ -510,7 +510,7 @@ export function TeamSettingsTab({
 
   if (localTeams.length === 0) {
     return (
-      <section className="flex h-full items-center justify-center bg-surface-muted p-6 text-center">
+      <section className="flex h-full items-center justify-center bg-bg p-6 text-center">
         <div>
           <p className="text-[15px] font-bold text-ink">Team 设置</p>
           <p className="mt-2 text-[13px] text-ink-soft">还没有可用 Team。</p>
@@ -520,7 +520,7 @@ export function TeamSettingsTab({
   }
 
   return (
-    <div className="grid h-full min-h-0 overflow-hidden bg-surface lg:grid-cols-[250px_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 overflow-hidden bg-bg lg:grid-cols-[250px_minmax(0,1fr)]">
       <aside className="border-b border-line bg-bg p-3 lg:border-b-0 lg:border-r">
         <div className="mb-3 flex items-center justify-between gap-2 px-1">
           <div className="min-w-0">
@@ -622,9 +622,14 @@ export function TeamSettingsTab({
                 return (
                   <div
                     key={member.id}
-                    className="member-card rounded-xl border-y border-r border-l-[3px] border-y-line border-r-line border-l-accent/40 bg-surface px-4 py-4 shadow-sm transition-colors hover:border-l-accent/70"
+                    className="member-card member-card-refined relative overflow-hidden rounded-[10px] border border-line bg-surface px-4 py-4 shadow-sm"
                   >
-                    <div className="grid gap-3.5 md:grid-cols-[2.75rem_minmax(0,1fr)]">
+                    <span
+                      className="member-card-accent absolute inset-y-3 left-0 w-[3px] rounded-r-full opacity-85"
+                      style={{ backgroundColor: color.bg }}
+                      aria-hidden
+                    />
+                    <div className="grid gap-3.5 pl-0.5 md:grid-cols-[2.75rem_minmax(0,1fr)]">
                       <AgentAvatar
                         name={member.name}
                         color={color.bg}
@@ -658,9 +663,9 @@ export function TeamSettingsTab({
                               />
                             </div>
                           </div>
-                          <div className="member-toolbar member-action-bar grid shrink-0 gap-1.5 rounded-lg border border-line bg-surface-muted/60 p-1.5 shadow-sm sm:grid-cols-[auto_auto]">
+                          <div className="member-toolbar member-action-bar flex shrink-0 items-center">
                             <span className="sr-only">执行工具：选择这个成员实际调用哪个 CLI 工具，例如 OpenCode 或 Codex CLI。</span>
-                            <span className="member-provider-select inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface pl-2 pr-1 transition-colors hover:border-accent/30">
+                            <span className="member-provider-select inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface/70 pl-2 pr-1">
                               <span className="shrink-0 text-[10px] font-bold text-ink-faint">执行工具</span>
                               <CustomSelect<ProviderName>
                                 value={member.provider}
@@ -668,30 +673,15 @@ export function TeamSettingsTab({
                                 options={PROVIDER_OPTIONS}
                                 ariaLabel={`选择 ${member.name} 的执行工具`}
                                 className="w-[8.75rem]"
-                                buttonClassName="h-7 cursor-pointer gap-1 rounded-md border-transparent bg-transparent px-2 py-0 text-[11px] hover:border-transparent hover:bg-surface-muted focus:ring-2 focus:ring-accent/20"
+                                buttonClassName="h-7 cursor-pointer gap-1 rounded-md border-transparent bg-transparent px-2 py-0 text-[11px] hover:border-transparent hover:bg-transparent focus:ring-2 focus:ring-accent/20"
                                 menuClassName="right-auto min-w-[9rem]"
-                              />
-                            </span>
-                            <span className="sr-only">角色灵魂：给执行工具看的完整工作要求，适合写边界、步骤、输出格式和注意事项。</span>
-                            <span className="role-soul-edit inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface px-2 transition-colors hover:border-accent/30">
-                              <Edit2 className="h-3 w-3 shrink-0 text-ink-faint" aria-hidden />
-                              <EditableText
-                                value={member.systemPrompt}
-                                placeholder="角色灵魂"
-                                multiline
-                                monospace
-                                displayLabel="角色灵魂"
-                                alwaysUseDialog
-                                longTextDialogTitle="编辑角色灵魂"
-                                className="h-6 w-auto cursor-pointer whitespace-nowrap rounded-md border border-transparent bg-transparent px-0 py-0 text-[11px] font-semibold text-ink-soft hover:bg-transparent hover:text-accent focus:ring-2 focus:ring-accent/20"
-                                onSave={value => updateMember(member.id, { systemPrompt: value })}
                               />
                             </span>
                           </div>
                         </div>
 
-                        <div className="member-field-grid mt-3 grid gap-x-5 gap-y-3 border-t border-line pt-3 md:grid-cols-2">
-                          <div className="min-w-0">
+                        <div className="member-field-grid mt-3 grid gap-x-6 gap-y-3 border-t border-line pt-3 lg:grid-cols-2">
+                          <div className="member-field-panel min-w-0">
                             <div className="member-field-label">
                               <FieldLabel help="负责什么：写清楚它主要产出什么，例如 搜集资料、写方案、做审查。">负责什么</FieldLabel>
                             </div>
@@ -699,12 +689,13 @@ export function TeamSettingsTab({
                               value={member.responsibility ?? ''}
                               placeholder="负责什么"
                               multiline
+                              alwaysUseDialog
                               longTextDialogTitle="编辑负责什么"
-                              className="mt-0.5 px-0 text-[12.5px] leading-5 hover:bg-transparent"
+                              className="mt-1 min-h-[4.75rem] rounded-md border border-line/70 bg-surface/55 px-2.5 py-2 text-[12.5px] leading-5 text-ink-soft hover:border-accent/30 hover:bg-transparent"
                               onSave={value => updateMember(member.id, { responsibility: value })}
                             />
                           </div>
-                          <div className="min-w-0">
+                          <div className="member-field-panel min-w-0 border-line lg:border-l lg:pl-4">
                             <div className="member-field-label">
                               <FieldLabel help="什么时候用它：写清楚什么情况下该找它，例如 用户要查资料时。">什么时候用它</FieldLabel>
                             </div>
@@ -712,13 +703,31 @@ export function TeamSettingsTab({
                               value={member.whenToUse ?? ''}
                               placeholder="什么时候用它"
                               multiline
+                              alwaysUseDialog
                               longTextDialogTitle="编辑什么时候用它"
-                              className="mt-0.5 px-0 text-[12.5px] leading-5 hover:bg-transparent"
+                              className="mt-1 min-h-[4.75rem] rounded-md border border-line/70 bg-surface/55 px-2.5 py-2 text-[12.5px] leading-5 text-ink-soft hover:border-accent/30 hover:bg-transparent"
                               onSave={value => updateMember(member.id, { whenToUse: value })}
                             />
                           </div>
+                          <div className="member-field-panel role-soul-field min-w-0 border-t border-line pt-3 lg:col-span-2">
+                            <div className="member-field-label">
+                              <FieldLabel help="角色灵魂：给执行工具看的完整工作要求，适合写边界、步骤、输出格式和注意事项。">角色灵魂</FieldLabel>
+                            </div>
+                            <div className="role-soul-edit">
+                              <EditableText
+                                value={member.systemPrompt}
+                                placeholder="角色灵魂"
+                                multiline
+                                monospace
+                                alwaysUseDialog
+                                longTextDialogTitle="编辑角色灵魂"
+                                className="mt-1 min-h-[4.75rem] rounded-md border border-line/70 bg-surface/55 px-2.5 py-2 text-[12.5px] leading-5 text-ink-soft hover:border-accent/30 hover:bg-transparent focus:ring-2 focus:ring-accent/20"
+                                onSave={value => updateMember(member.id, { systemPrompt: value })}
+                              />
+                            </div>
+                          </div>
 
-                          <div className="relative flex min-w-0 flex-wrap items-center gap-1.5 border-t border-line pt-3 text-[12px] text-ink-soft md:col-span-2">
+                          <div className="member-field-panel relative flex min-w-0 flex-wrap items-center gap-1.5 border-t border-line pt-3 text-[12px] text-ink-soft lg:col-span-3">
                               <div className="member-field-label">
                                 <FieldLabel help="Skill：从系统维护或系统扫描到的 Skill 中选择这个成员运行时需要的能力包。">Skill</FieldLabel>
                               </div>
@@ -789,7 +798,7 @@ export function TeamSettingsTab({
             </section>
           ) : activeSubtab === 'rules' ? (
             <section className="mt-4 space-y-4">
-              <div className="rounded-[10px] border border-line bg-surface-muted/70 px-4 py-3.5">
+              <div className="rounded-[10px] border border-line bg-nav-bg px-4 py-3.5">
                 <FieldLabel help="这段内容会进入 Team 成员运行时的系统提示，决定团队如何协作、接力和收敛。">团队协作说明</FieldLabel>
                 <EditableText
                   value={activeVersion.workflowPrompt ?? ''}
@@ -802,7 +811,7 @@ export function TeamSettingsTab({
                 />
               </div>
 
-              <div className="rounded-[10px] border border-line bg-surface-muted/70 px-4 py-3.5">
+              <div className="rounded-[10px] border border-line bg-nav-bg px-4 py-3.5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <FieldLabel help="定义什么情况应该交给哪个角色。生成 Team 时标准格式是 when -> memberRole。">协作路由规则</FieldLabel>
@@ -860,7 +869,7 @@ export function TeamSettingsTab({
 
             </section>
           ) : activeSubtab === 'memory' ? (
-            <section className="mt-4 rounded-[10px] border border-line bg-surface-muted/70 px-4 py-3.5">
+            <section className="mt-4 rounded-[10px] border border-line bg-nav-bg px-4 py-3.5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <FieldLabel help="保存 Team 级别的长期偏好、约束和经验，用于后续 Team 演进和协作配置。">Team 长期记忆</FieldLabel>

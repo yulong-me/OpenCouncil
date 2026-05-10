@@ -217,7 +217,9 @@ export function WorkspaceSidebar({ workspacePath }: WorkspaceSidebarProps) {
 
   return (
     <>
-      <div className="space-y-2 rounded-[9px] border border-line bg-surface px-[10px] py-[10px] shadow-none">
+      <div
+        className="workspace-card-refined space-y-2 rounded-[10px] border border-line bg-surface px-[10px] py-[10px] shadow-sm"
+      >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft/45">Workspace</p>
@@ -229,7 +231,7 @@ export function WorkspaceSidebar({ workspacePath }: WorkspaceSidebarProps) {
           <div
             role="tablist"
             aria-label="Workspace 视图"
-            className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md border border-line bg-surface-muted/70 p-0.5"
+            className="workspace-panel-tabs inline-flex h-7 shrink-0 items-center gap-0.5 rounded-lg border border-line bg-surface-muted/55 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.38)]"
           >
             <button
               type="button"
@@ -239,9 +241,9 @@ export function WorkspaceSidebar({ workspacePath }: WorkspaceSidebarProps) {
                 debug('ui:workspace:tab_change', { workspacePath, tab: 'files' })
                 setTab('files')
               }}
-              className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[10.5px] font-medium transition-colors ${
+              className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] font-medium transition-colors ${
                 tab === 'files'
-                  ? 'bg-surface text-ink shadow-sm'
+                  ? 'bg-surface text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]'
                   : 'text-ink-soft hover:bg-surface hover:text-ink'
               }`}
             >
@@ -256,9 +258,9 @@ export function WorkspaceSidebar({ workspacePath }: WorkspaceSidebarProps) {
                 debug('ui:workspace:tab_change', { workspacePath, tab: 'git' })
                 setTab('git')
               }}
-              className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[10.5px] font-medium transition-colors ${
+              className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] font-medium transition-colors ${
                 tab === 'git'
-                  ? 'bg-surface text-ink shadow-sm'
+                  ? 'bg-surface text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]'
                   : 'text-ink-soft hover:bg-surface hover:text-ink'
               }`}
             >
