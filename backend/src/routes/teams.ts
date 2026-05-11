@@ -1,6 +1,7 @@
 import { Router, type Response } from 'express';
-import { evolutionRepo, teamsRepo } from '../db/index.js';
+import { evolutionRepo, roomsRepo, teamsRepo } from '../db/index.js';
 import { generateTeamDraftFromGoal } from '../services/teamDrafts.js';
+import { store } from '../store.js';
 
 export const teamsRouter = Router();
 
@@ -12,6 +13,7 @@ const EVOLUTION_ERROR_STATUS: Record<string, number> = {
   EVOLUTION_TARGET_VERSION_EXISTS: 409,
   EVOLUTION_PREFLIGHT_REQUIRED: 409,
   EVOLUTION_VALIDATION_FAILED: 409,
+  EVOLUTION_SOURCE_ROOM_NOT_FOUND: 409,
   TEAM_GOAL_TOO_VAGUE: 400,
   TEAM_DRAFT_INVALID: 400,
   TEAM_DRAFT_AGENT_FAILED: 503,
@@ -104,7 +106,20 @@ teamsRouter.post('/evolution-proposals/:proposalId/merge', (req, res) => {
     const result = evolutionRepo.merge(req.params.proposalId, {
       confirmFailedValidation: req.body?.confirmFailedValidation === true,
     });
-    return res.json(result);
+    const room = result.version
+      ? roomsRepo.get(result.proposal.roomId)
+      : undefined;
+    if (room) {
+      store.update(room.id, {
+        agents: room.agents,
+        teamId: room.teamId,
+        teamVersionId: room.teamVersionId,
+        teamName: room.teamName,
+        teamVersionNumber: room.teamVersionNumber,
+        maxA2ADepth: room.maxA2ADepth,
+      });
+    }
+    return res.json({ ...result, ...(room ? { room } : {}) });
   } catch (err) {
     return sendEvolutionError(res, err, 'Failed to merge evolution proposal');
   }
