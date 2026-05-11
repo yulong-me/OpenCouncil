@@ -74,6 +74,13 @@ export function buildRoomScopedSystemPrompt(
   // 1. TeamVersion workflow prompt is pinned at room creation.
   parts.push(workflowPrompt);
 
+  if (teamVersion?.teamMemory.length) {
+    parts.push([
+      '【团队记忆】',
+      ...teamVersion.teamMemory.map(item => `- ${item}`),
+    ].join('\n'));
+  }
+
   // 2. Base prompt (Agent persona prompt or system action prompt)
   parts.push(basePrompt);
 

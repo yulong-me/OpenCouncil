@@ -44,7 +44,8 @@ export type EvolutionRepoErrorCode =
   | 'EVOLUTION_PROPOSAL_STATE_CONFLICT'
   | 'EVOLUTION_TARGET_VERSION_EXISTS'
   | 'EVOLUTION_PREFLIGHT_REQUIRED'
-  | 'EVOLUTION_VALIDATION_FAILED';
+  | 'EVOLUTION_VALIDATION_FAILED'
+  | 'EVOLUTION_SOURCE_ROOM_NOT_FOUND';
 
 export class EvolutionRepoError extends Error {
   code: EvolutionRepoErrorCode;
@@ -551,6 +552,25 @@ const mergeTransaction = db.transaction((proposalId: string, options?: { confirm
     appliedVersionId: nextVersion.id,
     updatedAt: now,
   });
+
+  const roomUpdate = db.prepare(`
+    UPDATE rooms
+    SET
+      team_id = @teamId,
+      team_version_id = @teamVersionId,
+      agent_ids = @agentIds,
+      updated_at = @updatedAt
+    WHERE id = @roomId
+  `).run({
+    roomId: proposal.roomId,
+    teamId: nextVersion.teamId,
+    teamVersionId: nextVersion.id,
+    agentIds: JSON.stringify(nextVersion.memberIds),
+    updatedAt: now,
+  });
+  if (roomUpdate.changes !== 1) {
+    throw new EvolutionRepoError('EVOLUTION_SOURCE_ROOM_NOT_FOUND', `Source room not found: ${proposal.roomId}`);
+  }
 
   return {
     proposal: getProposal(proposal.id)!,

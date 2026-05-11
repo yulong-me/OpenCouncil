@@ -23,7 +23,7 @@ vi.mock('../src/store.js', () => ({
 }));
 
 vi.mock('../src/db/index.js', () => ({
-  roomsRepo: { create: vi.fn(), update: vi.fn(), listSidebar: vi.fn() },
+  roomsRepo: { create: vi.fn(), get: vi.fn(), update: vi.fn(), listSidebar: vi.fn() },
   agentRunsRepo: {
     listByRoom: vi.fn(),
     getDetail: vi.fn(),
@@ -1271,6 +1271,30 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
   });
 
   _skipIfNoPort('POST /api/teams/evolution-proposals/:proposalId/merge returns the new TeamVersion when accepted changes exist', async () => {
+    vi.mocked(roomsRepo.get).mockReturnValue({
+      id: 'room-team',
+      topic: 'Test',
+      state: 'RUNNING',
+      agents: [{
+        id: 'agent-runtime-1',
+        role: 'WORKER',
+        name: 'Reviewer',
+        domainLabel: 'Review',
+        configId: 'reviewer',
+        status: 'idle',
+      }],
+      messages: [],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      maxA2ADepth: null,
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v2',
+      teamName: '软件开发团队',
+      teamVersionNumber: 2,
+      createdAt: 1,
+      updatedAt: 2,
+    });
     vi.mocked(evolutionRepo.merge).mockReturnValue({
       proposal: {
         id: 'evo-1',
@@ -1305,10 +1329,96 @@ describe('F015: HTTP POST /api/rooms/:id/messages — 409 ROOM_BUSY', () => {
 
     expect(result.status).toBe(200);
     expect(evolutionRepo.merge).toHaveBeenCalledWith('evo-1', { confirmFailedValidation: false });
+    expect(roomsRepo.get).toHaveBeenCalledWith('room-team');
+    expect(store.update).toHaveBeenCalledWith('room-team', expect.objectContaining({
+      teamId: 'software-development',
+      teamVersionId: 'software-development-v2',
+      teamVersionNumber: 2,
+      agents: [expect.objectContaining({ configId: 'reviewer' })],
+    }));
     expect(result.data).toMatchObject({
       proposal: { id: 'evo-1', status: 'applied', appliedVersionId: 'software-development-v2' },
       version: { id: 'software-development-v2', versionNumber: 2 },
+      room: {
+        id: 'room-team',
+        teamVersionId: 'software-development-v2',
+        agents: [{ configId: 'reviewer' }],
+      },
     });
+  });
+
+  _skipIfNoPort('POST /api/teams/evolution-proposals/:proposalId/merge syncs the source room member list to the applied TeamVersion', async () => {
+    const appliedVersion = {
+      id: 'technical-video-studio-v2',
+      teamId: 'technical-video-studio',
+      versionNumber: 2,
+      name: 'Agent Technical Video Studio',
+      memberIds: ['topic-producer', 'script-director', 'visual-storyboard', 'voice-motion', 'qa-reviewer', 'browser-publishing-operator'],
+      memberSnapshots: [],
+      workflowPrompt: '新工作流',
+      routingPolicy: {},
+      teamMemory: [],
+      maxA2ADepth: 5,
+      createdAt: 2,
+      createdFrom: 'evolution-pr' as const,
+    };
+    vi.mocked(evolutionRepo.merge).mockReturnValue({
+      proposal: {
+        id: 'evo-video',
+        roomId: 'room-video',
+        teamId: 'technical-video-studio',
+        baseVersionId: 'technical-video-studio-v1',
+        targetVersionNumber: 2,
+        status: 'applied',
+        summary: '增加发布操作员',
+        createdAt: 1,
+        updatedAt: 2,
+        appliedVersionId: 'technical-video-studio-v2',
+        changes: [],
+      },
+      version: appliedVersion,
+    });
+    vi.mocked(roomsRepo.get).mockReturnValue({
+      id: 'room-video',
+      topic: '视频制作',
+      state: 'RUNNING',
+      agents: appliedVersion.memberIds.map((configId, index) => ({
+        id: `runtime-${index}`,
+        role: 'WORKER' as const,
+        name: configId,
+        domainLabel: configId,
+        configId,
+        status: 'idle' as const,
+      })),
+      messages: [],
+      sessionIds: {},
+      a2aDepth: 0,
+      a2aCallChain: [],
+      maxA2ADepth: null,
+      teamId: 'technical-video-studio',
+      teamVersionId: 'technical-video-studio-v2',
+      teamName: 'Agent Technical Video Studio',
+      teamVersionNumber: 2,
+      createdAt: 1,
+      updatedAt: 3,
+    });
+
+    const result = await requestJson('POST', '/api/teams/evolution-proposals/evo-video/merge');
+
+    expect(result.status).toBe(200);
+    expect(roomsRepo.get).toHaveBeenCalledWith('room-video');
+    expect(store.update).toHaveBeenCalledWith('room-video', expect.objectContaining({
+      teamId: 'technical-video-studio',
+      teamVersionId: 'technical-video-studio-v2',
+      agents: expect.arrayContaining([
+        expect.objectContaining({ configId: 'browser-publishing-operator' }),
+      ]),
+    }));
+    expect(result.data.room).toMatchObject({
+      id: 'room-video',
+      teamVersionId: 'technical-video-studio-v2',
+    });
+    expect((result.data.room as { agents: Array<{ configId: string }> }).agents.map(agent => agent.configId)).toEqual(appliedVersion.memberIds);
   });
 
   _skipIfNoPort('GET /api/teams/evolution-proposals/:proposalId/validation-cases returns related cases', async () => {

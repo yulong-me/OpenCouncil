@@ -702,7 +702,7 @@ describe('F053: evolutionRepo', () => {
     );
   });
 
-  it('merges accepted changes into immutable v2 and keeps old room pinned to v1', async () => {
+  it('merges accepted changes into immutable v2 and switches the source room to v2 atomically', async () => {
     seedTeamV1();
     const { evolutionRepo } = await import('../src/db/repositories/teamEvolution.js');
     const { teamsRepo } = await import('../src/db/repositories/teams.js');
@@ -742,11 +742,40 @@ describe('F053: evolutionRepo', () => {
     expect(v2?.teamMemory).toEqual(['已有团队记忆', '交付前必须验证关键路径']);
     expect(v2?.memberSnapshots[0].systemPrompt).toBe('新架构 prompt，必须验证关键结论');
     expect(v1?.workflowPrompt).toBe('旧工作流');
-    expect(room?.teamVersionId).toBe('software-development-v1');
+    expect(room?.teamVersionId).toBe('software-development-v2');
+    expect(room?.agents.map(agent => agent.configId)).toEqual(['dev-architect']);
 
     const validationCases = db.prepare('SELECT * FROM team_validation_cases').all() as Record<string, unknown>[];
     expect(validationCases).toHaveLength(1);
     expect(validationCases[0].created_version_id).toBe(v2?.id);
+  });
+
+  it('does not apply a proposal when its source room is missing', async () => {
+    seedTeamV1();
+    const { evolutionRepo } = await import('../src/db/repositories/teamEvolution.js');
+    const { teamsRepo } = await import('../src/db/repositories/teams.js');
+
+    const proposal = evolutionRepo.create({
+      roomId: 'room-1',
+      teamId: 'software-development',
+      baseVersionId: 'software-development-v1',
+      targetVersionNumber: 2,
+      summary: '建议强化验证。',
+      changes: [
+        { kind: 'edit-team-workflow', title: '增加验证阶段', why: '流程缺验证', evidenceMessageIds: ['msg-1'], targetLayer: 'workflow', before: '旧工作流', after: '新工作流', impact: '改变工作流' },
+      ],
+    });
+    evolutionRepo.setChangeDecision(proposal.id, proposal.changes[0].id, 'accepted');
+    db.pragma('foreign_keys = OFF');
+    db.prepare('UPDATE evolution_proposals SET room_id = ? WHERE id = ?').run('missing-room', proposal.id);
+    db.pragma('foreign_keys = ON');
+
+    expect(() => evolutionRepo.merge(proposal.id)).toThrowError(expect.objectContaining({
+      code: 'EVOLUTION_SOURCE_ROOM_NOT_FOUND',
+    }));
+    expect(teamsRepo.get('software-development')?.activeVersionId).toBe('software-development-v1');
+    expect(teamsRepo.getVersion('software-development-v2')).toBeUndefined();
+    expect(evolutionRepo.get(proposal.id)?.status).toBe('in-review');
   });
 
   it('marks a proposal rejected without creating a new version when all changes are rejected', async () => {
